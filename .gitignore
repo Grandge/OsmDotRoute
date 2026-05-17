@@ -1,0 +1,32 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+.vs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build artifacts
+*.nupkg
+*.snupkg
+
+# Test data (large files)
+*.osm.pbf
+*.routerdb
+*.dotroute  # 将来の独自フォーマット用
+
+# Local config
+appsettings.local.json
+*.local.json
