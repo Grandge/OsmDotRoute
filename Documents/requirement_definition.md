@@ -1,6 +1,6 @@
 # OsmDotRoute 要件定義書
 
-**バージョン**: 1.3（確定）
+**バージョン**: 1.4（確定）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
 **ステータス**: 確定（Phase 1 進行中、ステップ 3 完了反映）
@@ -147,11 +147,11 @@
 - [ ] [P2] [Phase1] **REQ-RST-013**: 空間制約の判定は、エッジのシェイプ列を用いた交差判定で行うこと。(Ver. -)
 - [ ] [P2] [Phase1] **REQ-RST-014**: 空間制約判定の事前フィルタとして外接矩形（AABB）による枝刈りを行うこと。(Ver. -)
 - [ ] [P2] [Phase1] **REQ-RST-015**: メッシュコード指定の場合、メッシュ矩形を AABB として直接使用すること（多角形ポリゴン交差判定をスキップ）。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-RST-016**: メッシュコードの対応階層を以下の 4 階層とすること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-016**: メッシュコードの対応階層を以下の 3 階層とすること（親プロジェクト「災害廃棄物処理シミュレーション」と同範囲、v1.4 で 4 階層 → 3 階層に縮小）。(Ver. -)
   - **第3次メッシュ** (約 1km 四方、8 桁、例 `53394547`)
   - **1/2 細分メッシュ** (約 500m 四方、9 桁、例 `533945471`)
   - **1/4 細分メッシュ** (約 250m 四方、10 桁、例 `5339454713`)
-  - **1/10 細分メッシュ** (約 100m 四方、11 桁、例 `53394547135`)
+  - ~~**1/10 細分メッシュ** (約 100m 四方、11 桁)~~ → **Phase 2 以降に延期**（11 桁エンコーディング仕様未確定。Phase 1 では親プロ互換 3 階層に統一）
 - [ ] [P1] [Phase1] **REQ-RST-017**: 入力されたメッシュコードの桁数から階層を自動判定し、対応する経緯度矩形領域に変換できること。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-RST-018**: 桁数が REQ-RST-016 の規定に該当しないメッシュコードは、引数例外で拒否すること。(Ver. -)
 - [ ] [P3] [Phase4+] **REQ-RST-019**: 第1次メッシュ（80km）・第2次メッシュ（10km）への対応拡張は要望が出た時点で個別判断する。(Ver. -)
@@ -350,7 +350,7 @@ namespace OsmDotRoute
         public RestrictedAreaId AddBlockArea(GeoPolygon polygon, string? tag = null);
         public RestrictedAreaId AddDifficultyArea(GeoPolygon polygon, string difficultyType, string? tag = null);
 
-        // 地域メッシュコード指定（JIS X0410 第3次〜1/10 細分、1km〜100m、8〜11 桁）
+        // 地域メッシュコード指定（JIS X0410 第3次〜1/4 細分、1km〜250m、8〜10 桁、Phase 1 範囲）
         public RestrictedAreaId AddBlockArea(MeshCode meshCode, string? tag = null);
         public RestrictedAreaId AddBlockArea(IEnumerable<MeshCode> meshCodes, string? tag = null);
         public RestrictedAreaId AddDifficultyArea(MeshCode meshCode, string difficultyType, string? tag = null);
@@ -383,8 +383,8 @@ namespace OsmDotRoute
 
     public readonly record struct GeoCoordinate(double Latitude, double Longitude);
     public sealed class GeoPolygon { /* 緯度経度頂点列 */ }
-    public readonly record struct MeshCode(long Value) { /* 8〜11 桁の数値。桁数で階層を自動判定 */ }
-    public enum MeshLevel { Mesh3rd /* 1km */, HalfMesh /* 500m */, QuarterMesh /* 250m */, TenthMesh /* 100m */ }
+    public readonly record struct MeshCode(long Value) { /* 8〜10 桁の数値。桁数で階層を自動判定（Phase 1 範囲） */ }
+    public enum MeshLevel { Mesh3rd /* 1km */, HalfMesh /* 500m */, QuarterMesh /* 250m */ }
     public sealed class Route { /* TotalDistanceM, TotalDurationSec, Shape: IReadOnlyList<GeoCoordinate> */ }
 }
 ```
@@ -443,7 +443,7 @@ namespace OsmDotRoute
 | 入力形式 | 内容 | 関連要件 |
 |---|---|---|
 | `GeoPolygon` メモリオブジェクト | 緯度経度頂点列 | REQ-RST-001, REQ-RST-004 |
-| `MeshCode` メモリオブジェクト | JIS X0410 第3次〜1/10 細分（1km〜100m） | REQ-RST-002〜006, REQ-RST-016〜018 |
+| `MeshCode` メモリオブジェクト | JIS X0410 第3次〜1/4 細分（1km〜250m、Phase 1 範囲） | REQ-RST-002〜006, REQ-RST-016〜018 |
 | GeoJSON 文字列 / ファイル / Stream | RFC 7946 準拠の Polygon / MultiPolygon / FeatureCollection | REQ-RST-020〜028 |
 
 #### GeoJSON Properties 規定キー
@@ -598,7 +598,7 @@ namespace OsmDotRoute
 | **FeatureCollection (GeoJSON)** | 複数の Feature（Geometry + Properties）をまとめた最上位オブジェクト |
 | **メッシュ** | 地理空間を格子状に区切った領域 |
 | **JIS X0410** | 「地域メッシュ統計のための地域区分」を規定した JIS 規格。第1次（80km）/ 第2次（10km）/ 第3次（1km）および細分メッシュを定義 |
-| **地域メッシュコード** | JIS X0410 で各メッシュに割り当てられた数値コード。本プロジェクトでは第3次（1km、8桁）/ 1/2 細分（500m、9桁）/ 1/4 細分（250m、10桁）/ 1/10 細分（100m、11桁）の 4 階層に対応 |
+| **地域メッシュコード** | JIS X0410 で各メッシュに割り当てられた数値コード。Phase 1 では第3次（1km、8桁）/ 1/2 細分（500m、9桁）/ 1/4 細分（250m、10桁）の 3 階層に対応。1/10 細分（100m、11桁）は仕様未確定のため Phase 2 以降に延期 |
 | **SemVer** | Semantic Versioning。`MAJOR.MINOR.PATCH` 形式の互換性保証付きバージョニング |
 
 ---
@@ -613,6 +613,7 @@ namespace OsmDotRoute
 | 1.1 (確定) | 2026-05-18 | 動的制約入力に GeoJSON（Polygon / MultiPolygon / FeatureCollection、Hole 対応、RFC 7946 準拠）を追加（REQ-RST-020〜029） | Claude (Opus 4.7) |
 | 1.2 (確定) | 2026-05-18 | プロファイル外部 JSON ファイル化（REQ-PRF-007〜010、リビルド不要要件）、難所エリア導入（REQ-PRF-011〜014、REQ-RST-004〜007 を移動困難エリア → 難所エリアに変更、組込み 8 タイプ、ユーザー定義可、重複時は積・短絡）、API 変更（`AddSlowArea` 削除、`AddDifficultyArea` 追加、`VehicleProfile` enum → class）、GeoJSON プロパティ `speedFactor` → `difficulty` 変更（REQ-RST-026）、難所重複ルール追加（REQ-RST-030〜032）、§7.1 API シグネチャ更新、§8.1.c プロファイル定義ファイル節と §8.1.d 難所タイプ規定値表追加、用語集更新 | Claude (Opus 4.7) |
 | 1.3 (確定) | 2026-05-18 | §7.1 API: `RouterDb.LoadFromFile` を削除し、`OsmDotRoute.Itinero.ItineroRouterDbLoader.LoadFromFile` / `FromItineroRouterDb` に移動。アセンブリ依存方向（コア ← アダプター）維持のため。Phase 1 ステップ 3 実装で確定 | Claude (Opus 4.7) |
+| 1.4 (確定) | 2026-05-18 | REQ-RST-016 のメッシュ階層を 4 → 3 に縮小（1/10 細分 = 100m / 11 桁 を Phase 2 以降へ延期）。11 桁エンコーディング仕様が JIS X0410 cascade と整合しないため、親プロジェクト「災害廃棄物処理シミュレーション」と同範囲（8〜10 桁）に揃える。MeshLevel.TenthMesh を enum から削除。Phase 1 ステップ 7 実装で確定 | Claude (Opus 4.7) |
 
 ---
 
@@ -621,7 +622,7 @@ namespace OsmDotRoute
 - [x] ユーザーレビュー
 - [x] 各要件 ID へのフィードバック・修正反映
 - [x] **車両プロファイル Phase 分割**の確定（REQ-PRF-003〜006、Bicycle/Truck を Phase 2、緊急車両/災害用車両を Phase 3 に確定）
-- [x] **メッシュ階層対応範囲**の確定（REQ-RST-016、Phase 1 で 1km / 500m / 250m / 100m の 4 階層対応）
+- [x] **メッシュ階層対応範囲**の確定（REQ-RST-016、Phase 1 で 1km / 500m / 250m の 3 階層対応。100m は v1.4 で Phase 2 以降へ延期）
 - [x] **親プロジェクト側の Phase 1 希望時期**: 気にしない方針で確定（Phase 1 の所要時間が短いと見込まれるため、独自スケジュールで進める）
 - [x] ステータスを「ドラフト」から「確定」に変更
 - [ ] Phase 1 開始前に `git init` の実施
