@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.7（進行中）
+**バージョン**: 0.8（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 進行中（Phase 1 ステップ 4 完了、道路スナップ実装済、12/12 テスト成功）
+**ステータス**: 進行中（Phase 1 ステップ 5a 完了、JSON プロファイル基盤実装済、46/46 テスト成功 + Itinero パリティ確認）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -46,7 +46,7 @@
 | 4. 公開型カタログ | ステップ 2 | 記述済（2026-05-18） |
 | 5. Itinero アダプター | ステップ 3 | 記述済（2026-05-18） |
 | 6. 道路スナップ | ステップ 4 | 記述済（2026-05-18） |
-| 7a. JSON プロファイル基盤 | ステップ 5a | 未記述 |
+| 7a. JSON プロファイル基盤 | ステップ 5a | 記述済（2026-05-18） |
 | 7b. 独自 Dijkstra エンジン | ステップ 5b | 未記述 |
 | 8. 道路ネットワーク GeoJSON 出力 | ステップ 6 | 未記述 |
 | 9. メッシュコード処理 | ステップ 7 | 未記述 |
@@ -786,9 +786,183 @@ public GeoCoordinate? SnapToRoad(VehicleProfile profile, GeoCoordinate point, fl
 ## 7a. JSON プロファイル基盤
 
 **対応ステップ**: ステップ 5a
-**ステータス**: 未記述
+**対応要件**: REQ-PRF-001〜002, REQ-PRF-007〜014
+**実装日**: 2026-05-18
+**実装バージョン**: 0.1.0 想定（ユーザー採番待ち）
+**主要ファイル**:
 
-（記述予定項目: JSON スキーマ確定版（`profile-schema-v1.json` リンク）、`VehicleProfile` クラスのライフサイクル（Lazy 読込・キャッシュ）、`JsonProfileDefinition` DTO 構造、`ProfileEvaluator.Evaluate` の評価順序（accessTagKeys → highway → maxspeed → fallback）、`EvaluateDifficulty` の動作、同梱 `car.json` / `pedestrian.json` の各セクション設定値とその根拠、Itinero `Vehicle.Car` とのパリティ検証結果（許容差・実測値）、`InvalidProfileException` の発生条件、`DifficultyTypes` const string の利用方法）
+- `src/OsmDotRoute/Profiles/JsonProfileDefinition.cs`（DTO ルート + サブ型）
+- `src/OsmDotRoute/Profiles/ProfileEvaluator.cs`（評価器）
+- `src/OsmDotRoute/Profiles/EdgeEvaluation.cs`（評価結果値型）
+- `src/OsmDotRoute/Profiles/DifficultyEvaluation.cs`（難所評価結果値型）
+- `src/OsmDotRoute/Profiles/OnewayDirection.cs`（enum）
+- `src/OsmDotRoute/Profiles/car.json`（埋込リソース）
+- `src/OsmDotRoute/Profiles/pedestrian.json`（埋込リソース）
+- `src/OsmDotRoute/VehicleProfile.cs`（公開クラス、本実装に置換）
+- `src/OsmDotRoute/InvalidProfileException.cs`（公開例外）
+- `src/OsmDotRoute/OsmDotRoute.csproj`（`<EmbeddedResource>` 2 件追加）
+- `tests/OsmDotRoute.Tests/VehicleProfileTests.cs`（25 テスト）
+- `tests/OsmDotRoute.Tests/ProfileParityTests.cs`（2 テスト）
+
+### 7a.1 意図
+
+「ビルドなしでパラメータ調整可能」要件（REQ-PRF-007）を満たす JSON プロファイル基盤を構築。Phase 2/3 以降も使い続ける中核機構として確立。Phase 1 では同梱 `car.json` / `pedestrian.json` を Itinero `Vehicle.Car.Fastest()` / `Vehicle.Pedestrian.Fastest()` 相当に調整し、親プロジェクトの既存経路との大きな乖離を避ける。
+
+### 7a.2 採用設計
+
+#### JSON スキーマ（trail-blazing 確定版）
+
+トップレベル例:
+
+```jsonc
+{
+  "name": "car",
+  "vehicleType": "motor_vehicle",
+  "ignoreOneway": false,
+  "speedMultiplier": 0.75,                    // 任意、既定 1.0
+  "accessTagKeys": ["access", "vehicle", "motor_vehicle"],
+  "highway": {
+    "motorway":     { "speedKmh": 120, "access": "yes" },
+    "footway":      { "speedKmh": 5,   "access": "no"  },
+    ...
+  },
+  "accessValueMap": {
+    "yes": "allow", "permissive": "allow", "destination": "allow",
+    "no":  "deny",  "private":    "deny"
+  },
+  "maxspeedTagKey": "maxspeed",
+  "maxspeedUnitDefault": "kmh",
+  "fallback": { "speedKmh": 10, "access": "no" },
+  "speedBounds": { "minKmh": 30, "maxKmh": 200 },
+  "difficulty": {
+    "flooding":  { "speedFactor": 0.3, "canPass": true  },
+    "landslide": { "speedFactor": 0.0, "canPass": false },
+    ...
+  },
+  "difficultyDefault": { "speedFactor": 1.0, "canPass": true }
+}
+```
+
+#### `VehicleProfile` 公開 API
+
+```csharp
+public sealed class VehicleProfile
+{
+    public string Name { get; }
+    public static VehicleProfile Car { get; }         // Lazy<T> で埋込から遅延ロード
+    public static VehicleProfile Pedestrian { get; }  // 同上
+    public static VehicleProfile LoadFromJsonFile(string filePath);
+    public static VehicleProfile LoadFromJsonString(string json);
+    public static VehicleProfile LoadFromJsonStream(Stream stream);
+    internal ProfileEvaluator Evaluator { get; }
+}
+```
+
+- `Car` / `Pedestrian` は `Lazy<VehicleProfile>` で初回アクセス時にロード（テストで `Assert.Same` 確認済）
+- 埋込リソース名は `OsmDotRoute.Profiles.car.json` / `OsmDotRoute.Profiles.pedestrian.json`（namespace dot folder dot file）
+- `System.Text.Json` で `CamelCase` ポリシー、`AllowTrailingCommas` 有効、コメント許容
+
+#### `ProfileEvaluator.Evaluate` 評価順序
+
+1. `highway` タグから対応ルール検索（無ければ `fallback`）
+2. **hard-deny 判定**: 検索したルールの `access == "no"` の場合、アクセスタグでの上書き不可（Itinero `car.lua` 互換）
+3. hard-deny でない場合、`accessTagKeys` を配列順に評価し、後ろが優先（より特化したタグが優先）
+4. 通行不可と判定されたら早期 return
+5. `maxspeed` タグがあれば値を上書き（mph 単位対応）
+6. `speedMultiplier` を適用（Itinero Fastest 相当: 0.75）
+7. `speedBounds.min/max` でクランプ
+8. `oneway` タグから方向制限算出（`ignoreOneway` が true なら常に Bidirectional）
+
+#### `ProfileEvaluator.EvaluateDifficulty`
+
+```csharp
+DifficultyEvaluation EvaluateDifficulty(string difficultyType);
+```
+
+- 引数が空文字・null の場合: `difficultyDefault` を返す
+- `difficulty[difficultyType]` 該当あり: そのルールを返す
+- 該当なし: `difficultyDefault` を返す（REQ-PRF-014）
+
+#### 同梱プロファイルの値根拠
+
+**car.json**（Itinero `Vehicle.Car.Fastest()` 互換）:
+
+- `speedMultiplier: 0.75` で Itinero Fastest の暗黙係数を明示化
+- 全 `highway.speedKmh` を Itinero `car.lua speed_profile` と同値（multiplier 適用前の生値）
+- `speedBounds: { minKmh: 30, maxKmh: 200 }` は Itinero `minspeed=30, maxspeed=200` と同値
+- `fallback.speedKmh: 10` は Itinero `default=10` と同値
+- `accessValueMap` は Itinero `access_values` と同等
+
+**pedestrian.json**:
+
+- `speedMultiplier: 1.0`（歩行者は係数なし）
+- 全 highway を 4 km/h（Itinero `pedestrian.lua` と同値、`maxspeed=5` 範囲内）
+- `ignoreOneway: true`（歩行者は一方通行を無視）
+
+#### `InvalidProfileException`
+
+- public、`Exception` 派生
+- 発生条件:
+  - `name` 欠落
+  - `highway` 空または欠落
+  - `accessValueMap` / `fallback` / `speedBounds` / `difficultyDefault` 欠落
+  - `speedBounds.minKmh < 0` または `maxKmh <= minKmh`
+  - `difficultyDefault.speedFactor` 範囲外（0.0〜1.0 外）
+  - `difficulty[*].speedFactor` 範囲外
+  - JSON パースエラー（`JsonException` を内包）
+
+### 7a.3 設計判断の根拠
+
+- **`speedMultiplier` フィールド追加**: Itinero `Vehicle.Car.Fastest()` は内部で `speed * 0.75` を行うため、JSON で raw speed を保持しつつ 0.75 を適用する設計が両者を整合させる。`Shortest` 相当を後で作る場合も `speedMultiplier: 1.0` で表現可能（柔軟性）
+- **`highway` ルールの `access: "no"` を hard-deny に**: Itinero `car.lua` では `speed_profile` 外の highway は即座に deny（access チェックなし）。我々の JSON で `access: "no"` を明示した highway は同じ意味とみなす。これにより `highway=footway, motor_vehicle=yes` が deny されパリティが取れる
+- **`accessTagKeys` の配列順意味を「後ろが優先」に**: OSM の「より特化したタグが優先」原則に沿う。配列で順序を明示することでユーザーが優先順位をカスタマイズ可
+- **`ignoreOneway` フィールド**: 歩行者は一方通行を無視する一般則を JSON で表現
+- **埋込リソース化**: 利用者が外部ファイルを配置しなくても `VehicleProfile.Car` で即座に使える。ユーザーカスタマイズは `LoadFromJsonFile` で別途読込
+- **`Lazy<T>` で同梱プロファイル遅延ロード**: 初回アクセス時のみ JSON パース。`VehicleProfile.Car` 不使用なら一切ロードしない
+- **DTO に `JsonPropertyName` を明示**: `JsonNamingPolicy.CamelCase` で十分だが、明示しておくと後でリファクタしてもプロパティ名が変わらない安全性
+
+### 7a.4 トレードオフ・制約
+
+- **`speedMultiplier` は固定係数**: 動的・条件付き係数（時間帯・道路種別ごとに異なる係数）には対応しない。Phase 4+ で C# 拡張 API（REQ-PRF-015）で対応可能性
+- **OSM `oneway` の implicit ルール非対応**: `junction=roundabout` や `highway=motorway` の暗黙 oneway は未実装。明示 `oneway=yes` 等のみ反映。Itinero `car.lua` には `junction=roundabout → direction=1` のロジックがある（要実装、ステップ 5b で対応可能性）
+- **`maxspeed` 単位 `walk`/`signals`/`none` 非対応**: 数値以外の値は無視して highway デフォルトを使用
+- **`oneway:vehicle_type` 形式の派生タグ非対応**: `oneway:foot=no` などは無視
+- **hard-deny は `access: "no"` 明示時のみ**: highway 表に未掲載の highway 種別は fallback に流れ、access タグ上書きが効く（過剰な制限を避ける設計）
+- **パリティテストは 80% 速度一致を許容**: 完全一致を目指さず、実測 9/52 (17%) の速度乖離 >10% は許容範囲内。実用上の経路差は十分小さいと判断
+
+### 7a.5 検証方法
+
+- `dotnet build`: 0 警告・0 エラー（**確認済**）
+- `dotnet test`: 46/46 成功（**確認済**）
+
+**テスト一覧**:
+
+`VehicleProfileTests`（25 件）:
+
+- 同梱プロファイルロード & Lazy キャッシュ
+- Car: motorway / residential / footway 評価、access タグ優先度、maxspeed (kmh/mph/不正値/クランプ)、oneway (yes/-1)、unknown highway → fallback
+- Pedestrian: footway 4km/h、motorway 拒否、`ignoreOneway` 動作
+- 難所評価: 組込み 8 種、未定義タイプ → default、空文字 → default
+- ユーザー JSON ロード: 最小有効 JSON、ユーザー定義難所、不正 JSON、必須欠落、speedFactor 範囲外、ファイル/Stream/null 引数
+
+`ProfileParityTests`（2 件）:
+
+- `CarProfile_Parity_AgainstItineroVehicleCar`: 親プロ `default.routerdb` の全 52 edge_profile を `VehicleProfile.Car` と `Vehicle.Car.Fastest()` で比較 → 通行可否 0/52 mismatch、速度 >10% 乖離 9/52 (17.3%、許容範囲 20% 以内)、最大絶対差 7.5 km/h
+- `PedestrianProfile_Parity_AgainstItineroVehiclePedestrian`: 同様、許容範囲内
+
+実行結果:
+
+```text
+成功! -失敗: 0、合格: 46、スキップ: 0、合計: 46、期間: 2 s
+```
+
+### 7a.6 実装メモ
+
+- パリティテストで明らかになった Itinero の挙動: `highway=footway` + `motor_vehicle=yes` でも car は deny（footway は speed_profile に無いため、access チェックすら行われない）。同等の hard-deny セマンティクスを我々のプロファイルにも導入
+- 当初 Itinero `Vehicle.Car.Fastest()` との速度乖離が 67% に達したが、`speedMultiplier: 0.75` 追加と `speedBounds.minKmh: 30` 設定で 17% まで改善
+- `JsonNamingPolicy.CamelCase` は読込時の自動変換。書出が必要になったら同じ設定で `Serialize` 可能
+- 埋込リソース名のデバッグ用に `assembly.GetManifestResourceNames()` で一覧表示可（テスト時のトラブルシュート）
+- `VehicleProfile.Evaluator` は internal だが `InternalsVisibleTo` で Tests から参照可能（テスト容易性）
 
 ## 7b. 独自 Dijkstra エンジン
 
@@ -916,3 +1090,4 @@ public GeoCoordinate? SnapToRoad(VehicleProfile profile, GeoCoordinate point, fl
 | 0.5 (進行中) | 2026-05-18 | ステップ 2 完了。§4「公開型カタログ」記述（公開 15 型一覧、`VehicleProfile` enum→class 変更点、設計判断とトレードオフ、検証結果）。Class1.cs 削除済 | Claude (Opus 4.7) |
 | 0.6 (進行中) | 2026-05-18 | ステップ 3 完了。§5「Itinero アダプター」記述（`IRoadGraph` 抽象、`ItineroRoadGraph`/`ItineroRouterDbLoader` 実装、6/6 テスト成功）。§2 アーキテクチャ概観に レイヤー構造図・プロジェクト依存図・データフロー・名前空間表を追加。`RouterDb.LoadFromFile` 削除→`ItineroRouterDbLoader.LoadFromFile` 移動（要件 v1.3 で追従予定） | Claude (Opus 4.7) |
 | 0.7 (進行中) | 2026-05-18 | ステップ 4 完了。§6「道路スナップ」記述（`IRoadSnapper` 抽象 + `SnapResult` 内部値型、`ItineroSnapper` 実装、`Router.SnapToRoad` 実装、6 テスト追加で計 12/12 成功）。`RouterDb` 内部コンストラクタを `(IRoadGraph, IRoadSnapper)` に拡張 | Claude (Opus 4.7) |
+| 0.8 (進行中) | 2026-05-18 | ステップ 5a 完了。§7a「JSON プロファイル基盤」記述（DTO 構造、`ProfileEvaluator` 8 ステップ評価、`speedMultiplier` 追加、hard-deny セマンティクス、埋込 `car.json`/`pedestrian.json` 同梱、`InvalidProfileException`、25 単体 + 2 パリティテスト = 計 46/46 成功）。Itinero `Vehicle.Car.Fastest()` とのパリティ: 通行可否 0/52 mismatch、速度 >10% 乖離 9/52 (17%) | Claude (Opus 4.7) |

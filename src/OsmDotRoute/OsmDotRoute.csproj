@@ -13,4 +13,9 @@
     <InternalsVisibleTo Include="OsmDotRoute.Benchmarks" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Profiles\car.json" />
+    <EmbeddedResource Include="Profiles\pedestrian.json" />
+  </ItemGroup>
+
 </Project>
