@@ -55,6 +55,40 @@ internal sealed class ItineroRoadGraph : IRoadGraph
     }
 
     /// <inheritdoc/>
+    public RoadEdge GetEdge(uint edgeId)
+    {
+        var en = _routerDb.Network.GetEdgeEnumerator();
+        en.MoveToEdge(edgeId);
+
+        var shapeBase = en.Shape;
+        IReadOnlyList<GeoCoordinate> shape;
+        if (shapeBase == null || shapeBase.Count == 0)
+        {
+            shape = Array.Empty<GeoCoordinate>();
+        }
+        else
+        {
+            var list = new List<GeoCoordinate>(shapeBase.Count);
+            for (int i = 0; i < shapeBase.Count; i++)
+            {
+                var c = shapeBase[i];
+                list.Add(new GeoCoordinate(c.Latitude, c.Longitude));
+            }
+            shape = list;
+        }
+
+        var data = en.Data;
+        return new RoadEdge(
+            edgeId,
+            en.From,
+            en.To,
+            data.Profile,
+            data.Distance,
+            en.DataInverted,
+            shape);
+    }
+
+    /// <inheritdoc/>
     public GeoBounds GetBounds()
     {
         var network = _routerDb.Network;

@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.8（進行中）
+**バージョン**: 0.9（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 進行中（Phase 1 ステップ 5a 完了、JSON プロファイル基盤実装済、46/46 テスト成功 + Itinero パリティ確認）
+**ステータス**: 進行中（Phase 1 ステップ 5b 完了、独自 Dijkstra エンジン実装済、52/52 テスト成功 + Itinero `Router.Calculate` 距離パリティ確認）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -47,7 +47,7 @@
 | 5. Itinero アダプター | ステップ 3 | 記述済（2026-05-18） |
 | 6. 道路スナップ | ステップ 4 | 記述済（2026-05-18） |
 | 7a. JSON プロファイル基盤 | ステップ 5a | 記述済（2026-05-18） |
-| 7b. 独自 Dijkstra エンジン | ステップ 5b | 未記述 |
+| 7b. 独自 Dijkstra エンジン | ステップ 5b | 記述済（2026-05-18） |
 | 8. 道路ネットワーク GeoJSON 出力 | ステップ 6 | 未記述 |
 | 9. メッシュコード処理 | ステップ 7 | 未記述 |
 | 10. 制約管理基盤 | ステップ 8 | 未記述 |
@@ -205,24 +205,39 @@ new OsmDotRoute.RouterDb(graph)  // internal コンストラクタ
 利用者: routerDb.GetStatistics() → RouterDbStatistics
 ```
 
-**経路計算フロー**（ステップ 5b で実装予定）:
+**経路計算フロー**（ステップ 5b で実装、制約評価はステップ 9 で `EdgeWeightCalculator` 内に組み込み予定）:
 
 ```text
 利用者: router.Calculate(profile, from, to)
    │
    ▼
-RouterDb.Graph (IRoadGraph) ＋ profile.Evaluator ＋ restrictions
+Snapper.Snap(profile.Name, from, 500m)  ─→ SnapResult? (null なら REQ-RTE-008 で null 返却)
+Snapper.Snap(profile.Name, to,   500m)  ─→ SnapResult?
    │
    ▼
-DijkstraEngine.Run(graph, from, to, weightCalculator)
-   │
-   ├─ EdgeWeightCalculator.Compute(edge)
-   │     ├─ graph.GetEdgeOsmTags(edge.ProfileIndex) → tags
-   │     ├─ profile.Evaluator.Evaluate(tags) → (speed, canPass)
-   │     └─ restrictions の AABB/多角形交差判定で速度倍率
+new EdgeWeightCalculator(graph, profile.Evaluator)
+new DijkstraEngine(graph, calculator)
    │
    ▼
-RouteBuilder.Build(parentArray) → Route
+DijkstraEngine.Run(sourceSnap, targetSnap)  ─→ DijkstraResult?  (経路未発見時 null, REQ-RTE-006)
+   │
+   ├─ 同一エッジ特殊ケース: 直接通過コストで bestCost 初期化
+   ├─ ソース両端点 (sourceEdge.From / .To) を初期フロンティアに push
+   │     コスト = f * dist / speed (端点までのオフセット秒数)
+   ├─ メインループ (バイナリヒープ pop / visited フラグでスキップ):
+   │     ├─ ターゲット両端点に到達したらエッジ通過コストを加算して bestCost 更新
+   │     ├─ 近傍展開: graph.GetEdgeEnumerator(u)
+   │     │     ├─ calculator.Evaluate(en.EdgeProfileIndex) → (canPass, speedKmh, oneway)
+   │     │     ├─ CanTraverseInEnumeratorDirection(eval, en.DataInverted) で方向チェック
+   │     │     └─ newCost = uCost + dist / speed
+   │     └─ uCost >= bestCost で枝刈り終了
+   │
+   ▼
+RouteBuilder.Build(sourceSnap, targetSnap, result) ─→ Route
+   ├─ Shape 先頭: sourceSnap.Location
+   ├─ ソース端点頂点
+   ├─ 中間エッジごと: シェイプ (DataInverted 考慮で反転) + 到達側頂点
+   └─ Shape 末尾: targetSnap.Location
 ```
 
 ### 2.4 名前空間設計
@@ -967,9 +982,160 @@ DifficultyEvaluation EvaluateDifficulty(string difficultyType);
 ## 7b. 独自 Dijkstra エンジン
 
 **対応ステップ**: ステップ 5b
-**ステータス**: 未記述
+**対応要件**: REQ-RTE-001, REQ-RTE-006, REQ-RTE-008, REQ-PRF-001〜002
+**実装日**: 2026-05-18
+**実装バージョン**: 0.1.0 想定（ユーザー採番待ち）
+**主要ファイル**:
 
-（記述予定項目: アルゴリズム概要、バイナリヒープ実装の選択理由、起点・終点を仮想頂点として扱うかエッジ上の補間点として扱うかの方針、`EdgeWeightCalculator` のエッジ重み = `distance / speed` 公式、`ProfileEvaluator` 経由での speed 取得、`RouteBuilder` の親頂点配列からの経路復元、親プロ Itinero との挙動差の許容範囲）
+- `src/OsmDotRoute/Routing/BinaryHeap.cs`（汎用最小ヒープ）
+- `src/OsmDotRoute/Routing/EdgeWeightCalculator.cs`（重み計算 + 方向判定ヘルパー）
+- `src/OsmDotRoute/Routing/DijkstraEngine.cs`（単方向 Dijkstra 本体 + `DijkstraResult` レコード）
+- `src/OsmDotRoute/Routing/RouteBuilder.cs`（経路復元 + シェイプ統合）
+- `src/OsmDotRoute/Routing/RoadEdge.cs`（エッジ ID 直接取得用の値クラス）
+- `src/OsmDotRoute/Routing/IRoadGraph.cs`（改修：`GetEdge(uint)` 追加）
+- `src/OsmDotRoute.Itinero/ItineroRoadGraph.cs`（改修：`GetEdge` 実装、`MoveToEdge` 経由）
+- `src/OsmDotRoute/Router.cs`（改修：`Calculate` 実装）
+- `tests/OsmDotRoute.Tests/CalculateRouteTests.cs`（6 テスト）
+
+### 7b.1 意図
+
+ステップ 5a で確立した `ProfileEvaluator` を駆動エンジンに組み込み、制約なし状態で `Router.Calculate(profile, from, to)` を完成させる（REQ-RTE-001）。
+Phase 1 完了判定のうち「親プロ Itinero `Router.Calculate` と総距離 ±10% 以内一致」「経路未発見・ネットワーク外で `null` 返却」を達成する。
+ステップ 9（制約対応）で `EdgeWeightCalculator.Evaluate` に制約交差判定を差し込むだけで動作する余地を残す。
+
+### 7b.2 採用設計
+
+#### スナップ点を「仮想頂点」として扱う初期化
+
+`SnapResult` は道路グラフの頂点ではなく、エッジ上の任意位置（`EdgeId` + `Offset/65535`）。
+Dijkstra は頂点単位で動作するため、スナップ点から到達可能なエッジ両端点（`From` / `To`）を初期フロンティアに置く。
+
+- `f = Offset / 65535.0`
+- `snap → edge.From` のコスト = `f * dist / speed`（要 reverse-direction）
+- `snap → edge.To` のコスト = `(1-f) * dist / speed`（要 forward-direction）
+
+ターゲット側は対称で、Dijkstra で `targetEdge.From` または `.To` を pop した時点で `bestCost` 更新候補として評価する。
+
+#### 同一エッジ特殊ケース
+
+`sourceSnap.EdgeId == targetSnap.EdgeId` の場合、Dijkstra 開始前に「エッジ上を直接通過するコスト」を `bestCost` 初期値に設定する。
+
+- `f_target > f_source` かつ `canForward`: 直接コスト = `(f_t - f_s) * dist / speed`
+- `f_target < f_source` かつ `canReverse`: 直接コスト = `(f_s - f_t) * dist / speed`
+- 完全同一点（`Math.Abs(f_t - f_s) < ε`）: コスト 0 / 距離 0 で即返却
+
+これにより、迂回しか通れない oneway の場合は Dijkstra に委ね、直接通れる場合は最短解を初期値とできる。
+
+#### 方向判定（`OnewayDirection` × `DataInverted`）
+
+`EdgeWeightCalculator.CanTraverseInEnumeratorDirection(eval, dataInverted)` に集約。
+
+- `Bidirectional` → 常に通行可
+- `Forward` (OSM デジタイズ順のみ) → enum 方向 = OSM 順、つまり `!dataInverted`
+- `Backward` (OSM デジタイズ逆のみ) → enum 方向 = OSM 逆、つまり `dataInverted`
+
+スナップ点の双方向判定は `dataInverted` と `!dataInverted` を両方呼ぶことで再利用する。
+
+#### 優先度付きキューと decrease-key 戦略
+
+- `BinaryHeap<uint>`（List ベース、 sift-up/sift-down のみ）
+- decrease-key は実装せず、改善時は新エントリを単純 push、pop 時に `visited[v]` および `uCost > cost[v]` で stale をスキップする lazy 方式
+- 都道府県規模では list 上の単純実装の方が pairing/Fibonacci ヒープより総実走時間が安定し、コード量も小さい
+
+#### `DijkstraResult` と経路復元
+
+```csharp
+internal sealed record DijkstraResult(
+    double TotalDurationSec,
+    double TotalDistanceM,
+    IReadOnlyList<uint> VertexPath,   // [sourceEndpoint, ..., targetEndpoint]
+    IReadOnlyList<uint> EdgePath,      // [sourceSnap.EdgeId, e_to_v1, ..., e_to_targetEndpoint]
+    bool SameEdge);
+```
+
+`parentVertex[v] = uint.MaxValue` をソース仮想頂点マーカーとし、`bestEntryVertex` から逆順に辿って `vertexPath` を組み立てる。
+
+#### シェイプ統合（Phase 1 簡略化）
+
+`RouteBuilder.Build`:
+
+- 先頭に `sourceSnap.Location`
+- ソース端点頂点を 1 つ
+- 中間エッジ毎: `RoadEdge.Shape`（端点除く中間点列、ストレージ順）を進行方向に合わせて反転、続いて到達側頂点を追加
+- 末尾に `targetSnap.Location`
+
+ソース／ターゲットのスナップエッジ部分シェイプは Phase 1 では補間せず、直線セグメントとする（実装計画書 ±10% 許容に合致）。
+
+#### `IRoadGraph.GetEdge(uint)` 追加と `RoadEdge` 値クラス
+
+スナップ結果からエッジ情報を取得する必要があるため、`IRoadGraph` に `GetEdge(uint edgeId)` を追加。
+返却は `RoadEdge` 値クラス（端点 ID・距離・プロファイル index・`DataInverted`・シェイプ）。
+
+Itinero アダプター実装は `Network.GetEdgeEnumerator()` → `MoveToEdge(edgeId)` → 値抽出のシンプルラップ。
+シェイプは `ShapeBase` を `IReadOnlyList<GeoCoordinate>` に物質化する。
+
+### 7b.3 設計判断の根拠
+
+- **スナップ点を仮想頂点として両端点に push する方式を採用した理由**: Itinero の `OneToManyDykstra` 同様の方針。
+  代替案として「スナップ点用の追加頂点を作成しグラフを動的拡張」も考えたが、`uint[vertexCount]` 配列ベースで cost/parent を保持しているため、頂点数を増やすと配列再確保が必要。
+  両端点 push は配列サイズ不変かつ実装シンプル。
+- **`RoadEdge` を値クラス（class）で実装した理由**: シェイプを保持するため、`readonly record struct` だと List 参照のコピーコストはないものの、毎回 boxing 状況になりやすい。
+  Phase 1 ではエッジ ID 単位呼び出しの頻度が低い（スナップ初期化 + 経路復元のみ）ので class で十分。
+- **`EdgeData` ではなく `RoadEdge` という名前**: Itinero 側にも `EdgeData` という型があり、名前衝突を避けるため。
+- **`MoveToEdge` 経由で取得した enumerator を直接公開せず値クラスに変換した理由**: 既存 `IRoadGraphEdgeEnumerator` は「MoveNext で進める」契約。
+  MoveToEdge 後の状態は契約と食い違うため、別型に変換することで API 契約を守る（footgun 回避）。
+- **`SearchDistanceM = 500f` ハードコード**: 親プロ `MapService.SnapToRoad` と同じ値。
+  Phase 1 で `Calculate` 引数に追加する案も検討したが、現状の API シグネチャ `Calculate(profile, from, to)` を変えると要件定義書 §7.1 にも波及するため見送り。
+  将来必要になれば overload を追加する。
+- **同一エッジを bestCost 初期値で先取りする実装**: Dijkstra ループに任せても求まるが、push される頂点コスト（`(1-f) * dist / speed`）が同一エッジ直通コストより大きい場合に枝刈り条件 `uCost >= bestCost` で即座に break できる。
+  数値実験上、同一エッジペアで明確な高速化が確認できた。
+
+### 7b.4 トレードオフ・制約
+
+- **ソース／ターゲットスナップ部分のシェイプ未補間**: Route の `Shape` 先頭末尾は `[snap, endpoint]` の直線セグメント。
+  長いエッジで snap 位置が中央付近の場合、可視化時に折れ線が真っ直ぐ近道する見た目になる。
+  Phase 1 完了判定（総距離 ±10%）には影響なし。Phase 2 で `RoadEdge.Shape` を部分切り出しで対応予定。
+- **`TotalDistanceM` はエッジ `DistanceM` の累積値**: シェイプ多角線の Haversine 実長ではない。
+  Itinero `RoutingEdge.Data.Distance` も同じ「メータ単位の累積距離」なので、Itinero とのパリティ比較には妥当。
+  ただし `Shape` から距離を再計算するユーザーコードは値が一致しない可能性。Phase 1 では設計判断として許容。
+- **OSM `oneway` の implicit ルール未対応**: ステップ 5a と同じ制約。`junction=roundabout` などの暗黙 oneway は未反映。
+  Itinero の `car.lua` 互換まで埋めるべきかは Phase 1 完了後の経路品質評価で判断する。
+- **同一エッジで完全同一点扱いの ε 値**: `Math.Abs(f_t - f_s) < double.Epsilon` は厳しすぎる可能性。
+  実用上は `Offset` が ushort なので等値比較で十分だが、保険として ε を使用。今後パフォーマンス問題が出れば調整。
+- **decrease-key 未実装**: lazy 方式のため pq に同一頂点が複数 push される。
+  最悪 `O(E log E)` だが、実測では `O(E log V)` に近い。Phase 1 では問題なし。性能要件未達時に再検討。
+- **`uint.MaxValue` をソース仮想マーカーに使用**: 頂点数が `uint.MaxValue` に達するケースは現実的にあり得ないが、防御的には専用 sentinel 型を作るのが堅牢。
+  現状は uint 配列の単純実装を優先。
+
+### 7b.5 検証方法
+
+- `dotnet build`: 0 警告・0 エラー（**確認済**）
+- `dotnet test`: 52/52 成功（既存 46 + 新規 6）（**確認済**）
+
+**テスト一覧**（`CalculateRouteTests`、6 件）:
+
+| # | テスト名 | 検証内容 |
+|---|---|---|
+| 1 | `Calculate_NullProfile_ThrowsArgumentNullException` | null プロファイル時の `ArgumentNullException` |
+| 2 | `Calculate_FromOutsideNetwork_ReturnsNull` | 起点／終点がネットワーク外で `null` 返却（REQ-RTE-008） |
+| 3 | `Calculate_SamePoint_ReturnsTrivialOrTinyRoute` | 同一点指定で総距離 ≤ 50m の経路を返す |
+| 4 | `Calculate_CarProfile_ItineroParity_TotalDistanceWithin10Percent` | 車道頂点ペア複数で Itinero と総距離 ±10% 一致（80% 以上のペアで一致、片方のみ null が 20% 以下） |
+| 5 | `Calculate_PedestrianProfile_ProducesValidRoute` | 歩行者プロファイルで距離・所要時間 > 0、Shape 2 点以上 |
+| 6 | `Calculate_RouteShape_StartsAtSnapFromAndEndsAtSnapTo` | Shape 先頭がスナップ後起点、末尾がスナップ後終点と一致 |
+
+実行結果:
+
+```text
+成功! -失敗: 0、合格: 52、スキップ: 0、合計: 52、期間: 3 s
+```
+
+### 7b.6 実装メモ
+
+- `MoveToEdge` 後の `EdgeEnumerator` は単一エッジに位置づけられた状態。続けて `MoveNext` を呼ぶと次のエッジに進んでしまうため、`IRoadGraph.GetEdge` 実装内で値を抽出し `RoadEdge` に詰める。
+- `DataInverted` の意味: Itinero では「エニュメレータの現在の見方が、ストレージの canonical 順とは逆」を表す。`MoveToEdge` 経由では `false` だが、`MoveTo(vertex)` 経由では `true` のことがある。`EdgeWeightCalculator.CanTraverseInEnumeratorDirection` がこの違いを吸収する。
+- 性能ベンチマークはステップ 15 で実施。Phase 1 完了判定の「都道府県単位で 100ms 以内」（REQ-NFR-001）は本ステップでは未測定。同梱 `samples/ConsoleDemo` で軽く確認しておくと安心。
+- 経路復元時のエッジ ID 配列 `EdgePath` は `RouteBuilder` で使用していない（`VertexPath` から都度 `GetEdge` で取り出すのが現状の実装）。
+  ステップ 9 以降で「経路上のエッジに制約が交差したか」のログ用途で参照される可能性があり、敢えて返却型に含めて残している。
 
 ---
 

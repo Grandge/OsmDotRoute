@@ -31,4 +31,11 @@ internal interface IRoadGraph
     /// </summary>
     /// <param name="edgeProfileIndex">エッジプロファイルインデックス（<see cref="IRoadGraphEdgeEnumerator.EdgeProfileIndex"/> から取得）</param>
     IReadOnlyDictionary<string, string> GetEdgeOsmTags(ushort edgeProfileIndex);
+
+    /// <summary>
+    /// 指定エッジ ID のエッジ情報（端点・距離・プロファイル index・シェイプ）を取得する。
+    /// Phase 1 ではスナップ結果（<see cref="SnapResult.EdgeId"/>）から経路探索の起点・終点情報を取得するためと、
+    /// 経路復元（<see cref="RouteBuilder"/>）でシェイプを取り出すために使用する。
+    /// </summary>
+    RoadEdge GetEdge(uint edgeId);
 }

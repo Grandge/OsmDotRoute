@@ -1,3 +1,5 @@
+using OsmDotRoute.Routing;
+
 namespace OsmDotRoute;
 
 /// <summary>
@@ -30,7 +32,26 @@ public sealed class Router
     /// <param name="to">終点座標</param>
     /// <returns>経路、または <c>null</c></returns>
     public Route? Calculate(VehicleProfile profile, GeoCoordinate from, GeoCoordinate to)
-        => throw new NotImplementedException("Step 5b で実装予定");
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        // ステップ 5b 現時点ではスナップ半径を 500m に固定。Phase 1 中に「動的スナップ半径」要件が出れば再考。
+        const float SearchDistanceM = 500f;
+
+        var sourceSnap = _routerDb.Snapper.Snap(profile.Name, from, SearchDistanceM);
+        if (sourceSnap is null) return null;
+
+        var targetSnap = _routerDb.Snapper.Snap(profile.Name, to, SearchDistanceM);
+        if (targetSnap is null) return null;
+
+        var calculator = new EdgeWeightCalculator(_routerDb.Graph, profile.Evaluator);
+        var engine = new DijkstraEngine(_routerDb.Graph, calculator);
+        var result = engine.Run(sourceSnap.Value, targetSnap.Value);
+        if (result is null) return null;
+
+        var builder = new RouteBuilder(_routerDb.Graph);
+        return builder.Build(sourceSnap.Value, targetSnap.Value, result);
+    }
 
     /// <summary>
     /// 任意座標を最寄り道路上にスナップする（REQ-RTE-002〜003）。
