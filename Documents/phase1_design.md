@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.9（進行中）
+**バージョン**: 0.10（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 進行中（Phase 1 ステップ 5b 完了、独自 Dijkstra エンジン実装済、52/52 テスト成功 + Itinero `Router.Calculate` 距離パリティ確認）
+**ステータス**: 進行中（Phase 1 ステップ 6 完了、道路ネットワーク GeoJSON 出力実装済、56/56 テスト成功）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -48,7 +48,7 @@
 | 6. 道路スナップ | ステップ 4 | 記述済（2026-05-18） |
 | 7a. JSON プロファイル基盤 | ステップ 5a | 記述済（2026-05-18） |
 | 7b. 独自 Dijkstra エンジン | ステップ 5b | 記述済（2026-05-18） |
-| 8. 道路ネットワーク GeoJSON 出力 | ステップ 6 | 未記述 |
+| 8. 道路ネットワーク GeoJSON 出力 | ステップ 6 | 記述済（2026-05-18） |
 | 9. メッシュコード処理 | ステップ 7 | 未記述 |
 | 10. 制約管理基盤 | ステップ 8 | 未記述 |
 | 11. 制約対応 Dijkstra 統合 | ステップ 9 | 未記述 |
@@ -114,11 +114,11 @@
 
 ## 2. アーキテクチャ概観
 
-**ステータス**: ステップ 1〜5 進行に合わせて段階的に記述
+**ステータス**: ステップ 6 完了時点（2026-05-18）。ステップ進行に合わせて段階的に更新。
 
 ### 2.1 レイヤー構造
 
-ステップ 3 完了時点のレイヤー構造:
+ステップ 6 完了時点のレイヤー構造:
 
 ```text
 [利用者コード（親プロジェクト等）]
@@ -126,30 +126,40 @@
         ▼
 ┌──────────────────────────────────────────────────────────┐
 │ 公開 API 層 (namespace OsmDotRoute)                       │
-│   Router, RouterDb, Route, GeoCoordinate, GeoPolygon,    │
-│   MeshCode/MeshLevel, VehicleProfile, DifficultyTypes,   │
-│   RestrictedAreaService, BlockArea, DifficultyArea, ...  │
+│   Router, RouterDb, Route, RoadNetworkGeoJson,           │
+│   GeoCoordinate, GeoPolygon, VehicleProfile,             │
+│   InvalidProfileException, RouterDbStatistics,           │
+│   MeshCode/MeshLevel (雛形), DifficultyTypes (雛形),     │
+│   RestrictedAreaService/BlockArea/DifficultyArea (雛形)  │
 └──────────────────────────────────────────────────────────┘
         │ uses (internal)
         ▼
 ┌──────────────────────────────────────────────────────────┐
 │ コア層 (internal in OsmDotRoute assembly)                 │
 │   namespace OsmDotRoute.Routing                          │
-│     IRoadGraph, IRoadGraphEdgeEnumerator (interfaces)    │
-│     [将来: DijkstraEngine, EdgeWeightCalculator, ...]    │
+│     IRoadGraph, IRoadGraphEdgeEnumerator, IRoadSnapper,  │
+│     SnapResult, RoadEdge,                                │
+│     EdgeWeightCalculator, DijkstraEngine, RouteBuilder,  │
+│     BinaryHeap<T>                                        │
 │   namespace OsmDotRoute.Geometry                         │
 │     GeoBounds, [将来: Aabb, PolygonIntersection]         │
 │   namespace OsmDotRoute.Profiles                         │
-│     [将来: JsonProfileDefinition, ProfileEvaluator]      │
+│     JsonProfileDefinition (+sub DTO),                    │
+│     ProfileEvaluator, EdgeEvaluation,                    │
+│     DifficultyEvaluation, OnewayDirection,               │
+│     埋込リソース: car.json / pedestrian.json             │
+│   namespace OsmDotRoute.GeoJson                          │
+│     GeoJsonWriter (static, internal)                     │
 └──────────────────────────────────────────────────────────┘
         ▲
         │ implements (via InternalsVisibleTo)
         │
 ┌──────────────────────────────────────────────────────────┐
 │ アダプター層 (separate assembly OsmDotRoute.Itinero)      │
-│   ItineroRouterDbLoader (public)                         │
+│   ItineroRouterDbLoader (public static)                  │
 │   ItineroRoadGraph : IRoadGraph (internal)               │
 │   ItineroEdgeEnumeratorAdapter : IRoadGraphEdgeEnumerator│
+│   ItineroSnapper : IRoadSnapper (internal)               │
 │        │                                                  │
 │        │ wraps                                            │
 │        ▼                                                  │
@@ -157,7 +167,7 @@
 └──────────────────────────────────────────────────────────┘
 ```
 
-Phase 2 では「アダプター層」が `NativeRoadGraph`（独自フォーマット読込）に置き換わる。公開 API 層・コア層インターフェースは不変。
+Phase 2 では「アダプター層」が `NativeRoadGraph` / `NativeRoadSnapper`（独自フォーマット読込）に置き換わる。公開 API 層・コア層インターフェースは不変。
 
 ### 2.2 プロジェクト依存関係
 
@@ -187,7 +197,7 @@ Phase 2 では「アダプター層」が `NativeRoadGraph`（独自フォーマ
 
 ### 2.3 主要データフロー
 
-**読込フロー**（ステップ 3 で確立）:
+**読込フロー**（ステップ 3〜4 で確立）:
 
 ```text
 利用者: ItineroRouterDbLoader.LoadFromFile(path)
@@ -196,13 +206,26 @@ Phase 2 では「アダプター層」が `NativeRoadGraph`（独自フォーマ
 File.OpenRead → global::Itinero.RouterDb.Deserialize(stream)
    │
    ▼
-new ItineroRoadGraph(itineroDb)  // IRoadGraph 実装
+new ItineroRoadGraph(itineroDb)   // IRoadGraph 実装
+new ItineroSnapper(itineroDb)     // IRoadSnapper 実装（内部 Itinero.Router をキャッシュ）
    │
    ▼
-new OsmDotRoute.RouterDb(graph)  // internal コンストラクタ
+new OsmDotRoute.RouterDb(graph, snapper)  // internal コンストラクタ
    │
    ▼
 利用者: routerDb.GetStatistics() → RouterDbStatistics
+```
+
+**スナップフロー**（ステップ 4 で確立、ステップ 5b の Dijkstra 起点・終点解決でも使用）:
+
+```text
+利用者: router.SnapToRoad(profile, point, searchDistanceM)
+   │
+   ▼
+RouterDb.Snapper.Snap(profile.Name, point, searchDistanceM) ─→ SnapResult? (検索半径外で null, REQ-RTE-008)
+   │
+   ▼
+利用者: SnapResult.Location (公開), EdgeId/Offset は internal で Dijkstra へ
 ```
 
 **経路計算フロー**（ステップ 5b で実装、制約評価はステップ 9 で `EdgeWeightCalculator` 内に組み込み予定）:
@@ -240,17 +263,35 @@ RouteBuilder.Build(sourceSnap, targetSnap, result) ─→ Route
    └─ Shape 末尾: targetSnap.Location
 ```
 
+**道路ネットワーク GeoJSON 出力フロー**（ステップ 6 で実装、REQ-RTE-004）:
+
+```text
+利用者: router.GetRoadNetworkGeoJson() ─→ RoadNetworkGeoJson (string Json ラッパー)
+   │
+   ▼
+GeoJsonWriter.WriteRoadNetwork(graph)
+   │
+   ├─ Utf8JsonWriter で FeatureCollection を MemoryStream へストリーミング書出
+   ├─ 全頂点 v を走査し graph.GetEdgeEnumerator(v) → 各エッジを LineString 化
+   ├─ HashSet<uint> で edge ID 重複排除（同一エッジを両端点から enum するため）
+   └─ coordinates = [[lon, lat] (from), ...shape..., [lon, lat] (to)]
+   │
+   ▼
+new RoadNetworkGeoJson(utf8Json.ToString())
+```
+
 ### 2.4 名前空間設計
 
-| Namespace | 配置 | 内容 |
-|---|---|---|
-| `OsmDotRoute` | `src/OsmDotRoute/*.cs` | 公開 API 全般（Router, RouterDb, 値型、enum、Restriction 系も含む） |
-| `OsmDotRoute.Routing` | `src/OsmDotRoute/Routing/` | 経路探索の内部抽象（`IRoadGraph`, `IRoadGraphEdgeEnumerator`、将来 Dijkstra） |
-| `OsmDotRoute.Geometry` | `src/OsmDotRoute/Geometry/` | 幾何計算（`GeoBounds`、将来 `Aabb`, `PolygonIntersection`） |
-| `OsmDotRoute.Profiles` | `src/OsmDotRoute/Profiles/` | （ステップ 5a 追加予定）JSON プロファイル定義・評価 |
-| `OsmDotRoute.Mesh` | `src/OsmDotRoute/Mesh/` | （ステップ 7 追加予定）メッシュコード変換 |
-| `OsmDotRoute.GeoJson` | `src/OsmDotRoute/GeoJson/` | （ステップ 10 追加予定）GeoJSON パーサー・ライター |
-| `OsmDotRoute.Itinero` | `src/OsmDotRoute.Itinero/` 別アセンブリ | Itinero アダプター（Phase 2 で破棄） |
+| Namespace | 配置 | 状態 | 内容 |
+| --- | --- | --- | --- |
+| `OsmDotRoute` | `src/OsmDotRoute/*.cs` | 実装中 | 公開 API 全般（Router, RouterDb, Route, RoadNetworkGeoJson, GeoCoordinate, GeoPolygon, VehicleProfile, InvalidProfileException, RouterDbStatistics, MeshCode/MeshLevel 雛形, Restriction 系雛形） |
+| `OsmDotRoute.Routing` | `src/OsmDotRoute/Routing/` | ステップ 3〜5b で確立 | `IRoadGraph`, `IRoadGraphEdgeEnumerator`, `IRoadSnapper`, `SnapResult`, `RoadEdge`, `EdgeWeightCalculator`, `DijkstraEngine`, `RouteBuilder`, `BinaryHeap<T>` |
+| `OsmDotRoute.Geometry` | `src/OsmDotRoute/Geometry/` | ステップ 3 で確立 | 幾何計算（`GeoBounds`、将来 `Aabb`, `PolygonIntersection`） |
+| `OsmDotRoute.Profiles` | `src/OsmDotRoute/Profiles/` | ステップ 5a で確立 | `JsonProfileDefinition`（+sub DTO）, `ProfileEvaluator`, `EdgeEvaluation`, `DifficultyEvaluation`, `OnewayDirection`、埋込 `car.json` / `pedestrian.json` |
+| `OsmDotRoute.GeoJson` | `src/OsmDotRoute/GeoJson/` | ステップ 6 で導入 | `GeoJsonWriter`（static, internal）。ステップ 10（入力）・ステップ 11（経路出力）で拡張予定 |
+| `OsmDotRoute.Mesh` | `src/OsmDotRoute/Mesh/` | （ステップ 7 追加予定） | メッシュコード変換（JIS X0410） |
+| `OsmDotRoute.Restrictions` | `src/OsmDotRoute/Restrictions/` | 雛形のみ（ステップ 8〜9 で実装） | `RestrictedArea`, `RestrictedAreaId`, `BlockArea`, `DifficultyArea`, `RestrictedAreaService` |
+| `OsmDotRoute.Itinero` | `src/OsmDotRoute.Itinero/` 別アセンブリ | ステップ 3〜4 で確立 | Itinero アダプター（`ItineroRouterDbLoader`, `ItineroRoadGraph`, `ItineroEdgeEnumeratorAdapter`, `ItineroSnapper`）。Phase 2 で破棄 |
 
 ### 2.5 Profile 戦略（フェーズ毎の発展）
 
@@ -1142,9 +1183,124 @@ Itinero アダプター実装は `Network.GetEdgeEnumerator()` → `MoveToEdge(e
 ## 8. 道路ネットワーク GeoJSON 出力
 
 **対応ステップ**: ステップ 6
-**ステータス**: 未記述
+**対応要件**: REQ-RTE-004
+**実装日**: 2026-05-18
+**実装バージョン**: 0.1.0 想定（ユーザー採番待ち）
+**主要ファイル**:
 
-（記述予定項目: `GeoJsonWriter.WriteRoadNetwork` の出力スキーマ、エッジ重複排除のための `HashSet<uint>` 戦略、シェイプ座標の挿入順序、properties に含める情報、メモリ効率の考慮）
+- `src/OsmDotRoute/GeoJson/GeoJsonWriter.cs`（internal static、`WriteRoadNetwork`）
+- `src/OsmDotRoute/Router.cs`（改修：`GetRoadNetworkGeoJson` 実装）
+- `tests/OsmDotRoute.Tests/RoadNetworkGeoJsonTests.cs`（4 テスト）
+
+### 8.1 意図
+
+道路ネットワーク全エッジを GeoJSON `FeatureCollection`（`LineString` 列）として出力し、
+親プロジェクト `MapService.GetRoadNetworkGeoJson` と同じスキーマで地図表示用に提供する（REQ-RTE-004）。
+ステップ 13 の MapVerifier フロント `/api/road-network` から呼び出される予定。
+
+### 8.2 採用設計
+
+#### 出力スキーマ
+
+親プロジェクト `MapService.GetRoadNetworkGeoJson` と同一の単純スキーマ:
+
+```jsonc
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [lon, lat], [lon, lat], ...   // 端点+中間シェイプ+端点
+        ]
+      },
+      "properties": {}                   // 空オブジェクト
+    },
+    ...
+  ]
+}
+```
+
+- 座標順: `[lon, lat]`（GeoJSON 標準 RFC 7946 準拠）
+- `properties`: 空オブジェクト。highway / maxspeed 等のタグを含めるかは将来 overload で検討
+- 1 エッジ = 1 Feature
+
+#### エッジ重複排除
+
+Itinero の `RoutingNetwork.GetEdgeEnumerator(vertex)` は同一エッジを両端点から 2 回返すため、
+`HashSet<uint>` で edge ID を管理し、初出のみ feature 化する（親プロと同じ戦略）。
+
+#### 書出戦略: `Utf8JsonWriter` によるストリーミング
+
+`JsonSerializer` で大きな匿名オブジェクト木を作るとメモリ使用量がエッジ数比例で増大する。
+`Utf8JsonWriter` を `MemoryStream` に向けて流すことで:
+
+- アロケーションを「現在書き込み中の feature 1 つ分」に抑制
+- 都道府県規模（数百万エッジ）でも JSON 文字列サイズ + α のメモリで完結
+
+最終結果は `Encoding.UTF8.GetString(ms.ToArray())` で `string` 化し、`RoadNetworkGeoJson` ラッパーに渡す。
+
+#### `RoadNetworkGeoJson` ラッパー
+
+ステップ 2 で雛形済み。`public string Json { get; }` と `ToString()` のみのシンプル型。
+将来 `Feature[] Features` のような構造化 API を追加する場合に備え、文字列を中で再パースしない設計。
+
+### 8.3 設計判断の根拠
+
+- **`properties: {}` 空で良い理由**: 親プロのフロント（DisasterWasteSim.Viewer）が properties を参照していないため。
+  highway/maxspeed 等を含めると JSON サイズが 1.5〜2 倍に膨らむが、現状利用シーンでは不要。
+  将来必要になれば `WriteRoadNetwork(IRoadGraph, RoadNetworkGeoJsonOptions)` overload で対応。
+- **`Utf8JsonWriter` 採用**: `JsonSerializer.Serialize(匿名オブジェクト)` だと feature 配列のために巨大な中間オブジェクトを構築する必要があり、都道府県規模で GC 圧迫の懸念。
+  ストリーミング書出ならエッジ単位で書き出し終わったメモリは即解放される。
+- **`GeoJsonWriter` を `internal static` にした理由**: 公開エントリは `Router.GetRoadNetworkGeoJson` 1 つで十分。
+  ユーティリティを公開すると将来シグネチャ変更時に破壊的変更となる。
+- **`processed` HashSet に `int` ではなく `uint` を使う理由**: Itinero の edge ID は `uint`（最大約 42 億）。
+  都道府県規模（数百万エッジ）では int でも収まるが、Phase 4+ で全国対応する場合に備え uint 維持。
+- **`properties` を空オブジェクトとして必ず書く理由**: GeoJSON 仕様（RFC 7946 §3.2）で Feature には `properties` メンバーが必須（null 許容）。
+  省略すると一部のクライアント（geojson.io 等）でパースエラー。
+- **`GeoJson` 名前空間を新設**: 将来ステップ 10（GeoJSON 入力）+ ステップ 11（経路 GeoJSON 出力）も同 namespace に集約予定（`§2.4` 既述）。
+
+### 8.4 トレードオフ・制約
+
+- **全エッジを 1 つの文字列に展開**: 都道府県単位（数百万エッジ）で JSON サイズが数十〜数百 MB になり得る。
+  ストリーミング API（`Stream` への直接書出）は提供せず、メモリ上に完成形を持つ。
+  巨大シナリオで問題が顕在化したら `WriteRoadNetwork(IRoadGraph, Stream)` overload を追加検討（ステップ 13 で MapVerifier API 実装時に再評価）。
+- **`coordinates` の数値は `WriteNumberValue(double)` 既定書式**: 仮数部の桁が冗長（例: `139.7670012`）になる場合がある。
+  GeoJSON 仕様上は何桁でも valid。ファイルサイズ削減が必要なら丸めオプションを後で追加。
+- **`properties` 空の親プロ仕様踏襲**: ユーザー向け表示で「この道路は何 km/h か」を確認したい場合、別途 `/api/route` 経由で snap → エッジ評価が必要。
+  将来必要に応じ properties 拡張は破壊的変更にならない（追加のみ）。
+- **エッジ列挙順は決定的だが Itinero 依存**: 同じ RouterDb なら同じ順で features が並ぶ（`for (v=0..) → MoveNext` の決定論）。
+  Phase 2 で独自グラフに切替時、順序が変わる可能性。順序に依存するテスト・利用は避ける。
+
+### 8.5 検証方法
+
+- `dotnet build`: 0 警告・0 エラー（**確認済**）
+- `dotnet test`: 56/56 成功（既存 52 + 新規 4）（**確認済**）
+
+**テスト一覧**（`RoadNetworkGeoJsonTests`、4 件）:
+
+| # | テスト名 | 検証内容 |
+|---|---|---|
+| 1 | `GetRoadNetworkGeoJson_ProducesValidJsonRoundtrip` | `JsonDocument.Parse` 成功、type / features / 先頭 feature の geometry / coordinates / properties スキーマ検証 |
+| 2 | `GetRoadNetworkGeoJson_FeatureCount_MatchesItineroDirectEnumeration` | Itinero `Network` を直接 enum し HashSet で数えた edge 数と features 数が一致 |
+| 3 | `GetRoadNetworkGeoJson_FeatureCount_EqualsGraphEdgeCount` | `RouterDbStatistics.EdgeCount` と features 数が一致 |
+| 4 | `GetRoadNetworkGeoJson_AllCoordinatesInJapanBounds` | 先頭 100 features の全座標が日本領域内（REQ-NFR-009） |
+
+実行結果:
+
+```text
+成功! -失敗: 0、合格: 56、スキップ: 0、合計: 56、期間: 3 s
+```
+
+### 8.6 実装メモ
+
+- 親プロの実装では `_logger.LogInformation` でエッジ数を出力しているが、本ライブラリでは依存（Microsoft.Extensions.Logging）を持ち込まない方針のため割愛。
+  呼び出し側で必要なら `routerDb.GetStatistics().EdgeCount` で取れる。
+- `Utf8JsonWriter` のインデント既定は無効。デバッグ時に整形したい場合は `JsonWriterOptions { Indented = true }` を渡す overload を追加可能（現状なし）。
+- 親プロの `coords` は `List<double[]>` だったが、本実装ではストリーミング書出のため中間リストを作らない。
+- 都道府県規模 routerdb（例: 親プロ default.routerdb 19MB → GeoJSON 出力サイズ未計測）でのメモリ実測はステップ 15 ベンチマークで。
 
 ---
 

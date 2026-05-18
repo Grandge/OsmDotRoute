@@ -1,3 +1,4 @@
+using OsmDotRoute.GeoJson;
 using OsmDotRoute.Routing;
 
 namespace OsmDotRoute;
@@ -72,5 +73,5 @@ public sealed class Router
     /// 道路ネットワーク全体を GeoJSON FeatureCollection（LineString 列）として出力する（REQ-RTE-004）。
     /// </summary>
     public RoadNetworkGeoJson GetRoadNetworkGeoJson()
-        => throw new NotImplementedException("Step 6 で実装予定");
+        => new RoadNetworkGeoJson(GeoJsonWriter.WriteRoadNetwork(_routerDb.Graph));
 }
