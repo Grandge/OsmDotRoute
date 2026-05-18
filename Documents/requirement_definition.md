@@ -1,9 +1,9 @@
 # OsmDotRoute 要件定義書
 
-**バージョン**: 1.2（確定）
+**バージョン**: 1.3（確定）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 確定（Phase 1 進行中、プロファイル外部化＋難所エリア反映）
+**ステータス**: 確定（Phase 1 進行中、ステップ 3 完了反映）
 
 ---
 
@@ -313,7 +313,20 @@ namespace OsmDotRoute
 
     public sealed class RouterDb
     {
-        public static RouterDb LoadFromFile(string filePath);
+        // LoadFromFile は OsmDotRoute.Itinero アダプター側に配置（v1.3 で変更）。
+        // アセンブリ依存方向（OsmDotRoute ← OsmDotRoute.Itinero）維持のため、
+        // コア側からアダプターを直接呼べないため。
+        public RouterDbStatistics GetStatistics();
+    }
+
+    // OsmDotRoute.Itinero アダプタープロジェクト（NuGet 別アセンブリ）
+    namespace OsmDotRoute.Itinero
+    {
+        public static class ItineroRouterDbLoader
+        {
+            public static OsmDotRoute.RouterDb LoadFromFile(string filePath);
+            public static OsmDotRoute.RouterDb FromItineroRouterDb(global::Itinero.RouterDb itineroRouterDb);
+        }
     }
 
     // 車両プロファイル（enum ではなく JSON で外部化されたクラス）
@@ -599,6 +612,7 @@ namespace OsmDotRoute
 | 1.0 (確定) | 2026-05-18 | 車両プロファイル Phase 分割確定、メッシュ階層 1km〜100m の 4 階層対応確定、ユーザー合意済み | Claude (Opus 4.7) |
 | 1.1 (確定) | 2026-05-18 | 動的制約入力に GeoJSON（Polygon / MultiPolygon / FeatureCollection、Hole 対応、RFC 7946 準拠）を追加（REQ-RST-020〜029） | Claude (Opus 4.7) |
 | 1.2 (確定) | 2026-05-18 | プロファイル外部 JSON ファイル化（REQ-PRF-007〜010、リビルド不要要件）、難所エリア導入（REQ-PRF-011〜014、REQ-RST-004〜007 を移動困難エリア → 難所エリアに変更、組込み 8 タイプ、ユーザー定義可、重複時は積・短絡）、API 変更（`AddSlowArea` 削除、`AddDifficultyArea` 追加、`VehicleProfile` enum → class）、GeoJSON プロパティ `speedFactor` → `difficulty` 変更（REQ-RST-026）、難所重複ルール追加（REQ-RST-030〜032）、§7.1 API シグネチャ更新、§8.1.c プロファイル定義ファイル節と §8.1.d 難所タイプ規定値表追加、用語集更新 | Claude (Opus 4.7) |
+| 1.3 (確定) | 2026-05-18 | §7.1 API: `RouterDb.LoadFromFile` を削除し、`OsmDotRoute.Itinero.ItineroRouterDbLoader.LoadFromFile` / `FromItineroRouterDb` に移動。アセンブリ依存方向（コア ← アダプター）維持のため。Phase 1 ステップ 3 実装で確定 | Claude (Opus 4.7) |
 
 ---
 

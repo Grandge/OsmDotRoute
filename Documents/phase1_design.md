@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.5（進行中）
+**バージョン**: 0.6（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 進行中（Phase 1 ステップ 2 完了、公開型スケルトン定義済）
+**ステータス**: 進行中（Phase 1 ステップ 3 完了、Itinero アダプター実装済、6/6 テスト成功）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -44,7 +44,7 @@
 | 2. アーキテクチャ概観 | 全ステップ通底 | 未記述 |
 | 3. プロジェクト構成 | ステップ 1 | 記述済（2026-05-18） |
 | 4. 公開型カタログ | ステップ 2 | 記述済（2026-05-18） |
-| 5. Itinero アダプター | ステップ 3 | 未記述 |
+| 5. Itinero アダプター | ステップ 3 | 記述済（2026-05-18） |
 | 6. 道路スナップ | ステップ 4 | 未記述 |
 | 7a. JSON プロファイル基盤 | ステップ 5a | 未記述 |
 | 7b. 独自 Dijkstra エンジン | ステップ 5b | 未記述 |
@@ -118,19 +118,124 @@
 
 ### 2.1 レイヤー構造
 
-（記述予定: 公開 API 層 / コア層 / 抽象化層 / アダプター層 の関係図）
+ステップ 3 完了時点のレイヤー構造:
+
+```text
+[利用者コード（親プロジェクト等）]
+        │ uses
+        ▼
+┌──────────────────────────────────────────────────────────┐
+│ 公開 API 層 (namespace OsmDotRoute)                       │
+│   Router, RouterDb, Route, GeoCoordinate, GeoPolygon,    │
+│   MeshCode/MeshLevel, VehicleProfile, DifficultyTypes,   │
+│   RestrictedAreaService, BlockArea, DifficultyArea, ...  │
+└──────────────────────────────────────────────────────────┘
+        │ uses (internal)
+        ▼
+┌──────────────────────────────────────────────────────────┐
+│ コア層 (internal in OsmDotRoute assembly)                 │
+│   namespace OsmDotRoute.Routing                          │
+│     IRoadGraph, IRoadGraphEdgeEnumerator (interfaces)    │
+│     [将来: DijkstraEngine, EdgeWeightCalculator, ...]    │
+│   namespace OsmDotRoute.Geometry                         │
+│     GeoBounds, [将来: Aabb, PolygonIntersection]         │
+│   namespace OsmDotRoute.Profiles                         │
+│     [将来: JsonProfileDefinition, ProfileEvaluator]      │
+└──────────────────────────────────────────────────────────┘
+        ▲
+        │ implements (via InternalsVisibleTo)
+        │
+┌──────────────────────────────────────────────────────────┐
+│ アダプター層 (separate assembly OsmDotRoute.Itinero)      │
+│   ItineroRouterDbLoader (public)                         │
+│   ItineroRoadGraph : IRoadGraph (internal)               │
+│   ItineroEdgeEnumeratorAdapter : IRoadGraphEdgeEnumerator│
+│        │                                                  │
+│        │ wraps                                            │
+│        ▼                                                  │
+│   Itinero 1.5.1 NuGet (RouterDb, RoutingNetwork, ...)    │
+└──────────────────────────────────────────────────────────┘
+```
+
+Phase 2 では「アダプター層」が `NativeRoadGraph`（独自フォーマット読込）に置き換わる。公開 API 層・コア層インターフェースは不変。
 
 ### 2.2 プロジェクト依存関係
 
-（記述予定: OsmDotRoute / OsmDotRoute.Itinero / OsmDotRoute.Extensions.DependencyInjection / samples の依存矢印）
+```text
+                 ┌─────────────────────────┐
+                 │ OsmDotRoute (core)      │  ← System.* のみ
+                 │   InternalsVisibleTo:   │
+                 │     OsmDotRoute.Itinero │
+                 │     OsmDotRoute.Tests   │
+                 │     OsmDotRoute.Bench   │
+                 └────────────┬────────────┘
+                              │ ProjectReference (依存方向は core → 無し、他 → core)
+              ┌───────────────┼────────────────┐
+              │               │                │
+              ▼               ▼                ▼
+   OsmDotRoute.Itinero  OsmDotRoute.Tests  ConsoleDemo
+   ├─ Itinero 1.5.1     ├─ xUnit           (+ OsmDotRoute.Itinero)
+   └─ Itinero.IO.Osm    └─ + Itinero adapter
+                              │
+                              ▼
+                        OsmDotRoute.Benchmarks
+                        ├─ BenchmarkDotNet
+                        └─ + Itinero adapter
+```
+
+**重要**: 矢印は ProjectReference の方向。`OsmDotRoute`（コア）は他のどのプロジェクトも参照しない。これにより Phase 2 で `OsmDotRoute.Itinero` プロジェクトを削除しても `OsmDotRoute` のビルドは破綻しない。
 
 ### 2.3 主要データフロー
 
-（記述予定: RouterDb ロード → IRoadGraph → Router.Calculate → DijkstraEngine → RouteBuilder → Route）
+**読込フロー**（ステップ 3 で確立）:
+
+```text
+利用者: ItineroRouterDbLoader.LoadFromFile(path)
+   │
+   ▼
+File.OpenRead → global::Itinero.RouterDb.Deserialize(stream)
+   │
+   ▼
+new ItineroRoadGraph(itineroDb)  // IRoadGraph 実装
+   │
+   ▼
+new OsmDotRoute.RouterDb(graph)  // internal コンストラクタ
+   │
+   ▼
+利用者: routerDb.GetStatistics() → RouterDbStatistics
+```
+
+**経路計算フロー**（ステップ 5b で実装予定）:
+
+```text
+利用者: router.Calculate(profile, from, to)
+   │
+   ▼
+RouterDb.Graph (IRoadGraph) ＋ profile.Evaluator ＋ restrictions
+   │
+   ▼
+DijkstraEngine.Run(graph, from, to, weightCalculator)
+   │
+   ├─ EdgeWeightCalculator.Compute(edge)
+   │     ├─ graph.GetEdgeOsmTags(edge.ProfileIndex) → tags
+   │     ├─ profile.Evaluator.Evaluate(tags) → (speed, canPass)
+   │     └─ restrictions の AABB/多角形交差判定で速度倍率
+   │
+   ▼
+RouteBuilder.Build(parentArray) → Route
+```
 
 ### 2.4 名前空間設計
 
-（記述予定: `OsmDotRoute` / `OsmDotRoute.Restrictions` / `OsmDotRoute.Routing` / `OsmDotRoute.Geometry` / `OsmDotRoute.Mesh` / `OsmDotRoute.GeoJson` / `OsmDotRoute.Profiles` の責務分担）
+| Namespace | 配置 | 内容 |
+|---|---|---|
+| `OsmDotRoute` | `src/OsmDotRoute/*.cs` | 公開 API 全般（Router, RouterDb, 値型、enum、Restriction 系も含む） |
+| `OsmDotRoute.Routing` | `src/OsmDotRoute/Routing/` | 経路探索の内部抽象（`IRoadGraph`, `IRoadGraphEdgeEnumerator`、将来 Dijkstra） |
+| `OsmDotRoute.Geometry` | `src/OsmDotRoute/Geometry/` | 幾何計算（`GeoBounds`、将来 `Aabb`, `PolygonIntersection`） |
+| `OsmDotRoute.Profiles` | `src/OsmDotRoute/Profiles/` | （ステップ 5a 追加予定）JSON プロファイル定義・評価 |
+| `OsmDotRoute.Mesh` | `src/OsmDotRoute/Mesh/` | （ステップ 7 追加予定）メッシュコード変換 |
+| `OsmDotRoute.GeoJson` | `src/OsmDotRoute/GeoJson/` | （ステップ 10 追加予定）GeoJSON パーサー・ライター |
+| `OsmDotRoute.Itinero` | `src/OsmDotRoute.Itinero/` 別アセンブリ | Itinero アダプター（Phase 2 で破棄） |
 
 ### 2.5 Profile 戦略（フェーズ毎の発展）
 
@@ -440,9 +545,131 @@ OsmDotRoute.sln
 ## 5. Itinero アダプター
 
 **対応ステップ**: ステップ 3
-**ステータス**: 未記述
+**対応要件**: REQ-MAP-001, REQ-MAP-002, REQ-API-003, REQ-DEP-001
+**実装日**: 2026-05-18
+**実装バージョン**: 0.1.0 想定（ユーザー採番待ち）
+**主要ファイル**:
 
-（記述予定項目: `IRoadGraph` インターフェース定義、`ItineroRoadGraph` の `RouterDb.Network` ラップ方針、`ItineroRouterDbLoader.LoadFromFile` の責務分担、頂点・エッジ・シェイプ・タグ取得 API の対応関係、統計取得 `RouterDbStatistics` の算出ロジック）
+- `src/OsmDotRoute/Routing/IRoadGraph.cs`（内部抽象）
+- `src/OsmDotRoute/Routing/IRoadGraphEdgeEnumerator.cs`（内部抽象）
+- `src/OsmDotRoute/Geometry/GeoBounds.cs`（内部値型）
+- `src/OsmDotRoute/RouterDb.cs`（改修：`LoadFromFile` 削除、`internal RouterDb(IRoadGraph)`、`GetStatistics()` 実装）
+- `src/OsmDotRoute.Itinero/ItineroRoadGraph.cs`（`IRoadGraph` 実装）
+- `src/OsmDotRoute.Itinero/ItineroEdgeEnumeratorAdapter.cs`（`IRoadGraphEdgeEnumerator` 実装）
+- `src/OsmDotRoute.Itinero/ItineroRouterDbLoader.cs`（公開ローダー）
+- `tests/OsmDotRoute.Tests/ItineroAdapterTests.cs`（6 テスト）
+
+### 5.1 意図
+
+Itinero `RouterDb` を内部抽象 `IRoadGraph` でラップし、Phase 2 以降で独自グラフ実装に差し替え可能にする。同時に Phase 1 の経路探索エンジン（ステップ 5b）と制約管理（ステップ 8〜9）が依存する API 面を確定する。
+
+### 5.2 採用設計
+
+#### 内部抽象（`OsmDotRoute.Routing` namespace）
+
+**`IRoadGraph`**:
+
+| メンバー | 型 | 責務 |
+|---|---|---|
+| `VertexCount` | `uint` | 頂点数 |
+| `EdgeCount` | `long` | 辺数（Itinero に合わせ `long`） |
+| `GetBounds()` | `GeoBounds` | 経緯度範囲 AABB（初回 O(V)） |
+| `GetVertex(uint)` | `GeoCoordinate` | 頂点座標 |
+| `GetEdgeEnumerator(uint)` | `IRoadGraphEdgeEnumerator` | 頂点起点のエッジ列挙 |
+| `GetEdgeOsmTags(ushort)` | `IReadOnlyDictionary<string,string>` | エッジ profile index → OSM タグ |
+
+**`IRoadGraphEdgeEnumerator`** （Itinero `EdgeEnumerator` 相当）:
+
+| メンバー | 型 | 責務 |
+|---|---|---|
+| `MoveNext()` | `bool` | 次エッジへ進める |
+| `EdgeId`, `From`, `To` | `uint` | エッジ ID と端点 |
+| `EdgeProfileIndex` | `ushort` | OSM タグ集合参照用 |
+| `DistanceM` | `float` | エッジ距離（メートル） |
+| `DataInverted` | `bool` | 反転格納フラグ（Itinero 由来） |
+| `Shape` | `IReadOnlyList<GeoCoordinate>` | 中間シェイプ（端点除く） |
+
+#### アダプター実装（`OsmDotRoute.Itinero` プロジェクト）
+
+- **`ItineroRoadGraph`** : `IRoadGraph`
+  - Itinero `RouterDb.Network` の API を 1:1 でラップ
+  - `GetEdgeOsmTags`: `_routerDb.EdgeProfiles.Get(index)` で `IAttributeCollection` を取得し `Dictionary<string,string>` 化
+  - `GetBounds`: 全頂点を走査して min/max を算出（一度きりの計算、結果は呼び出し側でキャッシュ想定）
+- **`ItineroEdgeEnumeratorAdapter`** : `IRoadGraphEdgeEnumerator`
+  - Itinero `RoutingNetwork.EdgeEnumerator` を保持し、各プロパティを `EdgeData.Profile` / `.Distance` に転送
+  - `Shape` プロパティは Itinero `ShapeBase` から `GeoCoordinate` 配列に変換（リスト化）
+- **`ItineroRouterDbLoader`**（**public static**）
+  - `LoadFromFile(string)` : ファイルから RouterDb を生成
+  - `FromItineroRouterDb(global::Itinero.RouterDb)` : 既に読み込み済みインスタンスから生成（親プロが独自にロードする場合の橋渡し）
+
+#### 公開 `OsmDotRoute.RouterDb` の改修
+
+- `LoadFromFile` 静的メソッドを**削除**（要件 v1.3 で更新予定、§5.3 参照）
+- `internal RouterDb(IRoadGraph graph)` コンストラクタ追加（アダプターから生成）
+- `internal IRoadGraph Graph { get; }` 追加（ステップ 5b の Dijkstra から参照）
+- `public GetStatistics()` 実装（`_graph.VertexCount/EdgeCount/GetBounds()` をラップ）
+
+#### 名前空間整理
+
+| Namespace | 内容 |
+|---|---|
+| `OsmDotRoute` | 公開型（Router, RouterDb, Route, ...）+ 既存 |
+| `OsmDotRoute.Geometry` | **新規**。`GeoBounds`（internal）。将来 Aabb, PolygonIntersection も配置 |
+| `OsmDotRoute.Routing` | **新規**。`IRoadGraph`, `IRoadGraphEdgeEnumerator`（internal）。将来 DijkstraEngine 等も配置 |
+| `OsmDotRoute.Itinero` | アダプター層（`ItineroRoadGraph`, `ItineroRouterDbLoader` 等） |
+
+### 5.3 設計判断の根拠
+
+- **`RouterDb.LoadFromFile` を削除し `ItineroRouterDbLoader.LoadFromFile` に移動した理由**:
+  - アセンブリ依存方向 `OsmDotRoute ← OsmDotRoute.Itinero` を維持するため、`OsmDotRoute.RouterDb` から Itinero アダプターを直接呼べない
+  - 代替案検討:
+    - 静的 Func 登録（プラグインパターン）: 初期化忘れの不具合発生リスク
+    - リフレクションで `Assembly.Load("OsmDotRoute.Itinero")`: ブラックボックスでデバッグ困難
+    - 採用案: 利用者が `using OsmDotRoute.Itinero` を明示的に書く（ローカルプロジェクト参照に依存性を可視化）
+  - 結果: 利用者コードは `var db = ItineroRouterDbLoader.LoadFromFile(path);` で 1 行明示。`using Itinero;` は不要なので REQ-API-003 違反なし
+- **`IRoadGraph` を internal にした理由**: Phase 2 で独自グラフ実装に差し替える際、公開 API として固定したくない。差し替え時に internal なら自由
+- **`EdgeCount` を `long` にした理由**: Itinero `RoutingNetwork.EdgeCount` が `long`（`GeometricGraph.EdgeCount` の `long` を継承）。公開 `RouterDbStatistics.EdgeCount` は `int` のままだが、都道府県単位（数百万）では int に収まる前提（checked キャスト）
+- **`Shape` プロパティでリスト変換した理由**: Itinero `ShapeBase` は遅延列挙だが、複数回参照されるケースで都度列挙すると重い。配列化してキャッシュ性を優先
+- **`GetBounds()` を毎回計算する理由（キャッシュなし）**: 呼び出し頻度が低い（統計取得時のみ）。キャッシュ管理コストの方が大きい
+- **`FromItineroRouterDb` 補助メソッド**: 親プロジェクトは既存 `LoadOsmData` や独自カスタマイズで RouterDb を生成している可能性があり、ファイルパス渡しでない API も必要
+
+### 5.4 トレードオフ・制約
+
+- **要件 v1.2 §7.1 から API シグネチャが乖離**: `public static RouterDb LoadFromFile(string)` を仕様に書いていたが本実装で削除。要件定義書 v1.3 で更新する
+- **`Shape` の `IReadOnlyList<GeoCoordinate>` 都度生成**: Dijkstra のホットパスで非効率（多数 Allocation）。ステップ 5b でプロファイル評価時はシェイプ不要、ステップ 9 で制約交差判定時のみ必要。必要に応じプール化検討
+- **`GetBounds()` 計算コスト O(V)**: 都道府県単位だと数百万頂点で数百 ms。統計取得は起動時 1 回のみと割り切る。Phase 2 独自フォーマットでは bounds をヘッダーに格納してキャッシュ
+- **`ItineroRoadGraph` の internal 公開度**: テストプロジェクト（`InternalsVisibleTo`）から型を参照できる。テスト容易性は向上するが、外部リフレクションで使われると Phase 2 で破壊的変更となる。テストコメントで Phase 2 削除予定を明記すべき（ステップ 5b 以降）
+- **`Profile.FactorAndSpeed` への直接依存を本ステップで完全廃止**: アダプターは「グラフデータ＋OSM タグ」のみ提供。プロファイル評価はステップ 5a で OsmDotRoute 側に独自実装。要件 v1.2 で確定した方針通り
+
+### 5.5 検証方法
+
+- `dotnet build`: 0 警告・0 エラー（**確認済**）
+- `dotnet test`: 6/6 成功（**確認済**）
+
+**テスト一覧**（`ItineroAdapterTests`）:
+
+| # | テスト名 | 検証内容 |
+|---|---|---|
+| 1 | `LoadFromFile_ParentDefault_LoadsAndExposesBasicStatistics` | 親プロ `default.routerdb` 読込、頂点数・辺数 > 0、bounds 整合 |
+| 2 | `LoadFromFile_ParentDefault_BoundsAreInJapan` | bounds が日本領域内 (緯度 20-46, 経度 122-154) |
+| 3 | `GetEdgeEnumerator_ParentDefault_EnumeratesEdgesWithValidData` | エッジ列挙、終点 ID < 頂点数、距離 > 0 |
+| 4 | `GetEdgeOsmTags_ParentDefault_ContainsHighwayKey` | OSM タグに `highway` キーが含まれる |
+| 5 | `LoadFromFile_NonExistentPath_ThrowsFileNotFoundException` | 存在しないパスで `FileNotFoundException` |
+| 6 | `LoadFromFile_NullOrEmptyPath_ThrowsArgumentException` | null/空/空白で `ArgumentException` |
+
+実行結果:
+
+```text
+成功! -失敗: 0、合格: 6、スキップ: 0、合計: 6、期間: 3 s
+```
+
+### 5.6 実装メモ
+
+- テストデータパス `d:\workspace\災害廃棄物処理シミュレーション\App\DisasterWasteSim.Server\Data\Scenarios\default.routerdb`（約 19MB）は `tests/OsmDotRoute.Tests/TestData/TestPaths.cs` にハードコード。CI 化時は環境変数化等で対応
+- xUnit v2 は動的スキップが標準化されていないため、テストデータ不在時は `Assert.Fail` で明示失敗（ユーザー環境では常に存在する前提）
+- `Itinero.RouterDb` と `OsmDotRoute.RouterDb` の名前衝突は `using ItineroDb = global::Itinero.RouterDb;` のエイリアスで回避
+- `tests/OsmDotRoute.Tests/UnitTest1.cs`（テンプレ既定）を削除
+- 親プロジェクトの統合検証（ステップ 16）では、`MapService.LoadRouterDbFromFile` を `ItineroRouterDbLoader.LoadFromFile` または `FromItineroRouterDb` に置き換える想定
 
 ---
 
@@ -586,3 +813,4 @@ OsmDotRoute.sln
 | 0.3 (進行中) | 2026-05-18 | ステップ 1 完了。§3「プロジェクト構成」記述（ソリューション構造／プロジェクト依存マトリクス／`InternalsVisibleTo`／`Directory.Build.props`／`.editorconfig`／`LICENSE`／設計判断とトレードオフ／検証結果） | Claude (Opus 4.7) |
 | 0.4 (進行中) | 2026-05-18 | §2.5「Profile 戦略」を新設（JSON 外部化方針、フェーズ毎の発展、難所タイプ設計分離、組込み 8 タイプ、重複ルール）。§7 を 7a（JSON プロファイル基盤）+ 7b（独自 Dijkstra）に分割。§0.3 章対応表更新 | Claude (Opus 4.7) |
 | 0.5 (進行中) | 2026-05-18 | ステップ 2 完了。§4「公開型カタログ」記述（公開 15 型一覧、`VehicleProfile` enum→class 変更点、設計判断とトレードオフ、検証結果）。Class1.cs 削除済 | Claude (Opus 4.7) |
+| 0.6 (進行中) | 2026-05-18 | ステップ 3 完了。§5「Itinero アダプター」記述（`IRoadGraph` 抽象、`ItineroRoadGraph`/`ItineroRouterDbLoader` 実装、6/6 テスト成功）。§2 アーキテクチャ概観に レイヤー構造図・プロジェクト依存図・データフロー・名前空間表を追加。`RouterDb.LoadFromFile` 削除→`ItineroRouterDbLoader.LoadFromFile` 移動（要件 v1.3 で追従予定） | Claude (Opus 4.7) |
