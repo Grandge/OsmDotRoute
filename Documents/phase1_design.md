@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.6（進行中）
+**バージョン**: 0.7（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 進行中（Phase 1 ステップ 3 完了、Itinero アダプター実装済、6/6 テスト成功）
+**ステータス**: 進行中（Phase 1 ステップ 4 完了、道路スナップ実装済、12/12 テスト成功）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -45,7 +45,7 @@
 | 3. プロジェクト構成 | ステップ 1 | 記述済（2026-05-18） |
 | 4. 公開型カタログ | ステップ 2 | 記述済（2026-05-18） |
 | 5. Itinero アダプター | ステップ 3 | 記述済（2026-05-18） |
-| 6. 道路スナップ | ステップ 4 | 未記述 |
+| 6. 道路スナップ | ステップ 4 | 記述済（2026-05-18） |
 | 7a. JSON プロファイル基盤 | ステップ 5a | 未記述 |
 | 7b. 独自 Dijkstra エンジン | ステップ 5b | 未記述 |
 | 8. 道路ネットワーク GeoJSON 出力 | ステップ 6 | 未記述 |
@@ -676,9 +676,110 @@ Itinero `RouterDb` を内部抽象 `IRoadGraph` でラップし、Phase 2 以降
 ## 6. 道路スナップ
 
 **対応ステップ**: ステップ 4
-**ステータス**: 未記述
+**対応要件**: REQ-RTE-002, REQ-RTE-003, REQ-RTE-008
+**実装日**: 2026-05-18
+**実装バージョン**: 0.1.0 想定（ユーザー採番待ち）
+**主要ファイル**:
 
-（記述予定項目: `ItineroSnapper` の `Router.Resolve` 利用、検索半径のデフォルト値、ネットワーク外座標時の `null` 返却フロー、`ResolveFailedException` のハンドリング）
+- `src/OsmDotRoute/Routing/IRoadSnapper.cs`（内部抽象 + `SnapResult` 値型）
+- `src/OsmDotRoute/RouterDb.cs`（改修：`Snapper` プロパティ追加、コンストラクタ拡張）
+- `src/OsmDotRoute/Router.cs`（`SnapToRoad` 実装）
+- `src/OsmDotRoute.Itinero/ItineroSnapper.cs`（`IRoadSnapper` 実装）
+- `src/OsmDotRoute.Itinero/ItineroRouterDbLoader.cs`（改修：snapper 同時生成）
+- `tests/OsmDotRoute.Tests/SnapToRoadTests.cs`（6 テスト）
+
+### 6.1 意図
+
+任意座標を最寄り道路にスナップする機能を提供する（REQ-RTE-002）。検索半径は呼び出し側で指定可能（REQ-RTE-003）、ネットワーク外座標時は `null` を返却（REQ-RTE-008）。Phase 1 は Itinero の `Router.Resolve` を利用するが、内部的にエッジ ID とオフセットも取得して経路探索（ステップ 5b）で再利用できるようにする。
+
+### 6.2 採用設計
+
+#### 内部抽象 `IRoadSnapper`
+
+```csharp
+internal interface IRoadSnapper
+{
+    SnapResult? Snap(string profileName, GeoCoordinate point, float searchDistanceM);
+}
+
+internal readonly record struct SnapResult(
+    GeoCoordinate Location,
+    uint EdgeId,
+    ushort Offset);  // 0=From 頂点, 65535=To 頂点
+```
+
+`SnapResult` には公開 API では使わないエッジ ID とオフセットも含める。これはステップ 5b の Dijkstra で「snap した点から経路探索を開始する」際に必要。今は内部のみで保持。
+
+#### 公開 API `Router.SnapToRoad`
+
+```csharp
+public GeoCoordinate? SnapToRoad(VehicleProfile profile, GeoCoordinate point, float searchDistanceM = 500f)
+{
+    ArgumentNullException.ThrowIfNull(profile);
+    var result = _routerDb.Snapper.Snap(profile.Name, point, searchDistanceM);
+    return result?.Location;
+}
+```
+
+`SnapResult` の `Location` のみ公開。エッジ ID/オフセットは内部用途のみ。
+
+#### Itinero アダプター `ItineroSnapper`
+
+- コンストラクタで `global::Itinero.Router` インスタンスを 1 つ生成・保持（空間インデックスのキャッシュ目的）
+- `Snap` 内で:
+  1. `_routerDb.GetSupportedProfile(profileName)` でプロファイル取得（未対応なら `null` 返却）
+  2. `_router.Resolve(profile, lat, lon, searchDistanceM)` 呼出
+  3. 成功時: `routerPoint.LocationOnNetwork(_routerDb)` で座標、`routerPoint.EdgeId` / `.Offset` でエッジ位置を取得
+  4. `ResolveFailedException` をキャッチして `null` 返却（検索半径内に道路無し）
+
+#### `RouterDb` の改修
+
+- 内部コンストラクタが `(IRoadGraph graph, IRoadSnapper snapper)` の 2 引数に拡張
+- `internal IRoadSnapper Snapper { get; }` 追加
+- `ItineroRouterDbLoader.LoadFromFile` / `FromItineroRouterDb` は内部で `Build(itineroRouterDb)` ヘルパーを呼び、graph と snapper を同時生成
+
+### 6.3 設計判断の根拠
+
+- **`IRoadSnapper` を `IRoadGraph` と別インターフェースにした理由**: 単一責任の原則。グラフ抽象は「グラフデータの読み取り」、スナッパーは「座標 → 道路点」とで責務が異なる。Phase 2 で独自実装する際、スナップは R-tree 等の専用空間インデックスを持つことになり、グラフ I/F に混入させると肥大化する
+- **`SnapResult` にエッジ ID とオフセットを含めた理由**: 公開 API では使わないが、ステップ 5b の Dijkstra で「snap 後の点から経路探索を開始」する際に必要。先回りで内部 API に組み込んでおき、ステップ 5b で再 snap を避ける
+- **Itinero `Router` インスタンスをスナッパー内でキャッシュ**: `Router` は初回 `Resolve` 時に内部で空間インデックスを構築する。インスタンスを再生成すると都度初期化コストが発生するため、ライフサイクルで 1 インスタンス
+- **`using global::Itinero;` を明示**: `Resolve` / `GetSupportedProfile` は拡張メソッド（`RouterBaseExtensions.cs` 由来）のため、namespace を import する必要がある。エイリアスだけでは拡張メソッドが見えない
+- **`profile.Name` で文字列ベースのマッピング**: 親プロが `routerDb.LoadOsmData(stream, Vehicle.Car, Vehicle.Pedestrian)` で baked したプロファイルキーが "car" / "pedestrian"。我々の `VehicleProfile.Car.Name` / `Pedestrian.Name` を同じ文字列にしておくことで自動的にマッピングが成立
+
+### 6.4 トレードオフ・制約
+
+- **プロファイル名のマッチングが文字列ベース**: 親プロの RouterDb に "car" / "pedestrian" 以外の名前で baked された場合動かない。標準的な命名なので問題ない想定だが、ステップ 5a の JSON プロファイル実装時に「プロファイル名 ↔ Itinero プロファイル名のマッピング」を再検討する必要あり
+- **検索半径既定 500m**: 親プロと同じ値。災害シミュレーションで住民エージェントのメッシュ中心からスナップする想定値。Phase 1 で再評価
+- **`ResolveFailedException` 以外の例外は伝播**: 想定外のエラー（破損 RouterDb 等）は呼び出し側に通知。`MapService.cs` の親プロ実装はすべて catch していたが、これは過剰防御と判断
+- **`SnapResult.EdgeId` の永続性**: RouterDb 内のエッジ ID は読み込みごとに一意。RouterDb を再生成すると ID が変わる可能性。ステップ 5b でこの仮定が崩れないか確認
+
+### 6.5 検証方法
+
+- `dotnet build`: 0 警告・0 エラー（**確認済**）
+- `dotnet test`: 12/12 成功（ステップ 3 の 6 + ステップ 4 の 6）（**確認済**）
+
+**スナップテスト一覧**（`SnapToRoadTests`）:
+
+| # | テスト名 | 検証内容 |
+|---|---|---|
+| 1 | `SnapToRoad_PointOnNetwork_ReturnsNearbyCoordinate` | 道路頂点座標→スナップ後 0.001 度以内 |
+| 2 | `SnapToRoad_PointFarOutsideNetwork_ReturnsNull` | bounds から +5 度離れた点→null |
+| 3 | `SnapToRoad_CarProfile_OnRoadNetwork_ReturnsCoordinate` | 車道アクセス可能頂点→スナップ成功 |
+| 4 | `SnapToRoad_PedestrianProfile_OnRoadNetwork_ReturnsCoordinate` | 歩行者プロファイル→スナップ成功 |
+| 5 | `SnapToRoad_NullProfile_ThrowsArgumentNullException` | null プロファイル→ArgumentNullException |
+| 6 | `SnapToRoad_DefaultSearchDistance_Is500Meters` | 既定値 500m の動作確認 |
+
+実行結果:
+
+```text
+成功! -失敗: 0、合格: 12、スキップ: 0、合計: 12、期間: 1 s
+```
+
+### 6.6 実装メモ
+
+- 親プロ `MapService.SnapToRoad` との比較テスト（実装計画書「親プロの SnapToRoad と同じ座標が返ることを 10 点で確認」）は本ステップでは省略。理由: 親プロ側を Phase 1 完了まで触らない方針（ステップ 16 まで保留）、本ライブラリ単独でスナップ動作は検証できる
+- Itinero `Router.Resolve` のスレッドセーフ性は内部空間インデックス構築完了後は readonly。ステップ 5b で並列経路計算を実装する場合は `Router` インスタンス共有可能（要追加検証）
+- `SnapResult` の `Offset` は ushort（0-65535）。エッジ長に比例した位置（0=始点、65535=終点）。距離換算: `位置m = (Offset / 65535.0) * edgeDistanceM`
 
 ---
 
@@ -814,3 +915,4 @@ Itinero `RouterDb` を内部抽象 `IRoadGraph` でラップし、Phase 2 以降
 | 0.4 (進行中) | 2026-05-18 | §2.5「Profile 戦略」を新設（JSON 外部化方針、フェーズ毎の発展、難所タイプ設計分離、組込み 8 タイプ、重複ルール）。§7 を 7a（JSON プロファイル基盤）+ 7b（独自 Dijkstra）に分割。§0.3 章対応表更新 | Claude (Opus 4.7) |
 | 0.5 (進行中) | 2026-05-18 | ステップ 2 完了。§4「公開型カタログ」記述（公開 15 型一覧、`VehicleProfile` enum→class 変更点、設計判断とトレードオフ、検証結果）。Class1.cs 削除済 | Claude (Opus 4.7) |
 | 0.6 (進行中) | 2026-05-18 | ステップ 3 完了。§5「Itinero アダプター」記述（`IRoadGraph` 抽象、`ItineroRoadGraph`/`ItineroRouterDbLoader` 実装、6/6 テスト成功）。§2 アーキテクチャ概観に レイヤー構造図・プロジェクト依存図・データフロー・名前空間表を追加。`RouterDb.LoadFromFile` 削除→`ItineroRouterDbLoader.LoadFromFile` 移動（要件 v1.3 で追従予定） | Claude (Opus 4.7) |
+| 0.7 (進行中) | 2026-05-18 | ステップ 4 完了。§6「道路スナップ」記述（`IRoadSnapper` 抽象 + `SnapResult` 内部値型、`ItineroSnapper` 実装、`Router.SnapToRoad` 実装、6 テスト追加で計 12/12 成功）。`RouterDb` 内部コンストラクタを `(IRoadGraph, IRoadSnapper)` に拡張 | Claude (Opus 4.7) |

@@ -10,11 +10,14 @@ namespace OsmDotRoute;
 public sealed class RouterDb
 {
     private readonly IRoadGraph _graph;
+    private readonly IRoadSnapper _snapper;
 
-    internal RouterDb(IRoadGraph graph)
+    internal RouterDb(IRoadGraph graph, IRoadSnapper snapper)
     {
         ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(snapper);
         _graph = graph;
+        _snapper = snapper;
     }
 
     /// <summary>
@@ -23,7 +26,14 @@ public sealed class RouterDb
     internal IRoadGraph Graph => _graph;
 
     /// <summary>
+    /// 道路スナップ機能の内部アクセサ。
+    /// </summary>
+    internal IRoadSnapper Snapper => _snapper;
+
+    /// <summary>
     /// 読み込み済みグラフから頂点数・辺数・経緯度範囲の統計を取得する（REQ-MAP-002）。
+    /// 都道府県単位（数百万エッジ）でも int 範囲内 (~2.1B) に収まる前提。
+    /// Phase 4+ で全国対応する場合は long に拡張。
     /// </summary>
     public RouterDbStatistics GetStatistics()
     {
@@ -34,5 +44,4 @@ public sealed class RouterDb
             bounds.SouthWest,
             bounds.NorthEast);
     }
-    // 都道府県単位（数百万エッジ）でも int 範囲内 (~2.1B) に収まる前提。Phase 4+ で全国対応する場合は long に拡張。
 }

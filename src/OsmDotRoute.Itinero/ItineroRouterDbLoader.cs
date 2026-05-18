@@ -29,8 +29,7 @@ public static class ItineroRouterDbLoader
 
         using var stream = File.OpenRead(filePath);
         var itineroRouterDb = ItineroDb.Deserialize(stream);
-        var roadGraph = new ItineroRoadGraph(itineroRouterDb);
-        return new OsmDotRoute.RouterDb(roadGraph);
+        return Build(itineroRouterDb);
     }
 
     /// <summary>
@@ -41,7 +40,13 @@ public static class ItineroRouterDbLoader
     public static OsmDotRoute.RouterDb FromItineroRouterDb(ItineroDb itineroRouterDb)
     {
         ArgumentNullException.ThrowIfNull(itineroRouterDb);
+        return Build(itineroRouterDb);
+    }
+
+    private static OsmDotRoute.RouterDb Build(ItineroDb itineroRouterDb)
+    {
         var roadGraph = new ItineroRoadGraph(itineroRouterDb);
-        return new OsmDotRoute.RouterDb(roadGraph);
+        var snapper = new ItineroSnapper(itineroRouterDb);
+        return new OsmDotRoute.RouterDb(roadGraph, snapper);
     }
 }

@@ -41,7 +41,11 @@ public sealed class Router
     /// <param name="searchDistanceM">検索半径（メートル、既定 500m）</param>
     /// <returns>スナップ後座標、または <c>null</c></returns>
     public GeoCoordinate? SnapToRoad(VehicleProfile profile, GeoCoordinate point, float searchDistanceM = 500f)
-        => throw new NotImplementedException("Step 4 で実装予定");
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        var result = _routerDb.Snapper.Snap(profile.Name, point, searchDistanceM);
+        return result?.Location;
+    }
 
     /// <summary>
     /// 道路ネットワーク全体を GeoJSON FeatureCollection（LineString 列）として出力する（REQ-RTE-004）。
