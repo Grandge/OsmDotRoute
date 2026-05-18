@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.4（進行中）
+**バージョン**: 0.5（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 進行中（Phase 1 ステップ 1 完了、JSON プロファイル基盤＋難所エリア設計方針確定）
+**ステータス**: 進行中（Phase 1 ステップ 2 完了、公開型スケルトン定義済）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -43,7 +43,7 @@
 |---|---|---|
 | 2. アーキテクチャ概観 | 全ステップ通底 | 未記述 |
 | 3. プロジェクト構成 | ステップ 1 | 記述済（2026-05-18） |
-| 4. 公開型カタログ | ステップ 2 | 未記述 |
+| 4. 公開型カタログ | ステップ 2 | 記述済（2026-05-18） |
 | 5. Itinero アダプター | ステップ 3 | 未記述 |
 | 6. 道路スナップ | ステップ 4 | 未記述 |
 | 7a. JSON プロファイル基盤 | ステップ 5a | 未記述 |
@@ -305,9 +305,135 @@ OsmDotRoute.sln
 ## 4. 公開型カタログ
 
 **対応ステップ**: ステップ 2
-**ステータス**: 未記述
+**対応要件**: REQ-API-001〜004, REQ-FMT-001〜003, REQ-RTE-001〜007, REQ-RST-001〜011, REQ-MAP-001〜002, REQ-PRF-001〜014
+**実装日**: 2026-05-18
+**実装バージョン**: 0.1.0 想定（ユーザー採番待ち）
+**主要ファイル**:
 
-（記述予定項目: `Router`, `RouterDb`, `Route`, `GeoCoordinate`, `GeoPolygon`, `MeshCode`, `MeshLevel`, `VehicleProfile`, `RestrictedAreaService`, `RestrictedArea`, `RestrictedAreaId`, `BlockArea`, `SlowArea`, `RoadNetworkGeoJson`, `RouterDbStatistics` 各型のシグネチャ・責務・代表的な利用例）
+- `src/OsmDotRoute/Router.cs`
+- `src/OsmDotRoute/RouterDb.cs`
+- `src/OsmDotRoute/Route.cs`
+- `src/OsmDotRoute/GeoCoordinate.cs`
+- `src/OsmDotRoute/GeoPolygon.cs`
+- `src/OsmDotRoute/MeshCode.cs`
+- `src/OsmDotRoute/MeshLevel.cs`
+- `src/OsmDotRoute/VehicleProfile.cs`
+- `src/OsmDotRoute/DifficultyTypes.cs`
+- `src/OsmDotRoute/Route.cs`
+- `src/OsmDotRoute/RoadNetworkGeoJson.cs`
+- `src/OsmDotRoute/RouterDbStatistics.cs`
+- `src/OsmDotRoute/Restrictions/RestrictedAreaId.cs`
+- `src/OsmDotRoute/Restrictions/RestrictedArea.cs`
+- `src/OsmDotRoute/Restrictions/BlockArea.cs`
+- `src/OsmDotRoute/Restrictions/DifficultyArea.cs`
+- `src/OsmDotRoute/Restrictions/RestrictedAreaService.cs`
+
+### 4.1 意図
+
+要件定義書 §7.1 で確定した公開 API シグネチャをコード化し、コンパイル可能な状態にする。実装本体は後続ステップで埋める前提で `NotImplementedException` を返す。
+
+ねらい:
+
+- 後続ステップ（3, 4, 5a, 5b, 6, 8, 10）の実装が公開 API シグネチャの確定情報を共有できる
+- 親プロジェクト統合検証（ステップ 16）に向け、API 表面を早期に固める
+- ユーザーが公開 API 設計の方向性を Step 2 時点で確認できる
+
+### 4.2 採用設計
+
+#### 公開型一覧（全 15 型）
+
+**コア（ルート空間 `OsmDotRoute`）**:
+
+| 型 | 種別 | 責務 | 実装状態 |
+|---|---|---|---|
+| `Router` | sealed class | ファサード（経路計算・スナップ・GeoJSON 出力） | スケルトン |
+| `RouterDb` | sealed class | グラフデータ（`.routerdb` 読込、統計取得） | スケルトン |
+| `Route` | sealed class | 経路計算結果（距離・所要時間・形状） | 値保持完了 |
+| `GeoCoordinate` | readonly record struct | 緯度経度値オブジェクト | 完了 |
+| `GeoPolygon` | sealed class | 外側境界＋Hole 配列の多角形 | 値保持完了、境界検証あり |
+| `MeshCode` | readonly record struct | JIS X0410 メッシュコード（桁数で `Level` 判定） | 完了 |
+| `MeshLevel` | enum | メッシュ階層（4 種） | 完了 |
+| `VehicleProfile` | sealed class | JSON プロファイル（`Car`/`Pedestrian` static、`LoadFromJson*`） | スケルトン |
+| `DifficultyTypes` | static class | 組込み 8 難所タイプ `const string` | 完了 |
+| `RoadNetworkGeoJson` | sealed class | 道路ネットワーク GeoJSON 出力ラッパー | 値保持完了 |
+| `RouterDbStatistics` | sealed class | 頂点数・辺数・経緯度範囲 | 値保持完了 |
+
+**制約管理（フォルダ `Restrictions/`、namespace は `OsmDotRoute`）**:
+
+| 型 | 種別 | 責務 | 実装状態 |
+|---|---|---|---|
+| `RestrictedAreaId` | readonly record struct | エリア一意 ID（Guid ラップ） | 完了（`New()` ファクトリあり） |
+| `RestrictedArea` | abstract class | 制約基底（Id・Tag） | 完了 |
+| `BlockArea` | sealed class : RestrictedArea | 進入不可（ポリゴン or メッシュ） | 値保持完了 |
+| `DifficultyArea` | sealed class : RestrictedArea | 難所（ポリゴン or メッシュ + DifficultyType） | 値保持完了、空文字検証あり |
+| `RestrictedAreaService` | sealed class | 登録・削除・一覧サービス | スケルトン |
+
+#### `VehicleProfile` 特記事項
+
+- 要件 v1.1 まで `enum { Car, Pedestrian }` だったが、v1.2 で **class へ変更**（JSON 外部化のため、REQ-PRF-007〜010）
+- `Car` / `Pedestrian` static プロパティは Step 2 時点では空インスタンスを保持（`Name` のみ）。Step 5a で `Profiles/car.json` / `pedestrian.json` から遅延ロードする本実装に置き換える
+- `LoadFromJsonFile` / `LoadFromJsonString` / `LoadFromJsonStream` は Step 5a で実装
+
+#### `DifficultyTypes` 設計
+
+- 公開 `static class` に組込み 8 タイプを `const string` で定義（IDE 補完用）
+- ユーザー定義タイプ（REQ-PRF-013）は文字列直接指定可（`AddDifficultyArea(polygon, "snow_heavy")` 等）
+
+#### `BlockArea` / `DifficultyArea` の二系統コンストラクタ
+
+- ポリゴン版・メッシュコード版の 2 種コンストラクタ
+- 使用していない方は `null` プロパティで表現（`Polygon?` / `MeshCode?`）
+- メッシュコードは値型なので `Nullable<MeshCode>`
+
+#### 名前空間設計
+
+- 全公開型を **`OsmDotRoute` ルート名前空間** に配置（要件定義書 §7.1 準拠）
+- `Restrictions/` フォルダはあくまで物理配置上の整理。論理 namespace は `OsmDotRoute`
+- 将来追加する内部型（Step 3 以降）は `OsmDotRoute.Routing`, `OsmDotRoute.Geometry`, `OsmDotRoute.Mesh`, `OsmDotRoute.GeoJson`, `OsmDotRoute.Profiles` 等の子 namespace に配置予定
+
+### 4.3 設計判断の根拠
+
+- **`Router` コンストラクタで `RestrictedAreaService` を `null` 許容**: シミュレーションで制約を使わないケース（純粋なルート探索）でもサービス生成不要にするため
+- **`GeoCoordinate` を record struct**: 不変・等価判定が無料、Latitude/Longitude のみのシンプル値
+- **`GeoPolygon` を class（record にしない）**: 内部に List/Array を持つので record 等価判定（参照等価）はミスリーディング、明示クラスにした
+- **`MeshCode.Level` を計算プロパティに**: 値そのものから階層導出できるので別フィールドは冗長。Step 7 で本検証実装（REQ-RST-018）
+- **`RestrictedAreaId` を `New()` ファクトリ提供**: `Guid.NewGuid()` 直接呼びを各所で書くのを避ける
+- **`DifficultyArea` で `ValidateDifficultyType` を Step 2 から実装**: 空文字・null 拒否は単純で Step 8 を待つ理由がない（REQ-RST-007）
+- **`RoadNetworkGeoJson` を文字列ラッパーに**: GeoJSON 出力は最終的に JSON 文字列。中間 DTO（FeatureCollection モデル）を作るのは過剰。`ToString()` で JSON 取得可
+- **`NotImplementedException` メッセージに「Step N で実装予定」**: 後続セッションで作業中の Claude / ユーザーが、どこを次に埋めるべきか即座に判別できる
+
+### 4.4 トレードオフ・制約
+
+- **`VehicleProfile.Car` / `.Pedestrian` が Step 2 時点で「名前だけ持つ空インスタンス」**: 利用者が `Car` を `Router.Calculate` に渡すと現状は `NotImplementedException`（Calculate 側）。Step 5a 完了まで実用不可。スケルトン段階の制約として許容
+- **`RestrictedArea` 基底に `GeoPolygon? Polygon` / `MeshCode? MeshCode` を持たせず派生型に重複**: コードが若干 DRY でない。代替案として共通 `IAreaShape` 抽象を導入することも検討したが、Phase 1 スコープでは 2 種類しかないため YAGNI で見送り
+- **`MeshCode` 範囲外検証が `Level` プロパティアクセス時に発生**: 構築時検証ではない。Step 7 で構築時検証に変更検討（要件 REQ-RST-018 を厳密に満たすため）。現状はコンストラクタは `record struct(long)` 自動生成
+- **GenerateDocumentationFile=false（§3.4 で確定）**: XML doc は付与済みだが NuGet 配布用 .xml は生成しない。Step 12 で `true` に切替
+- **API シグネチャの一部は後続ステップで微調整される可能性あり**: 例えば `RouterDb.LoadFromFile` が `Stream` 版を追加する等。要件定義書 §7.1 と乖離する場合は v1.3 で要件側を更新
+
+### 4.5 検証方法
+
+- `dotnet build OsmDotRoute.sln`: 0 警告・0 エラーで成功すること
+- 公開 API シグネチャが要件定義書 §7.1 と一致すること（ユーザーレビュー）
+- 各 `NotImplementedException` メッセージが対応ステップ番号を含むこと
+
+**ステップ 2 実施結果（2026-05-18）**:
+
+```text
+ビルドに成功しました。
+    0 個の警告
+    0 エラー
+経過時間 00:00:05.49
+```
+
+新規追加ファイル: 15 ファイル（公開型 15 種）。削除: `src/OsmDotRoute/Class1.cs`, `src/OsmDotRoute.Itinero/Class1.cs`（テンプレ既定）。
+
+### 4.6 実装メモ
+
+- `src/OsmDotRoute.Itinero/` は本ステップで `Class1.cs` を削除したため、現在クラスを 1 つも持たない状態。Itinero NuGet 参照のみ残る。Step 3 で `ItineroRoadGraph` 等を追加するまで空アセンブリ
+- `tests/OsmDotRoute.Tests/UnitTest1.cs` はテンプレ既定の xUnit サンプルを残置。Step 3 以降で公開型のテストに置き換える
+- `samples/ConsoleDemo/Program.cs` もテンプレ既定の "Hello World" を残置。Step 4 以降で `Router` 利用サンプルに書き換える
+- `OsmDotRoute.csproj` の `InternalsVisibleTo` 設定により、Tests / Itinero / Benchmarks から internal 型へアクセス可（Step 3 以降で活用）
+- Phase 2/3 では本ステップで定義した公開 API シグネチャを維持しつつ、内部実装のみ差し替える方針（REQ-API-002, REQ-API-003）
 
 ---
 
@@ -459,3 +585,4 @@ OsmDotRoute.sln
 | 0.2 (進行中) | 2026-05-18 | Phase 1 着手。ステータスを「進行中」に変更 | Claude (Opus 4.7) |
 | 0.3 (進行中) | 2026-05-18 | ステップ 1 完了。§3「プロジェクト構成」記述（ソリューション構造／プロジェクト依存マトリクス／`InternalsVisibleTo`／`Directory.Build.props`／`.editorconfig`／`LICENSE`／設計判断とトレードオフ／検証結果） | Claude (Opus 4.7) |
 | 0.4 (進行中) | 2026-05-18 | §2.5「Profile 戦略」を新設（JSON 外部化方針、フェーズ毎の発展、難所タイプ設計分離、組込み 8 タイプ、重複ルール）。§7 を 7a（JSON プロファイル基盤）+ 7b（独自 Dijkstra）に分割。§0.3 章対応表更新 | Claude (Opus 4.7) |
+| 0.5 (進行中) | 2026-05-18 | ステップ 2 完了。§4「公開型カタログ」記述（公開 15 型一覧、`VehicleProfile` enum→class 変更点、設計判断とトレードオフ、検証結果）。Class1.cs 削除済 | Claude (Opus 4.7) |
