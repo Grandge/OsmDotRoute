@@ -8,37 +8,54 @@ namespace OsmDotRoute;
 public sealed class DifficultyArea : RestrictedArea
 {
     /// <summary>ポリゴンで定義される難所エリアを作成する（REQ-RST-004）。</summary>
-    /// <param name="id">エリア ID</param>
-    /// <param name="polygon">ポリゴン領域</param>
-    /// <param name="difficultyType">難所タイプ文字列（組込み 8 種または任意ユーザー定義キー）</param>
-    /// <param name="tag">タグ文字列。null 可</param>
     public DifficultyArea(RestrictedAreaId id, GeoPolygon polygon, string difficultyType, string? tag = null)
         : base(id, tag)
     {
         ArgumentNullException.ThrowIfNull(polygon);
         ValidateDifficultyType(difficultyType);
         Polygon = polygon;
+        MeshCodes = null;
         DifficultyType = difficultyType;
     }
 
-    /// <summary>メッシュコードで定義される難所エリアを作成する（REQ-RST-005）。</summary>
-    /// <param name="id">エリア ID</param>
-    /// <param name="meshCode">メッシュコード</param>
-    /// <param name="difficultyType">難所タイプ文字列</param>
-    /// <param name="tag">タグ文字列。null 可</param>
+    /// <summary>単一メッシュコードで定義される難所エリアを作成する（REQ-RST-005）。</summary>
     public DifficultyArea(RestrictedAreaId id, MeshCode meshCode, string difficultyType, string? tag = null)
         : base(id, tag)
     {
         ValidateDifficultyType(difficultyType);
-        MeshCode = meshCode;
+        Polygon = null;
+        MeshCodes = new[] { meshCode };
+        DifficultyType = difficultyType;
+    }
+
+    /// <summary>
+    /// 複数メッシュコードで定義される難所エリアを作成する（REQ-RST-006）。
+    /// 異なる階層（8〜10 桁）の混在を許容する。
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="meshCodes"/> が空、または <paramref name="difficultyType"/> が空文字/null</exception>
+    public DifficultyArea(RestrictedAreaId id, IEnumerable<MeshCode> meshCodes, string difficultyType, string? tag = null)
+        : base(id, tag)
+    {
+        ArgumentNullException.ThrowIfNull(meshCodes);
+        ValidateDifficultyType(difficultyType);
+        var array = meshCodes.ToArray();
+        if (array.Length == 0)
+        {
+            throw new ArgumentException("メッシュコードは 1 つ以上指定してください。", nameof(meshCodes));
+        }
+        Polygon = null;
+        MeshCodes = array;
         DifficultyType = difficultyType;
     }
 
     /// <summary>ポリゴン領域。メッシュ指定で作成された場合は <c>null</c>。</summary>
     public GeoPolygon? Polygon { get; }
 
-    /// <summary>メッシュコード。ポリゴン指定で作成された場合は <c>null</c>。</summary>
-    public MeshCode? MeshCode { get; }
+    /// <summary>
+    /// メッシュコード集合。ポリゴン指定で作成された場合は <c>null</c>。
+    /// 単一メッシュ指定でも要素数 1 のリストとして保持される。
+    /// </summary>
+    public IReadOnlyList<MeshCode>? MeshCodes { get; }
 
     /// <summary>
     /// 難所タイプ文字列。プロファイルが反応（速度係数・通行可否）を決定する（REQ-PRF-011）。

@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.11（進行中）
+**バージョン**: 0.12（進行中）
 **作成日**: 2026-05-18
-**最終更新**: 2026-05-18
-**ステータス**: 進行中（Phase 1 ステップ 7 完了、メッシュコード変換実装済、77/77 テスト成功）
+**最終更新**: 2026-05-19
+**ステータス**: 進行中（Phase 1 ステップ 8 完了、制約管理基盤実装済、116/116 テスト成功）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -50,7 +50,7 @@
 | 7b. 独自 Dijkstra エンジン | ステップ 5b | 記述済（2026-05-18） |
 | 8. 道路ネットワーク GeoJSON 出力 | ステップ 6 | 記述済（2026-05-18） |
 | 9. メッシュコード処理 | ステップ 7 | 記述済（2026-05-18） |
-| 10. 制約管理基盤 | ステップ 8 | 未記述 |
+| 10. 制約管理基盤 | ステップ 8 | 記述済（2026-05-19） |
 | 11. 制約対応 Dijkstra 統合 | ステップ 9 | 未記述 |
 | 12. GeoJSON 入力対応 | ステップ 10 | 未記述 |
 | 13. 経路 GeoJSON 出力 | ステップ 11 | 未記述 |
@@ -1446,9 +1446,137 @@ internal readonly record struct Aabb(GeoCoordinate SouthWest, GeoCoordinate Nort
 ## 10. 制約管理基盤
 
 **対応ステップ**: ステップ 8
-**ステータス**: 未記述
+**対応要件**: REQ-RST-001〜015, REQ-RST-031〜032（後者はステップ 9 で消費）
+**実装日**: 2026-05-19
+**実装バージョン**: 0.12（進行中）
+**主要ファイル**:
 
-（記述予定項目: `RestrictedAreaService` の内部構造（`ConcurrentDictionary` / リスト）、`Aabb` の交差判定、`PolygonIntersection` の Ray Casting + 線分交差アルゴリズム、Hole の扱い、`SpatialIndex` の初期実装方針（配列線形走査）、タグ管理の内部表現、一覧取得時の `IReadOnlyList` ラップ方法）
+- `src/OsmDotRoute/Geometry/Aabb.cs`
+- `src/OsmDotRoute/Geometry/PolygonIntersection.cs`
+- `src/OsmDotRoute/Geometry/SpatialIndex.cs`
+- `src/OsmDotRoute/Restrictions/BlockArea.cs`
+- `src/OsmDotRoute/Restrictions/DifficultyArea.cs`
+- `src/OsmDotRoute/Restrictions/RestrictedAreaService.cs`
+- `tests/OsmDotRoute.Tests/AabbTests.cs`
+- `tests/OsmDotRoute.Tests/PolygonIntersectionTests.cs`
+- `tests/OsmDotRoute.Tests/RestrictedAreaServiceTests.cs`
+
+### 10.1 意図
+
+動的制約（進入不可エリア・難所エリア）を登録／削除／タグ削除／一括クリア／一覧取得できる API を完成させ、ステップ 9 の経路探索が利用する「線分／AABB に交差する候補制約の高速取得」基盤を確立する（REQ-API-004、REQ-RST-001〜015）。
+
+### 10.2 採用設計
+
+#### 10.2.1 幾何ユーティリティ（`OsmDotRoute.Geometry`）
+
+| 型 | 種別 | 主要 API | 責務 |
+|---|---|---|---|
+| `Aabb` | internal readonly record struct | `Intersects(Aabb)`, `Contains(GeoCoordinate)`, `IntersectsSegment(GeoCoordinate, GeoCoordinate)`, `Union(Aabb)`, `FromCoordinates(IEnumerable<GeoCoordinate>)` | 緯度経度の軸並行矩形。値型、不変 |
+| `PolygonIntersection` | internal static class | `Contains(GeoPolygon, GeoCoordinate)`, `IntersectsSegment(GeoPolygon, GeoCoordinate, GeoCoordinate)`, `ComputeBoundingBox(GeoPolygon)` | 多角形と点・線分の交差判定 |
+| `SpatialIndex<T>` | internal sealed class | `Add(Aabb, T)`, `RemoveAll(Predicate<T>)`, `Clear()`, `Query(Aabb)`, `Query(GeoCoordinate, GeoCoordinate)` | AABB 付きエントリの空間検索 |
+
+**`Aabb` の `IntersectsSegment` は Liang-Barsky 法**（パラメトリッククリッピング）で実装。経度を x、緯度を y として 2D 平面近似。日本国内ユースケース前提（要件 §5.1）。
+
+**`PolygonIntersection.Contains` は Ray Casting + 境界判定**:
+
+1. 外周リング（OuterBoundary）に対し Ray Casting で内外判定。境界線上の点は内側扱い（`IsPointOnSegment` で先行判定）
+2. 全ての Hole に対し Ray Casting。Hole 内（境界含む）に当たれば外側扱い
+
+**`PolygonIntersection.IntersectsSegment` の判定優先順**:
+
+1. 端点が実領域（外周内 かつ Hole 外）にあれば交差
+2. 外周の任意の辺と線分が交差すれば交差
+3. 任意の Hole の辺と線分が交差すれば交差（Hole 境界は「実領域の境界」なので交差扱い）
+
+→ Hole に完全に収まる線分は 1〜3 のいずれにも当たらず非交差（実領域に触れない）。
+
+**2 線分の交差判定**は外積による向き付き面積（CCW/CW/共線）の符号を 4 組見る古典的アプローチ。共線・端点接触も明示的に `IsPointOnSegment` で真とする。
+
+**`SpatialIndex<T>` は Phase 1 で線形走査のみ**: `List<(Aabb, T)>` を全走査して交差エントリを返す。性能要件（REQ-NFR-001/002）未達時に R-tree / Grid Index へ差し替える前提。差し替えは API シグネチャを変えない（`Add` / `Query` のシグネチャは抽象化済）。
+
+#### 10.2.2 `BlockArea` / `DifficultyArea` の複数メッシュ対応
+
+ステップ 8 で公開型シグネチャを変更（v0.x のため破壊変更を許容、ユーザー確認済 2026-05-19）:
+
+- **削除**: `public MeshCode? MeshCode { get; }`（単数プロパティ）
+- **追加**: `public IReadOnlyList<MeshCode>? MeshCodes { get; }`（複数集合プロパティ）
+- **追加**: `public BlockArea(RestrictedAreaId, IEnumerable<MeshCode>, string?)` および同形の `DifficultyArea` コンストラクタ
+- 単一メッシュコンストラクタは内部で要素数 1 のリストを格納する。`MeshCode?` 単数表現は持たない（`MeshCodes[0]` で取得可能）。
+
+これにより、REQ-RST-003 / 006 の「複数メッシュ一括登録 = 1 つの `RestrictedAreaId`」を `ListAll()` の返り値に情報欠落なく表現できる。
+
+#### 10.2.3 `RestrictedAreaService` 内部構造
+
+```text
+RestrictedAreaService
+├── _entries: Dictionary<RestrictedAreaId, AreaEntry>
+│     └─ AreaEntry { Area: RestrictedArea, Shapes: Shape[] }
+└── _index: SpatialIndex<ShapeRef>
+      └─ ShapeRef { Id, Area, Shape }
+            Shape: (Aabb Bounds, GeoPolygon? Polygon)
+```
+
+- ポリゴン登録 → 1 つの `Shape`（`Polygon` 非 null）
+- 単一メッシュ登録 → 1 つの `Shape`（`Polygon` null、`Bounds` はメッシュ AABB）
+- 複数メッシュ一括登録 → メッシュ数分の `Shape`（全て `Polygon` null）。`AreaEntry.Shapes` で 1 ID にまとめて保持
+
+**internal クエリ API**（ステップ 9 で `EdgeWeightCalculator` から利用）:
+
+- `IEnumerable<RestrictedArea> QueryCandidates(GeoCoordinate p1, GeoCoordinate p2)`
+- `IEnumerable<RestrictedArea> QueryCandidates(Aabb queryBounds)`
+
+両者とも `HashSet<RestrictedAreaId>` で重複除去。複数メッシュ登録（1 ID で複数 Shape）でも同一 ID は 1 回だけ返る。
+
+**`RemoveByTag(string tag)`** は `_entries` を線形走査して該当 ID をまず削除、続いて `_index.RemoveAll(s => idSet.Contains(s.Id))` でインデックスから一括除去（メッシュ複数登録時に複数 Shape を確実に消すため、ID セット引き当て）。
+
+**スレッド安全性**: Phase 1 では非対応（要件にスレッド安全要件なし）。シミュレーション側は単一スレッドから呼ぶ前提。Phase 2 以降で必要になれば `ConcurrentDictionary` + `ReaderWriterLockSlim` 化。
+
+### 10.3 設計判断の根拠
+
+- **`Aabb.IntersectsSegment` を Liang-Barsky にした理由**: ステップ 9 で「エッジシェイプ各セグメントに対する AABB プリフィルタ」を高頻度に呼ぶため、4 辺との交差を分割せず 1 パスで判定したい。Cohen-Sutherland よりループが浅く、SAT より分岐が単純。
+- **`PolygonIntersection` の Hole 判定をリング 1 つずつにした理由**: Hole 数は Phase 1 想定ユースケース（災害ポリゴン）で 0〜2 個。線形走査で十分。R-tree 内蔵は YAGNI。
+- **`SpatialIndex<T>` をジェネリックにした理由**: Phase 1 では `ShapeRef` のみ使うが、ステップ 9 でエッジシェイプ AABB キャッシュにも転用する可能性がある。汎用化コストはほぼゼロ。
+- **`MeshCode?` を廃止し `IReadOnlyList<MeshCode>?` に統一した理由**: 「単数メッシュ」と「複数メッシュ」を別プロパティに分けると `ListAll()` 利用者が両方チェックする必要があり API 表面が膨らむ。要素数 1 のリストに統一する方が消費側コードがシンプル。v0.x のため破壊変更コストは低い。
+- **`RestrictedAreaService` 内部で Shape を `Polygon?` Nullable にした理由**: メッシュ AABB はそのままが境界（追加の多角形交差判定不要、REQ-RST-015）。`Polygon == null` を「メッシュ由来 Shape」のマーカとして使い、ステップ 9 で `if (shape.Polygon == null) → AABB 交差で確定`、`else → 線分 vs ポリゴンの厳密判定` の二分岐に直結させる。
+- **`QueryCandidates` を `IEnumerable<RestrictedArea>` 返却にした理由**: ステップ 9 の `EdgeWeightCalculator` は最初の `BlockArea` を見つけた時点で打切る（短絡評価）。リスト化は不要、yield で十分。
+- **`Aabb` を internal のまま据え置いた理由**: 公開型として露出する必然性がない（要件 §7.1 で `Aabb` 型に直接アクセスする API は規定されていない）。Phase 2 以降で API として必要なら昇格を再評価。
+
+### 10.4 トレードオフ・制約
+
+- **線形走査 `SpatialIndex` の性能限界**: 制約数 N、エッジ数 E、シェイプ点数 S のとき判定回数 O(N × E × S)。Phase 1 想定の N ≦ 数百、E ≦ 数万のスケールでは実用可能。N が数千を超える場合は R-tree 化必須（Phase 2 申し送り）。
+- **`PolygonIntersection.ComputeBoundingBox` が Hole を無視**: Hole は外周より内側にあるため AABB に影響しない（前提）。退化ポリゴン（Hole が外周を超える）は不正入力として無検証。`GeoJsonParser`（ステップ 10）で入力時検証することを推奨。
+- **メッシュコード AABB は WGS84 平面近似**: 厳密な JIS X0410 矩形は経緯度の楕円体補正を含むが、Phase 1 では `MeshCodeConverter` が経緯度差分のみで実装（許容誤差 ≦ 1 cm／250m メッシュ）。
+- **`RestrictedAreaService.Remove(unknownId)` は何もしない**: 存在しない ID で例外を投げず NoOp。シミュレーション側で「制約が消えたか確認したい」ケースは想定されず、冪等な API の方が呼びやすい。`Contains` で事前確認可能。
+- **複数メッシュ登録時の AABB 結合は行わない**: 各メッシュを個別 Shape として保持。隣接メッシュをまとめた大 AABB（Union）も計算可能だが、結合 AABB は「実領域より広い枝刈り精度」になるため線形走査の現実装では損のみ。R-tree 化時に再評価。
+
+### 10.5 検証方法
+
+- `dotnet build OsmDotRoute.sln`: 0 警告・0 エラー（116 個全テスト pass）
+- `tests/OsmDotRoute.Tests/AabbTests.cs`: 交差・包含・線分交差（端点内部・貫通・接触・外れ）・Union・FromCoordinates の 13 ケース
+- `tests/OsmDotRoute.Tests/PolygonIntersectionTests.cs`: 単位正方形・Hole 込みの内外判定、線分交差（実領域内・境界横断・Hole 内収まり・Hole 境界横切り）、BBox 算出の 12 ケース
+- `tests/OsmDotRoute.Tests/RestrictedAreaServiceTests.cs`: 登録（ポリゴン／単一メッシュ／複数メッシュ）・難所タイプ検証（空文字・null・ユーザー定義）・個別削除・タグ削除・全クリア・QueryCandidates（AABB／線分／複数メッシュの ID 重複除去）の 14 ケース
+
+**ステップ 8 実施結果（2026-05-19）**:
+
+```text
+ビルドに成功しました。
+    0 個の警告
+    0 エラー
+
+成功!   -失敗:     0、合格:   116、スキップ:     0、合計:   116、期間: 3 s
+```
+
+新規ファイル: `Geometry/PolygonIntersection.cs`, `Geometry/SpatialIndex.cs`, `tests/AabbTests.cs`, `tests/PolygonIntersectionTests.cs`, `tests/RestrictedAreaServiceTests.cs`。  
+変更ファイル: `Geometry/Aabb.cs`（メソッド追加）、`Restrictions/BlockArea.cs` / `DifficultyArea.cs`（`MeshCodes` 化）、`Restrictions/RestrictedAreaService.cs`（本実装）。
+
+### 10.6 実装メモ
+
+- **`Aabb` の境界接触判定**: `Intersects` / `Contains` ともに「境界線上は内側／交差扱い」で統一。`<=` / `>=` を使用。地理座標は離散値より浮動小数点なので「ぴったり境界」がレアケースだが、メッシュ AABB 同士の隣接判定では境界共有が頻発するため、保守的に「触れていれば交差」とした。
+- **Ray Casting の境界線上判定**: `((yi > py) != (yj > py))` の伝統的判定は境界線上の点で挙動が不安定（頂点を含む辺で false negative）。今回は前段で `IsPointOnSegment` を呼び境界判定を明示的に真とすることで回避。
+- **複数メッシュ登録時の `SpatialIndex` エントリ展開**: 1 つの `RestrictedAreaId` に対し N 個の `ShapeRef` がインデックス内に並ぶ。`QueryCandidates` は同 ID を `HashSet` で重複除去するため、上位 API（`EdgeWeightCalculator`）は ID 単位の単純消費でよい。
+- **テスト用クエリ範囲設計の落とし穴**: 東京駅メッシュ `53394611L` の AABB は (35.675, 139.7625)-(35.683, 139.775)。一見「(35,139)-(36,140) の単位正方形と離れている」と思いがちだが、両者の AABB は内包関係にある。プリフィルタテストでは座標重なりを事前に手計算で確認する必要がある（初回ドラフトで踏んだ）。
+- **`AreaEntry` を `sealed record`、`Shape` を `readonly record struct` にした理由**: `AreaEntry` は参照経由で使い回す（Dictionary 値）。`Shape` は短命なクエリ用構造体で値コピーの方がアロケーションフリー。
+- **`QueryCandidates` の yield**: ステップ 9 で短絡評価を活かすため、enumerator のまま返す。`ToList()` するとアロケーションが増える上に短絡できない。
 
 ---
 
