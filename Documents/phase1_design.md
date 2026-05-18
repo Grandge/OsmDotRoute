@@ -1720,18 +1720,24 @@ RestrictedAreaService
 
 ---
 
-## 12. GML 入力対応（KSJ アプリケーションスキーマ専用）
+## 12. GML 入力対応（KSJ アプリケーションスキーマ、形状のみ抽出）
 
 **対応ステップ**: ステップ 10
 **ステータス**: 未記述（GeoJSON 対応から GML 対応へ方針変更、2026-05-19 ユーザー合意）
 
-**方針サマリ**:
+### 12.0 方針サマリ（要件 v1.5 で確定）
 
-- 対応フォーマットは **国土数値情報 KSJ アプリケーションスキーマ準拠の GML 3.2 のみ**。汎用 GML / GeoJSON は対応しない（参考データを用意できないため検証が空転する、親プロジェクトの実用フローを最優先）
-- 座標軸は `<gml:posList>` の **「緯度 経度」順**（KSJ サンプル `A31-12_24.xml` で確認済）
-- ダウンロード元: <https://nlftp.mlit.go.jp/ksj/gml/datalist/>
+- **対応フォーマット**: 国土数値情報 KSJ アプリケーションスキーマ準拠の GML 3.2 のみ。汎用 GML / GeoJSON は対応しない（参考データを用意できないため検証が空転する、親プロジェクトの実用フローを最優先）
+- **座標軸**: `<gml:posList>` の「緯度 経度」順（JGD2000、KSJ 規定）。KSJ サンプル `A31-12_24.xml` で確認済
+- **抽出範囲**: フィーチャの**形状（外周 ＋ Hole）のみ**。`<ksj:waterDepth>` 等のハザード属性は **Phase 1 では保持せず読み飛ばす**
+- **難所タイプはユーザー指定**: `AddDifficultyAreaFromGml*` の `difficultyType` 引数で全フィーチャに同一タイプを適用。フィーチャ要素名や属性値から難所タイプを自動判定する仕組みは設けない（拡張性: 複数 KSJ プロダクトを共通基盤で扱う、利用者責任）
+- **API 6 メソッド**: 進入不可エリア用 3（`AddBlockAreaFromGml*`）+ 難所エリア用 3（`AddDifficultyAreaFromGml*`）。ポリゴン版・メッシュ版と対称
+- **`<gml:MultiSurface>` 非対応**: Phase 2 以降に延期。A31「浸水想定区域」サンプル `A31-12_24.xml`（1.6GB）で **`MultiSurface` 出現 0 件**を確認（2026-05-19、`grep -c` で検証）。検出時は `NotSupportedException` を投げる
+- **ハザード属性を捨てる根拠**: GML 以外の入力（ポリゴン直接指定／メッシュコード指定）でも同じ機構を使う以上、GML 固有属性を保持する仕組みは API 全体の非対称を生む。属性が必要な利用者は GML ファイルを別途読んで対応するか、Phase 2 で `RestrictedArea.Attributes` プロパティ追加を検討
+- **ダウンロード元**: <https://nlftp.mlit.go.jp/ksj/gml/datalist/>
+- **サンプル**: `D:/ハザードデータ/A31-12_24_GML/A31-12_24.xml`（A31-v2.2、三重県、1.6GB）
 
-（記述予定項目: `System.Xml` / `XmlReader` ベースのストリーミングパーサー構成、`<ksj:Dataset>` ルート → `<gml:Curve>` リング → `<gml:Surface>` ポリゴン → `<ksj:ExpectedFloodArea>` 等のフィーチャ要素の解析手順、`xlink:href` による Surface ↔ Curve の ID 参照解決、`<gml:posList>` 緯度経度順読取、`ksj:waterDepth` / `ksj:creatingBody` 等の属性から `difficultyType` への変換規則、対応 KSJ プロダクト一覧（A31「浸水想定区域」を起点、他プロダクトは需要に応じ追加）、不正 GML / 未対応要素時の例外戦略、ファイル / Stream / 文字列入力 API の共通化、要件 REQ-RST-020〜029 の GML 用語への書き換え結果）
+（本記述化はステップ 10 実装時に行う。記述予定項目: `System.Xml.XmlReader` ベースのストリーミングパーサー構成、`<ksj:Dataset>` ルート → `<gml:Curve>` リング → `<gml:Surface>` ポリゴン → 任意フィーチャ要素 の解析手順、`xlink:href` による Surface ↔ Curve / フィーチャ ↔ Surface の ID 参照解決、フィーチャ要素名非依存の解析方針、不正 GML / 未対応要素（`MultiSurface` 等）時の例外戦略、ファイル / Stream / 文字列入力 API の共通化、6 メソッド API の実装、巨大ファイル（1.6GB）に対するストリーミング読込性能）
 
 ---
 

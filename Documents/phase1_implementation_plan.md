@@ -616,27 +616,40 @@ DotRoute/
 
 ---
 
-### ステップ 10: GeoJSON 入力対応（`properties.difficulty` キー対応）
+### ステップ 10: GML 入力対応（KSJ アプリケーションスキーマ、形状のみ抽出）
 
-**目的**: GeoJSON で動的制約（進入不可・難所）を一括登録できるようにする。
+**目的**: 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2 で動的制約（進入不可・難所）を一括登録できるようにする。Phase 1 動作確認は A31「浸水想定区域」(`<ksj:ExpectedFloodArea>`) で行うが、パーサーはフィーチャ要素名にハードコード依存せず、任意の KSJ プロダクトを受け入れる（拡張性、REQ-RST-020）。難所タイプとタグは API 引数でユーザーが指定する（REQ-RST-026/027）。
 
 **作業**:
-- `GeoJsonParser`:
-  - Polygon / MultiPolygon / Feature / FeatureCollection 対応（REQ-RST-020〜023）
-  - Hole 配列の解釈（REQ-RST-022）
-  - WGS84 経度・緯度順（REQ-RST-028）
-- `RestrictedAreaService.AddFromGeoJson(string)` / `AddFromGeoJsonFile(string)` / `AddFromGeoJsonStream(Stream)`（REQ-RST-024〜025）
-- `properties.difficulty`（`string`）読取 → 該当する `DifficultyArea` 登録（REQ-RST-026）
-- `properties.difficulty` が無い／`null` の場合は `BlockArea` 登録（REQ-RST-026）
-- `properties.tag` 読取（REQ-RST-027）
-- 各 Feature ごとに `RestrictedAreaId` 配列を返却（REQ-RST-023）
+- `GmlParser`（`System.Xml.XmlReader` ベース、internal、`OsmDotRoute.Gml` 名前空間）:
+  - `<ksj:Dataset>` 直下要素を順次走査
+  - `<gml:Curve gml:id="...">` の `<gml:posList>` を「緯度 経度」順で読取、`GeoCoordinate` 列に変換（REQ-RST-028）
+  - `<gml:Surface gml:id="...">` の `<gml:exterior>` / `<gml:interior>` から外周・Hole を構築、`<gml:curveMember xlink:href="#cXXX">` で Curve を参照解決（REQ-RST-022）
+  - 任意のフィーチャ要素（要素名にハードコード依存しない）の `<*:bounds xlink:href="#aXXX">` から Surface を解決し `GeoPolygon` を構築（REQ-RST-020/021）
+  - `<gml:MultiSurface>` は Phase 1 非対応、検出時は `NotSupportedException` を投げる（REQ-RST-023、Phase 2 で対応予定。A31 サンプル `A31-12_24.xml` 1.6GB で出現 0 件を確認、2026-05-19）
+  - フィーチャ属性子要素（`<ksj:waterDepth>` 等）は読み飛ばす（Phase 1 では保持しない、REQ-RST-026）
+- `RestrictedAreaService` に 6 メソッド追加（REQ-RST-024/025）:
+  - `AddBlockAreaFromGml(string gml, string? tag = null)`
+  - `AddBlockAreaFromGmlFile(string filePath, string? tag = null)`
+  - `AddBlockAreaFromGmlStream(Stream stream, string? tag = null)`
+  - `AddDifficultyAreaFromGml(string gml, string difficultyType, string? tag = null)`
+  - `AddDifficultyAreaFromGmlFile(string filePath, string difficultyType, string? tag = null)`
+  - `AddDifficultyAreaFromGmlStream(Stream stream, string difficultyType, string? tag = null)`
+- すべてのフィーチャに同一 `tag` を適用、`AddDifficultyArea*` は全フィーチャに同一 `difficultyType` を適用（REQ-RST-026/027）
+- 各フィーチャごとに `RestrictedAreaId` を配列で返却（REQ-RST-021）
+- ステップ 8 で `NotImplementedException` で残した `AddFromGeoJson(string)` / `AddFromGeoJsonFile(string)` / `AddFromGeoJsonStream(Stream)` の 3 メソッドを削除（v0.x、破壊変更可）
 
 **完了判定**:
-- 単体テスト: 仕様サンプル GeoJSON（Polygon / MultiPolygon / Hole / FeatureCollection）を正しく読込
-- 単体テスト: `properties.difficulty: "flooding"` → DifficultyArea 登録、`properties` なし → BlockArea 登録
-- 単体テスト: ユーザー定義難所タイプ（`properties.difficulty: "snow_heavy"`）も登録可能
-- 単体テスト: 不正 GeoJSON で適切な例外
-- 設計書 §12「GeoJSON 入力対応」を更新
+- 単体テスト: 最小 KSJ GML（1 Curve + 1 Surface + 1 フィーチャ）を `AddBlockAreaFromGml*` で正しく読込
+- 単体テスト: Hole 込み Surface を `AddDifficultyAreaFromGml*` で読込、難所タイプが付与される
+- 単体テスト: 複数フィーチャ（≥ 3）を 1 ファイル内で一括登録、戻り値配列の長さを検証（REQ-RST-021）
+- 単体テスト: `tag` 引数で全フィーチャに同一タグ付与、`RemoveByTag` で一括削除可能（REQ-RST-027 連携）
+- 単体テスト: `<gml:MultiSurface>` 検出時に `NotSupportedException`（REQ-RST-023）
+- 単体テスト: 不正 GML（XML パースエラー / 必須要素欠落 / xlink 参照解決失敗）で適切な例外
+- 単体テスト: フィーチャ要素名に依存しないこと（架空の要素名 `<test:DummyArea>` も同様に読める、拡張性検証）
+- 単体テスト: ユーザー定義難所タイプ（例: `"snow_heavy"`）も `difficultyType` 引数で指定可能
+- 統合テスト: 実データ `D:/ハザードデータ/A31-12_24_GML/A31-12_24.xml`（1.6GB）の先頭部分を `AddDifficultyAreaFromGmlStream(..., DifficultyTypes.Flooding)` で読込、フィーチャ数 ≥ 1 とエラーなしを検証（フル読込は性能ベンチで別途確認、ステップ 15）
+- 設計書 §12「GML 入力対応」を本記述化
 
 ---
 

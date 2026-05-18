@@ -162,18 +162,18 @@
 - [ ] [P1] [Phase1] **REQ-RST-031**: いずれかの難所判定で `canPass: false`（通行不可）が返された場合、他の判定結果に関わらず通行不可とすること（短絡評価）。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-RST-032**: 進入不可エリア（REQ-RST-001〜003）と難所エリア（REQ-RST-004〜006）の重複時も、進入不可が優先されること。(Ver. -)
 
-#### 5.2.f GeoJSON 入力対応
+#### 5.2.f GML 入力対応（国土数値情報 KSJ アプリケーションスキーマ）
 
-- [ ] [P1] [Phase1] **REQ-RST-020**: GeoJSON `Polygon` Geometry オブジェクトを入力として進入不可エリア／難所エリアを登録できること（RFC 7946 準拠）。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-RST-021**: GeoJSON `MultiPolygon` Geometry オブジェクトに対応すること。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-RST-022**: GeoJSON `Polygon` の Hole（2番目以降の内側境界配列）に対応し、外側境界内かつ Hole 外の領域のみを制約対象とすること。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-RST-023**: GeoJSON `FeatureCollection` から複数の制約を一括登録できること。各 Feature ごとに登録 ID を返すこと。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-RST-024**: GeoJSON ファイル（`.geojson` / `.json`）を直接読み込んで制約を一括登録できること。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-RST-025**: GeoJSON 文字列（`string`）からの制約一括登録 API を提供すること。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-RST-026**: GeoJSON Feature の `properties` から難所タイプを読み取れること（規定キー `difficulty`、`string` 値）。`difficulty` キーが存在しない／`null` の場合は進入不可エリアとして扱うこと。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-RST-027**: GeoJSON Feature の `properties` の規定キー `tag` からタグ文字列を読み取れること（REQ-RST-010 のタグ機構との連携）。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-RST-028**: GeoJSON の座標系を WGS84（経度、緯度の順）として扱うこと（RFC 7946 準拠）。他の座標系は本ライブラリでは扱わず、利用者側で事前変換すること。(Ver. -)
-- [ ] [P3] [Phase4+] **REQ-RST-029**: TopoJSON 等の他形式対応は要望が出た時点で個別判断する。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-020**: 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2（`<ksj:Dataset>` ルート）を入力として進入不可エリア／難所エリアを登録できること。Phase 1 動作確認は A31「浸水想定区域」(`<ksj:ExpectedFloodArea>`) で実施するが、パーサーはフィーチャ要素名にハードコード依存せず、任意の KSJ プロダクトを受け入れること。(Ver. 1.5)
+- [ ] [P1] [Phase1] **REQ-RST-021**: 1 つの GML ファイル内の複数フィーチャを一括登録できること。各フィーチャごとに登録 ID を返すこと。(Ver. 1.5)
+- [ ] [P1] [Phase1] **REQ-RST-022**: `<gml:Surface>` の `<gml:exterior>`（外周）と `<gml:interior>`（Hole）に対応し、外周内かつ Hole 外の領域のみを制約対象とすること。(Ver. 1.5)
+- [ ] [P3] [Phase2+] **REQ-RST-023**: `<gml:MultiSurface>` で複数 Surface を 1 フィーチャに紐付ける構造への対応は Phase 2 以降に延期する（A31「浸水想定区域」サンプル `A31-12_24.xml`（1.6 GB）で `MultiSurface` 出現 0 件を確認、2026-05-19）。Phase 1 では検出時に `NotSupportedException` を投げる。(Ver. 1.5)
+- [ ] [P2] [Phase1] **REQ-RST-024**: GML ファイル（`.xml` / `.gml`）を直接読み込んで制約を一括登録できること。(Ver. 1.5)
+- [ ] [P2] [Phase1] **REQ-RST-025**: GML 文字列（`string`）／`System.IO.Stream` からの制約一括登録 API を提供すること。(Ver. 1.5)
+- [ ] [P1] [Phase1] **REQ-RST-026**: GML 入力 API は進入不可エリア用と難所エリア用の 2 系統を提供すること。難所エリア用 API は引数で難所タイプ文字列を受け取り、ファイル内全フィーチャに同一の難所タイプを適用すること。フィーチャ要素名や属性値から難所タイプを自動判定する仕組みは設けない（利用者責任、複数の KSJ プロダクトを共通基盤で扱うため）。GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保持せず読み飛ばす。(Ver. 1.5)
+- [ ] [P2] [Phase1] **REQ-RST-027**: GML 入力 API は `tag` 引数で全フィーチャに同一タグ文字列を付与できること（REQ-RST-010 のタグ機構と連携、バッチ識別子用途）。フィーチャ別タグはサポートしない（KSJ 標準にタグ相当属性がないため）。(Ver. 1.5)
+- [ ] [P1] [Phase1] **REQ-RST-028**: GML の座標系を「緯度 経度」順（JGD2000、KSJ 規定）として扱うこと。他の座標系（WGS84 経度緯度順等）は本ライブラリでは扱わず、利用者側で事前変換すること。(Ver. 1.5)
+- [ ] [P3] [Phase4+] **REQ-RST-029**: 汎用 GML 3.2（KSJ 拡張なし）／GeoJSON ／ Shapefile ／ TopoJSON 等の他形式対応は要望が出た時点で個別判断する。(Ver. 1.5)
 
 ### 5.3 車両プロファイル (REQ-PRF)
 
@@ -356,11 +356,14 @@ namespace OsmDotRoute
         public RestrictedAreaId AddDifficultyArea(MeshCode meshCode, string difficultyType, string? tag = null);
         public RestrictedAreaId AddDifficultyArea(IEnumerable<MeshCode> meshCodes, string difficultyType, string? tag = null);
 
-        // GeoJSON 入力（Polygon / MultiPolygon / FeatureCollection、RFC 7946 準拠）
-        // difficulty は properties.difficulty (string) から読み取り、無ければ進入不可エリアとして扱う
-        public RestrictedAreaId[] AddFromGeoJson(string geoJson, string? defaultTag = null);
-        public RestrictedAreaId[] AddFromGeoJsonFile(string filePath, string? defaultTag = null);
-        public RestrictedAreaId[] AddFromGeoJsonStream(Stream stream, string? defaultTag = null);
+        // GML 入力（国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2）
+        // 形状（外周＋Hole）のみ抽出。難所タイプは引数で全フィーチャに適用、フィーチャ属性は保持しない
+        public RestrictedAreaId[] AddBlockAreaFromGml(string gml, string? tag = null);
+        public RestrictedAreaId[] AddBlockAreaFromGmlFile(string filePath, string? tag = null);
+        public RestrictedAreaId[] AddBlockAreaFromGmlStream(Stream stream, string? tag = null);
+        public RestrictedAreaId[] AddDifficultyAreaFromGml(string gml, string difficultyType, string? tag = null);
+        public RestrictedAreaId[] AddDifficultyAreaFromGmlFile(string filePath, string difficultyType, string? tag = null);
+        public RestrictedAreaId[] AddDifficultyAreaFromGmlStream(Stream stream, string difficultyType, string? tag = null);
 
         public void Remove(RestrictedAreaId id);
         public void RemoveByTag(string tag);
@@ -444,14 +447,16 @@ namespace OsmDotRoute
 |---|---|---|
 | `GeoPolygon` メモリオブジェクト | 緯度経度頂点列 | REQ-RST-001, REQ-RST-004 |
 | `MeshCode` メモリオブジェクト | JIS X0410 第3次〜1/4 細分（1km〜250m、Phase 1 範囲） | REQ-RST-002〜006, REQ-RST-016〜018 |
-| GeoJSON 文字列 / ファイル / Stream | RFC 7946 準拠の Polygon / MultiPolygon / FeatureCollection | REQ-RST-020〜028 |
+| GML 文字列 / ファイル / Stream | 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2（Phase 1 動作確認: A31「浸水想定区域」、形状のみ抽出、難所タイプは API 引数で指定） | REQ-RST-020〜028 |
 
-#### GeoJSON Properties 規定キー
+#### GML 入力 API の難所タイプ・タグ指定方針
 
-| キー | 型 | 用途 | 関連要件 |
-|---|---|---|---|
-| `difficulty` | `string` | 難所タイプ。組込み 8 種または任意ユーザー定義キー。省略時は進入不可エリアとして扱う | REQ-RST-026 |
-| `tag` | `string` | 制約タグ（タグ単位での一括削除に使用） | REQ-RST-027 |
+GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保持しない。難所タイプとタグはともに利用者が API 引数で指定する:
+
+| 指定対象 | 指定方法 | 関連要件 |
+|---|---|---|
+| 難所タイプ | `AddDifficultyAreaFromGml*` の `difficultyType` 引数（全フィーチャに同一適用） | REQ-RST-026 |
+| タグ | `AddBlockAreaFromGml*` / `AddDifficultyAreaFromGml*` の `tag` 引数（全フィーチャに同一適用） | REQ-RST-027 |
 
 ### 8.1.c プロファイル定義ファイル（JSON）
 
@@ -584,18 +589,20 @@ namespace OsmDotRoute
 | **Edge / Vertex** | グラフの辺と頂点。OSM では辺=道路セグメント、頂点=交差点 |
 | **Shape** | エッジの中間座標列。曲がった道路を表現するための補助点 |
 | **RouterPoint** | 任意座標を道路ネットワーク上にスナップした結果点 |
-| **ポリゴン** | 緯度経度頂点列で定義される多角形（GeoJSON Polygon 相当） |
+| **ポリゴン** | 緯度経度頂点列で定義される多角形。外周＋Hole（穴）を持ちうる |
 | **進入不可エリア (BlockArea)** | 経路探索でエッジが通過不可と扱われるポリゴン領域 |
 | **難所エリア (DifficultyArea)** | 「客観的事実（道路状況種別）」を登録する制約。速度低下係数・通行可否はプロファイル側で規定する |
 | **難所タイプ (Difficulty Type)** | 道路状況の客観的種別を示す文字列キー。組込み 8 種（flooding/liquefaction/landslide/construction/obstacle/congestion/snow/ice）と任意のユーザー定義キー |
 | **動的制約** | ランタイム中に追加・削除・変更可能な通行制約 |
 | **AABB** | Axis-Aligned Bounding Box。ポリゴン外接矩形。事前フィルタに使用 |
 | **CH** | Contraction Hierarchies。経路計算高速化手法。Phase 4 以降で検討 |
-| **GeoJSON** | 地理データを JSON で記述する標準フォーマット（RFC 7946）。座標系は WGS84 経度・緯度の順 |
-| **Polygon (GeoJSON)** | 1 つ以上の閉じた線リング配列で表現される面。第1配列が外側境界、第2配列以降が Hole（内側の穴） |
-| **MultiPolygon (GeoJSON)** | 複数の Polygon を持つ Geometry。離散した複数領域を 1 つの Feature として表現 |
-| **Hole (GeoJSON)** | Polygon の内側に切り抜かれる穴領域。外側境界内かつ Hole 外のみが有効領域 |
-| **FeatureCollection (GeoJSON)** | 複数の Feature（Geometry + Properties）をまとめた最上位オブジェクト |
+| **GeoJSON** | 地理データを JSON で記述する標準フォーマット（RFC 7946）。座標系は WGS84 経度・緯度の順。本ライブラリでは**出力フォーマット**として使用（経路 LineString、道路ネットワーク FeatureCollection）。動的制約**入力**は GML（KSJ）を使う |
+| **GML 3.2** | Geography Markup Language。OGC 標準の XML ベース地理データ記述形式（ISO 19136）。本ライブラリでは動的制約**入力**フォーマットとして KSJ プロファイルを採用 |
+| **KSJ (国土数値情報)** | 国土交通省国土政策局が提供する地理情報データセット群。本ライブラリの動的制約入力は KSJ アプリケーションスキーマ準拠の GML を採用（A31「浸水想定区域」等） |
+| **`<ksj:Dataset>`** | KSJ GML ファイルのルート要素。配下に `<gml:Curve>`、`<gml:Surface>`、フィーチャ要素（`<ksj:ExpectedFloodArea>` 等）が並ぶ |
+| **`<gml:Surface>`** | GML 3.2 でポリゴン領域を表す要素。`<gml:exterior>`（外周）と `<gml:interior>`（Hole）を持つ |
+| **`<gml:Curve>`** | GML 3.2 で曲線（リング）を表す要素。`<gml:posList>` に座標列を「緯度 経度」順で含む（KSJ 規定） |
+| **`xlink:href` 参照** | GML で要素間の ID 参照に使う仕組み（例: `<gml:curveMember xlink:href="#c00001"/>`）。Surface ↔ Curve、フィーチャ ↔ Surface の関連付けに使用 |
 | **メッシュ** | 地理空間を格子状に区切った領域 |
 | **JIS X0410** | 「地域メッシュ統計のための地域区分」を規定した JIS 規格。第1次（80km）/ 第2次（10km）/ 第3次（1km）および細分メッシュを定義 |
 | **地域メッシュコード** | JIS X0410 で各メッシュに割り当てられた数値コード。Phase 1 では第3次（1km、8桁）/ 1/2 細分（500m、9桁）/ 1/4 細分（250m、10桁）の 3 階層に対応。1/10 細分（100m、11桁）は仕様未確定のため Phase 2 以降に延期 |
@@ -614,6 +621,7 @@ namespace OsmDotRoute
 | 1.2 (確定) | 2026-05-18 | プロファイル外部 JSON ファイル化（REQ-PRF-007〜010、リビルド不要要件）、難所エリア導入（REQ-PRF-011〜014、REQ-RST-004〜007 を移動困難エリア → 難所エリアに変更、組込み 8 タイプ、ユーザー定義可、重複時は積・短絡）、API 変更（`AddSlowArea` 削除、`AddDifficultyArea` 追加、`VehicleProfile` enum → class）、GeoJSON プロパティ `speedFactor` → `difficulty` 変更（REQ-RST-026）、難所重複ルール追加（REQ-RST-030〜032）、§7.1 API シグネチャ更新、§8.1.c プロファイル定義ファイル節と §8.1.d 難所タイプ規定値表追加、用語集更新 | Claude (Opus 4.7) |
 | 1.3 (確定) | 2026-05-18 | §7.1 API: `RouterDb.LoadFromFile` を削除し、`OsmDotRoute.Itinero.ItineroRouterDbLoader.LoadFromFile` / `FromItineroRouterDb` に移動。アセンブリ依存方向（コア ← アダプター）維持のため。Phase 1 ステップ 3 実装で確定 | Claude (Opus 4.7) |
 | 1.4 (確定) | 2026-05-18 | REQ-RST-016 のメッシュ階層を 4 → 3 に縮小（1/10 細分 = 100m / 11 桁 を Phase 2 以降へ延期）。11 桁エンコーディング仕様が JIS X0410 cascade と整合しないため、親プロジェクト「災害廃棄物処理シミュレーション」と同範囲（8〜10 桁）に揃える。MeshLevel.TenthMesh を enum から削除。Phase 1 ステップ 7 実装で確定 | Claude (Opus 4.7) |
+| 1.5 (確定) | 2026-05-19 | 動的制約入力フォーマットを GeoJSON → 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2 に変更。REQ-RST-020〜029 を全面書き換え、§5.2.f 見出しを「GML 入力対応」に改題、§7.1 API シグネチャを `AddFromGeoJson*` (3 メソッド) → `AddBlockAreaFromGml*`/`AddDifficultyAreaFromGml*` (6 メソッド) に置換、§8.1.b 入力フォーマット表更新（GeoJSON Properties 規定キー表を削除し、GML 入力 API の難所タイプ・タグ指定方針表に置換）。難所タイプはユーザー API 引数指定（フィーチャ要素名からの自動判定はしない、複数 KSJ プロダクト共通基盤のため）、ハザード属性は保持せず形状のみ抽出。`<gml:MultiSurface>` 対応は Phase 2 へ延期（A31 サンプル 1.6GB で出現 0 件を確認）。汎用 GML / GeoJSON / Shapefile / TopoJSON 等の他形式対応は REQ-RST-029 で「要望が出た時点で個別判断」に統合。Phase 1 ステップ 10 実装で確定予定 | Claude (Opus 4.7) |
 
 ---
 
