@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>OsmDotRoute.Itinero</RootNamespace>
+    <AssemblyName>OsmDotRoute.Itinero</AssemblyName>
+    <Description>Itinero 1.5.1 adapter for OsmDotRoute (Phase 1 only; removed in Phase 2).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OsmDotRoute\OsmDotRoute.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Itinero" Version="1.5.1" />
+    <PackageReference Include="Itinero.IO.Osm" Version="1.5.1" />
+  </ItemGroup>
+
+</Project>
