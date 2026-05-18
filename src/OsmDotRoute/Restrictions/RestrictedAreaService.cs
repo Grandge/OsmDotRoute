@@ -1,4 +1,5 @@
 using OsmDotRoute.Geometry;
+using OsmDotRoute.Gml;
 using OsmDotRoute.Mesh;
 using OsmDotRoute.Profiles;
 
@@ -86,19 +87,105 @@ public sealed class RestrictedAreaService
         return id;
     }
 
-    // --- GeoJSON 入力 ---
+    // --- GML 入力（国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2、REQ-RST-020〜028, REQ-RST-040） ---
 
-    /// <summary>GeoJSON 文字列から複数制約を一括登録する（REQ-RST-023〜025）。</summary>
-    public RestrictedAreaId[] AddFromGeoJson(string geoJson, string? defaultTag = null)
-        => throw new NotImplementedException("Step 10 で実装予定");
+    /// <summary>
+    /// GML 文字列から進入不可エリアを一括登録する（REQ-RST-020/025）。
+    /// <paramref name="mapBounds"/> 指定時は外周頂点が 1 つでも範囲内にあるフィーチャのみ採用（REQ-RST-040）。
+    /// 全採用フィーチャに同一の <paramref name="tag"/> を付与する（REQ-RST-027）。
+    /// </summary>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
+    public RestrictedAreaId[] AddBlockAreaFromGml(string gml, MapBounds? mapBounds = null, string? tag = null)
+    {
+        ArgumentNullException.ThrowIfNull(gml);
+        var polygons = GmlParser.ParseString(gml);
+        return RegisterBlockPolygons(polygons, mapBounds, tag);
+    }
 
-    /// <summary>GeoJSON ファイルから複数制約を一括登録する（REQ-RST-024）。</summary>
-    public RestrictedAreaId[] AddFromGeoJsonFile(string filePath, string? defaultTag = null)
-        => throw new NotImplementedException("Step 10 で実装予定");
+    /// <summary>GML ファイルから進入不可エリアを一括登録する（REQ-RST-024/040）。</summary>
+    public RestrictedAreaId[] AddBlockAreaFromGmlFile(string filePath, MapBounds? mapBounds = null, string? tag = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        using var stream = File.OpenRead(filePath);
+        return AddBlockAreaFromGmlStream(stream, mapBounds, tag);
+    }
 
-    /// <summary>GeoJSON Stream から複数制約を一括登録する（REQ-RST-025）。</summary>
-    public RestrictedAreaId[] AddFromGeoJsonStream(Stream stream, string? defaultTag = null)
-        => throw new NotImplementedException("Step 10 で実装予定");
+    /// <summary>GML Stream から進入不可エリアを一括登録する（REQ-RST-025/040）。</summary>
+    public RestrictedAreaId[] AddBlockAreaFromGmlStream(Stream stream, MapBounds? mapBounds = null, string? tag = null)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var polygons = GmlParser.ParseStream(stream);
+        return RegisterBlockPolygons(polygons, mapBounds, tag);
+    }
+
+    /// <summary>
+    /// GML 文字列から難所エリアを一括登録する（REQ-RST-020/025/026）。
+    /// <paramref name="mapBounds"/> 指定時は外周頂点が 1 つでも範囲内にあるフィーチャのみ採用（REQ-RST-040）。
+    /// 全採用フィーチャに同一の <paramref name="difficultyType"/> と <paramref name="tag"/> を適用する。
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
+    public RestrictedAreaId[] AddDifficultyAreaFromGml(string gml, string difficultyType, MapBounds? mapBounds = null, string? tag = null)
+    {
+        ArgumentNullException.ThrowIfNull(gml);
+        var polygons = GmlParser.ParseString(gml);
+        return RegisterDifficultyPolygons(polygons, difficultyType, mapBounds, tag);
+    }
+
+    /// <summary>GML ファイルから難所エリアを一括登録する（REQ-RST-024/026/040）。</summary>
+    public RestrictedAreaId[] AddDifficultyAreaFromGmlFile(string filePath, string difficultyType, MapBounds? mapBounds = null, string? tag = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        using var stream = File.OpenRead(filePath);
+        return AddDifficultyAreaFromGmlStream(stream, difficultyType, mapBounds, tag);
+    }
+
+    /// <summary>GML Stream から難所エリアを一括登録する（REQ-RST-025/026/040）。</summary>
+    public RestrictedAreaId[] AddDifficultyAreaFromGmlStream(Stream stream, string difficultyType, MapBounds? mapBounds = null, string? tag = null)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        var polygons = GmlParser.ParseStream(stream);
+        return RegisterDifficultyPolygons(polygons, difficultyType, mapBounds, tag);
+    }
+
+    private RestrictedAreaId[] RegisterBlockPolygons(IReadOnlyList<GeoPolygon> polygons, MapBounds? mapBounds, string? tag)
+    {
+        var ids = new List<RestrictedAreaId>(polygons.Count);
+        foreach (var polygon in polygons)
+        {
+            if (!PassesMapBoundsFilter(polygon, mapBounds)) continue;
+            ids.Add(AddBlockArea(polygon, tag));
+        }
+        return ids.ToArray();
+    }
+
+    private RestrictedAreaId[] RegisterDifficultyPolygons(IReadOnlyList<GeoPolygon> polygons, string difficultyType, MapBounds? mapBounds, string? tag)
+    {
+        var ids = new List<RestrictedAreaId>(polygons.Count);
+        foreach (var polygon in polygons)
+        {
+            if (!PassesMapBoundsFilter(polygon, mapBounds)) continue;
+            // 難所タイプ検証は DifficultyArea コンストラクタに委譲（REQ-RST-007）
+            ids.Add(AddDifficultyArea(polygon, difficultyType, tag));
+        }
+        return ids.ToArray();
+    }
+
+    /// <summary>
+    /// マップ範囲フィルタ（REQ-RST-040）。<paramref name="mapBounds"/> 未指定なら常に true。
+    /// 指定時は外周頂点が 1 つでも範囲内（境界線上を含む）にあれば true。Hole は判定に使わない。
+    /// </summary>
+    private static bool PassesMapBoundsFilter(GeoPolygon polygon, MapBounds? mapBounds)
+    {
+        if (mapBounds is not { } bounds) return true;
+        foreach (var coord in polygon.OuterBoundary)
+        {
+            if (bounds.Contains(coord)) return true;
+        }
+        return false;
+    }
 
     // --- 削除 ---
 

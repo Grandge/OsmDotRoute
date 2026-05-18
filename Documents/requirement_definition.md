@@ -174,6 +174,7 @@
 - [ ] [P2] [Phase1] **REQ-RST-027**: GML 入力 API は `tag` 引数で全フィーチャに同一タグ文字列を付与できること（REQ-RST-010 のタグ機構と連携、バッチ識別子用途）。フィーチャ別タグはサポートしない（KSJ 標準にタグ相当属性がないため）。(Ver. 1.5)
 - [ ] [P1] [Phase1] **REQ-RST-028**: GML の座標系を「緯度 経度」順（JGD2000、KSJ 規定）として扱うこと。他の座標系（WGS84 経度緯度順等）は本ライブラリでは扱わず、利用者側で事前変換すること。(Ver. 1.5)
 - [ ] [P3] [Phase4+] **REQ-RST-029**: 汎用 GML 3.2（KSJ 拡張なし）／GeoJSON ／ Shapefile ／ TopoJSON 等の他形式対応は要望が出た時点で個別判断する。(Ver. 1.5)
+- [ ] [P1] [Phase1] **REQ-RST-040**: GML 入力 API はマップ範囲（緯度経度 AABB、`MapBounds` 値型）による フィーチャフィルタを optional 引数として受け付けること。指定時は、フィーチャの外周頂点が 1 つでもマップ範囲内（境界線上を含む）にあるフィーチャのみを採用し、0 個のものは登録せずスキップする（Hole は判定に使わない、シミュレーションの道路ネットワーク範囲外のフィーチャを除外する用途）。マップ範囲未指定 (`null`) 時は全フィーチャを採用する（互換動作）。(Ver. 1.6)
 
 ### 5.3 車両プロファイル (REQ-PRF)
 
@@ -358,12 +359,13 @@ namespace OsmDotRoute
 
         // GML 入力（国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2）
         // 形状（外周＋Hole）のみ抽出。難所タイプは引数で全フィーチャに適用、フィーチャ属性は保持しない
-        public RestrictedAreaId[] AddBlockAreaFromGml(string gml, string? tag = null);
-        public RestrictedAreaId[] AddBlockAreaFromGmlFile(string filePath, string? tag = null);
-        public RestrictedAreaId[] AddBlockAreaFromGmlStream(Stream stream, string? tag = null);
-        public RestrictedAreaId[] AddDifficultyAreaFromGml(string gml, string difficultyType, string? tag = null);
-        public RestrictedAreaId[] AddDifficultyAreaFromGmlFile(string filePath, string difficultyType, string? tag = null);
-        public RestrictedAreaId[] AddDifficultyAreaFromGmlStream(Stream stream, string difficultyType, string? tag = null);
+        // mapBounds 指定時は外周頂点が 1 つでも範囲内にあるフィーチャのみ採用（REQ-RST-040）
+        public RestrictedAreaId[] AddBlockAreaFromGml(string gml, MapBounds? mapBounds = null, string? tag = null);
+        public RestrictedAreaId[] AddBlockAreaFromGmlFile(string filePath, MapBounds? mapBounds = null, string? tag = null);
+        public RestrictedAreaId[] AddBlockAreaFromGmlStream(Stream stream, MapBounds? mapBounds = null, string? tag = null);
+        public RestrictedAreaId[] AddDifficultyAreaFromGml(string gml, string difficultyType, MapBounds? mapBounds = null, string? tag = null);
+        public RestrictedAreaId[] AddDifficultyAreaFromGmlFile(string filePath, string difficultyType, MapBounds? mapBounds = null, string? tag = null);
+        public RestrictedAreaId[] AddDifficultyAreaFromGmlStream(Stream stream, string difficultyType, MapBounds? mapBounds = null, string? tag = null);
 
         public void Remove(RestrictedAreaId id);
         public void RemoveByTag(string tag);
@@ -388,6 +390,7 @@ namespace OsmDotRoute
     public sealed class GeoPolygon { /* 緯度経度頂点列 */ }
     public readonly record struct MeshCode(long Value) { /* 8〜10 桁の数値。桁数で階層を自動判定（Phase 1 範囲） */ }
     public enum MeshLevel { Mesh3rd /* 1km */, HalfMesh /* 500m */, QuarterMesh /* 250m */ }
+    public readonly record struct MapBounds(GeoCoordinate SouthWest, GeoCoordinate NorthEast) { /* GML 入力フィルタ等のマップ範囲、境界含む Contains 提供 */ }
     public sealed class Route { /* TotalDistanceM, TotalDurationSec, Shape: IReadOnlyList<GeoCoordinate> */ }
 }
 ```
@@ -622,6 +625,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 | 1.3 (確定) | 2026-05-18 | §7.1 API: `RouterDb.LoadFromFile` を削除し、`OsmDotRoute.Itinero.ItineroRouterDbLoader.LoadFromFile` / `FromItineroRouterDb` に移動。アセンブリ依存方向（コア ← アダプター）維持のため。Phase 1 ステップ 3 実装で確定 | Claude (Opus 4.7) |
 | 1.4 (確定) | 2026-05-18 | REQ-RST-016 のメッシュ階層を 4 → 3 に縮小（1/10 細分 = 100m / 11 桁 を Phase 2 以降へ延期）。11 桁エンコーディング仕様が JIS X0410 cascade と整合しないため、親プロジェクト「災害廃棄物処理シミュレーション」と同範囲（8〜10 桁）に揃える。MeshLevel.TenthMesh を enum から削除。Phase 1 ステップ 7 実装で確定 | Claude (Opus 4.7) |
 | 1.5 (確定) | 2026-05-19 | 動的制約入力フォーマットを GeoJSON → 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2 に変更。REQ-RST-020〜029 を全面書き換え、§5.2.f 見出しを「GML 入力対応」に改題、§7.1 API シグネチャを `AddFromGeoJson*` (3 メソッド) → `AddBlockAreaFromGml*`/`AddDifficultyAreaFromGml*` (6 メソッド) に置換、§8.1.b 入力フォーマット表更新（GeoJSON Properties 規定キー表を削除し、GML 入力 API の難所タイプ・タグ指定方針表に置換）。難所タイプはユーザー API 引数指定（フィーチャ要素名からの自動判定はしない、複数 KSJ プロダクト共通基盤のため）、ハザード属性は保持せず形状のみ抽出。`<gml:MultiSurface>` 対応は Phase 2 へ延期（A31 サンプル 1.6GB で出現 0 件を確認）。汎用 GML / GeoJSON / Shapefile / TopoJSON 等の他形式対応は REQ-RST-029 で「要望が出た時点で個別判断」に統合。Phase 1 ステップ 10 実装で確定予定 | Claude (Opus 4.7) |
+| 1.6 (確定) | 2026-05-19 | GML 入力 API にマップ範囲フィルタを追加（REQ-RST-040、新規 P1）。`MapBounds` 公開値型を新設し、GML 入力 6 メソッドに optional `MapBounds? mapBounds = null` 引数（`difficultyType` の後・`tag` の前）を挿入。指定時はフィーチャ外周頂点が 1 つでも範囲内（境界線上含む）にあるフィーチャのみ採用、0 個はスキップ。未指定 (`null`) 時は全フィーチャ採用（互換）。シミュレーションのマップ範囲外フィーチャを自動除外するための機能で、利用者は `RouterDb.GetStatistics()` で得た範囲をそのまま渡せる。Phase 1 ステップ 10 実装で確定 | Claude (Opus 4.7) |
 
 ---
 

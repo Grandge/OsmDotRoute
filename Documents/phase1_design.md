@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.13（進行中）
+**バージョン**: 0.15（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-19
-**ステータス**: 進行中（Phase 1 ステップ 9 完了、制約対応 Dijkstra 統合実装済、125/125 テスト成功）
+**ステータス**: 進行中（Phase 1 ステップ 10 完了 + マップ範囲フィルタ (REQ-RST-040) 追加、A31 実データ 1.6GB 9 秒読込、147/147 テスト成功）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -52,7 +52,7 @@
 | 9. メッシュコード処理 | ステップ 7 | 記述済（2026-05-18） |
 | 10. 制約管理基盤 | ステップ 8 | 記述済（2026-05-19） |
 | 11. 制約対応 Dijkstra 統合 | ステップ 9 | 記述済（2026-05-19） |
-| 12. GML 入力対応 | ステップ 10 | 未記述 |
+| 12. GML 入力対応 | ステップ 10 | 記述済（2026-05-19） |
 | 13. 経路 GeoJSON 出力 | ステップ 11 | 未記述 |
 | 14. DI 拡張とドキュメント | ステップ 12 | 未記述 |
 | 15. 検証用地図アプリ MapVerifier | ステップ 13-14 | 未記述 |
@@ -1723,21 +1723,174 @@ RestrictedAreaService
 ## 12. GML 入力対応（KSJ アプリケーションスキーマ、形状のみ抽出）
 
 **対応ステップ**: ステップ 10
-**ステータス**: 未記述（GeoJSON 対応から GML 対応へ方針変更、2026-05-19 ユーザー合意）
+**対応要件**: REQ-RST-020〜028, REQ-RST-040
+**実装日**: 2026-05-19
+**実装バージョン**: 0.15（進行中）
+**主要ファイル**:
 
-### 12.0 方針サマリ（要件 v1.5 で確定）
+- `src/OsmDotRoute/Gml/GmlParser.cs`（internal static、`System.Xml.XmlReader` ベース）
+- `src/OsmDotRoute/Gml/InvalidGmlException.cs`（公開例外型）
+- `src/OsmDotRoute/MapBounds.cs`（公開値型、REQ-RST-040 用）
+- `src/OsmDotRoute/Restrictions/RestrictedAreaService.cs`（6 メソッド追加 + GeoJSON 系 3 メソッド削除、各 GML メソッドに `MapBounds?` 引数）
+- `tests/OsmDotRoute.Tests/GmlParserTests.cs`（9 ケース）
+- `tests/OsmDotRoute.Tests/RestrictedAreaServiceGmlTests.cs`（13 ケース、うち 1 件は実データ統合）
 
-- **対応フォーマット**: 国土数値情報 KSJ アプリケーションスキーマ準拠の GML 3.2 のみ。汎用 GML / GeoJSON は対応しない（参考データを用意できないため検証が空転する、親プロジェクトの実用フローを最優先）
-- **座標軸**: `<gml:posList>` の「緯度 経度」順（JGD2000、KSJ 規定）。KSJ サンプル `A31-12_24.xml` で確認済
-- **抽出範囲**: フィーチャの**形状（外周 ＋ Hole）のみ**。`<ksj:waterDepth>` 等のハザード属性は **Phase 1 では保持せず読み飛ばす**
-- **難所タイプはユーザー指定**: `AddDifficultyAreaFromGml*` の `difficultyType` 引数で全フィーチャに同一タイプを適用。フィーチャ要素名や属性値から難所タイプを自動判定する仕組みは設けない（拡張性: 複数 KSJ プロダクトを共通基盤で扱う、利用者責任）
-- **API 6 メソッド**: 進入不可エリア用 3（`AddBlockAreaFromGml*`）+ 難所エリア用 3（`AddDifficultyAreaFromGml*`）。ポリゴン版・メッシュ版と対称
-- **`<gml:MultiSurface>` 非対応**: Phase 2 以降に延期。A31「浸水想定区域」サンプル `A31-12_24.xml`（1.6GB）で **`MultiSurface` 出現 0 件**を確認（2026-05-19、`grep -c` で検証）。検出時は `NotSupportedException` を投げる
-- **ハザード属性を捨てる根拠**: GML 以外の入力（ポリゴン直接指定／メッシュコード指定）でも同じ機構を使う以上、GML 固有属性を保持する仕組みは API 全体の非対称を生む。属性が必要な利用者は GML ファイルを別途読んで対応するか、Phase 2 で `RestrictedArea.Attributes` プロパティ追加を検討
-- **ダウンロード元**: <https://nlftp.mlit.go.jp/ksj/gml/datalist/>
-- **サンプル**: `D:/ハザードデータ/A31-12_24_GML/A31-12_24.xml`（A31-v2.2、三重県、1.6GB）
+### 12.1 意図
 
-（本記述化はステップ 10 実装時に行う。記述予定項目: `System.Xml.XmlReader` ベースのストリーミングパーサー構成、`<ksj:Dataset>` ルート → `<gml:Curve>` リング → `<gml:Surface>` ポリゴン → 任意フィーチャ要素 の解析手順、`xlink:href` による Surface ↔ Curve / フィーチャ ↔ Surface の ID 参照解決、フィーチャ要素名非依存の解析方針、不正 GML / 未対応要素（`MultiSurface` 等）時の例外戦略、ファイル / Stream / 文字列入力 API の共通化、6 メソッド API の実装、巨大ファイル（1.6GB）に対するストリーミング読込性能）
+国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2 から制約エリアを一括登録できる入力 API を完成させる（REQ-RST-020〜028, REQ-RST-040）。Phase 1 動作確認は A31「浸水想定区域」(`<ksj:ExpectedFloodArea>`) で行うが、**パーサーはフィーチャ要素名にハードコード依存しない**ことで、A30a4「土砂災害警戒区域」等の他 KSJ プロダクトを後追い追加できる拡張性を確保する。ハザード属性（`<ksj:waterDepth>` 等）は保持せず、難所タイプ・タグはともに API 引数でユーザーが指定する責任分担（要件 v1.5 で確定）。シミュレーションのマップ範囲外フィーチャは optional `MapBounds` 引数で除外できる（要件 v1.6 で追加、REQ-RST-040）。
+
+### 12.2 採用設計
+
+#### 12.2.1 `GmlParser`（internal static、ストリーミング XmlReader）
+
+| API | 戻り値 | 説明 |
+|---|---|---|
+| `ParseString(string gml)` | `IReadOnlyList<GeoPolygon>` | GML 文字列を解析 |
+| `ParseStream(Stream stream)` | `IReadOnlyList<GeoPolygon>` | GML Stream を解析（ストリーミング） |
+
+XmlReader 設定（XXE 対策）:
+
+- `XmlResolver = null` ／ `DtdProcessing = Prohibit`（外部実体参照を解決しない）
+- `IgnoreWhitespace = true` ／ `IgnoreComments = true` ／ `IgnoreProcessingInstructions = true`
+
+#### 12.2.2 1 パスアルゴリズム
+
+```text
+1) XmlReader で順次走査
+2) ルート直下 (Depth==1) の要素を識別:
+   - <gml:Curve gml:id="X">  → posList を「緯度 経度」順で読取し、curves[X] = coords
+   - <gml:Surface gml:id="X"> → <gml:exterior>/<gml:interior> の curveMember xlink:href から
+     exteriorCurveId / interiorCurveIds[] を抽出し、surfaces[X] = SurfaceRef
+   - <gml:MultiSurface>      → NotSupportedException （REQ-RST-023）
+   - <gml:*> 以外（gml 名前空間外） → フィーチャ候補。ReadSubtree 内で
+     最初の xlink:href 属性を持つ子要素から参照 ID を抽出し pendingFeatures に追加
+3) 走査完了後、pendingFeatures を解決:
+   - surfaces[surfaceId] → curves[exteriorCurveId] / curves[holeIds] を引いて
+     new GeoPolygon(outer, holes) として yield
+4) Surface/Curve 参照が解決失敗 → InvalidGmlException
+```
+
+#### 12.2.3 名前空間判別
+
+- `GmlNs = "http://www.opengis.net/gml/3.2"`
+- `XlinkNs = "http://www.w3.org/1999/xlink"`
+- KSJ 固有名前空間（`http://nlftp.mlit.go.jp/ksj/schemas/ksj-app`）は識別に**使わない**。フィーチャ要素は「gml 名前空間以外」で識別 → KSJ プロダクトを問わず、また架空名前空間でも動作。
+
+#### 12.2.4 フィーチャ要素名非依存の参照解決
+
+KSJ では `<ksj:bounds xlink:href="#aXXX"/>` が Surface 参照の慣習だが、要素名「bounds」も名前空間「ksj」もハードコードしない。代わりに「フィーチャ要素配下を `ReadSubtree` で走査し、**最初に見つかった `xlink:href="#..."` 属性**を Surface 参照候補とみなす」ことで、要素名に依存しない汎用パーサーを実現。Surface 辞書に解決できなければ単に登録されない（フィーチャ要素配下に `xlink:href` を持つ別目的の子要素（関連コード等）があっても、Surface 辞書を引いた時点で除外できる）。
+
+#### 12.2.5 `RestrictedAreaService` の 6 メソッド
+
+| メソッド | 主要引数 | 説明 |
+|---|---|---|
+| `AddBlockAreaFromGml(string, MapBounds?, string?)` | GML 文字列・mapBounds・tag | 全フィーチャ（フィルタ後）を `BlockArea` で登録 |
+| `AddBlockAreaFromGmlFile(string, MapBounds?, string?)` | ファイルパス・mapBounds・tag | `File.OpenRead` → Stream 版へ委譲 |
+| `AddBlockAreaFromGmlStream(Stream, MapBounds?, string?)` | Stream・mapBounds・tag | `GmlParser.ParseStream` + フィルタ + 登録 |
+| `AddDifficultyAreaFromGml(string, string difficultyType, MapBounds?, string?)` | GML 文字列・難所タイプ・mapBounds・tag | 全フィーチャ（フィルタ後）を `DifficultyArea` で登録 |
+| `AddDifficultyAreaFromGmlFile(string, string difficultyType, MapBounds?, string?)` | ファイルパス・難所タイプ・mapBounds・tag | 同上、ファイル版 |
+| `AddDifficultyAreaFromGmlStream(Stream, string difficultyType, MapBounds?, string?)` | Stream・難所タイプ・mapBounds・tag | 同上、Stream 版 |
+
+戻り値は `RestrictedAreaId[]`（採用された各フィーチャごとに 1 ID、REQ-RST-021）。難所タイプ検証（空文字・null 拒否、REQ-RST-007）は `DifficultyArea` コンストラクタに委譲。
+
+#### 12.2.7 マップ範囲フィルタ（REQ-RST-040）
+
+公開値型 `MapBounds(GeoCoordinate SouthWest, GeoCoordinate NorthEast)` を新設（`src/OsmDotRoute/MapBounds.cs`）。`Contains(GeoCoordinate)` メソッドは境界線上を**内側扱い**で判定（`<=` / `>=`）。
+
+`RestrictedAreaService` の GML 6 メソッドはすべて optional `MapBounds? mapBounds = null` 引数を持つ。内部の `PassesMapBoundsFilter` が `GeoPolygon.OuterBoundary` を走査し、1 頂点でも `mapBounds.Contains(coord)` を満たすフィーチャのみ採用。`mapBounds == null` の場合は無条件で採用（旧挙動互換）。Hole は判定に使わない。
+
+利用例:
+
+```csharp
+var stats = routerDb.GetStatistics();
+var mapBounds = new MapBounds(stats.SouthWest, stats.NorthEast);
+restrictions.AddDifficultyAreaFromGmlFile(
+    "A31-12_24.xml",
+    DifficultyTypes.Flooding,
+    mapBounds,
+    tag: "mie-flood");
+// → 道路ネットワーク範囲外のフィーチャは自動的に除外
+```
+
+#### 12.2.6 例外戦略
+
+- `InvalidGmlException`（公開）: GML XML パースエラー、xlink 参照解決失敗、`<gml:posList>` 不正、必須要素欠落
+- `NotSupportedException`（標準）: `<gml:MultiSurface>` 検出時（REQ-RST-023）
+- `ArgumentException` / `ArgumentNullException`: 難所タイプ空文字・null、引数 null
+
+### 12.3 設計判断の根拠
+
+- **1 パス + 未解決リスト方式**: A31 サンプルでは Curve → Surface → ExpectedFloodArea の順序になっており、フォワード参照は不要。ただし KSJ 仕様で順序保証がない可能性もあるため、フィーチャ参照だけは「全走査完了後に解決」する設計とした。Curve/Surface はその場で読み切ってメモリ辞書化。
+- **`Depth == 1` でルート直下に限定した理由**: `<ksj:Dataset>` ルート要素自体や、`<gml:boundedBy>` 配下のメタデータ要素を「フィーチャ候補」として誤認するのを防ぐ。実装初版でルート要素自体をフィーチャ判定してしまい全テスト失敗、Depth 判定で解決した経緯あり。
+- **フィーチャ要素名非依存**: REQ-RST-020 の「任意の KSJ プロダクトを受け入れる」要求を満たす。`<ksj:ExpectedFloodArea>` も架空の `<test:DummyArea>` も同じ機構で読める（テスト `ParseString_DummyFeatureName_StillResolvesViaXlink` で確認）。
+- **`InvalidGmlException` を public にした理由**: 利用者が `try-catch` で GML 入力エラーを処理できるようにするため。`NotSupportedException` は .NET 標準なので既存ノウハウが効く。
+- **`AddDifficultyAreaFromGml*` で `difficultyType` を必須引数にした理由**: 「フィーチャ要素名から自動判定」を採用しないという v1.5 確定方針の API への反映。利用者がデータ源（A31 浸水＝flooding、A30a4 土砂＝landslide 等）に応じて適切な難所タイプを明示指定する。
+- **`MapBounds` を公開値型として新設した理由**: 利用者が API 引数として「マップ範囲」を渡す必要があるため、internal の `Geometry.Aabb` / `GeoBounds` は使えない。`record struct` で不変・等価判定無料、`Contains` メソッドを持ち、`OsmDotRoute` ルート名前空間に配置（公開型カタログ §4 と整合）。
+- **`mapBounds` 引数を optional にした理由**: REQ-RST-040 で「未指定時は全フィーチャ採用（互換動作）」を規定。既存テスト（ステップ 10 初版の `tag` named argument 呼び出し）を破壊しない。
+- **`mapBounds` 引数を `difficultyType` の後・`tag` の前に配置した理由**: 位置引数として「形状抽出に必須のもの（difficultyType）→ フィルタ条件（mapBounds）→ メタ情報（tag）」の重要度順に並ぶ。名前付き引数なしでも `service.AddDifficultyAreaFromGml(gml, "flooding", bounds)` と自然に書ける。
+- **`PassesMapBoundsFilter` を `RestrictedAreaService` 内に置いた理由**: `GmlParser` は形状抽出に専念させ、フィルタ判定はサービス側の責務として分離。GML 由来でないポリゴン（手動 `AddBlockArea(polygon)` 等）と同じフィルタを後で他 API にも展開しやすくする（Phase 2 で `AddBlockAreaFromGeoJson` 等を追加する場合の再利用性）。
+- **ハザード属性を読み飛ばす実装**: `ReadSubtree` で `xlink:href` だけ探して他は無視。`<ksj:waterDepth>` 等の子要素はパース時間も計上されるが、`XmlReader.Skip()` 同等の処理で実用上のコストは無視可能。
+- **XmlReader 設定で XXE 対策**: `XmlResolver = null` + `DtdProcessing = Prohibit` で外部実体参照を解決しない。利用者が不信ファイルを誤って読み込んでも XXE 攻撃が成立しない。
+
+### 12.4 トレードオフ・制約
+
+- **`<gml:MultiSurface>` Phase 1 非対応**: A31 サンプル（1.6GB、`MultiSurface` 出現 0 件を `grep -c` で確認、2026-05-19）。他 KSJ プロダクトで使用された場合は `NotSupportedException`。Phase 2 以降で対応（要件 REQ-RST-023）。
+- **ハザード属性を保持しない**: 利用者が `waterDepth` 等で経路コストを変えたいなら、GML を別途読んでフィーチャごとに `AddDifficultyArea(polygon, customDifficultyType)` を呼ぶワークフロー（Phase 1 では「深さ別難所タイプ」を独自定義してプロファイルに追加）。Phase 2 で `RestrictedArea.Attributes` プロパティ追加を検討。
+- **フィーチャ別タグ非対応**: `tag` 引数で全フィーチャに同一タグのみ。フィーチャ別タグが必要なら Phase 2 で `tagMapper: Func<...>` のような拡張点を追加（要件 REQ-RST-027）。
+- **2 GB 超ファイル**: `XmlReader` 自体は理論上ストリーム長無制限だが、Curve 辞書がメモリ常駐するため**全頂点座標を保持できるメモリ**が必要。A31 サンプル 1.6GB で 9 秒読込（実測、Phase 1 ステップ 10 実施時）。座標点数が桁違いに増えたら（数十 GB 級）`SQLite` 等のディスクバック辞書化を Phase 2 で検討。
+- **`<gml:Curve>` の `<gml:LineStringSegment>` 1 つ前提**: KSJ A31 サンプル準拠。複数 LineStringSegment や Arc / CubicSpline 等の曲線型は未対応（A31 では未使用）。
+
+### 12.5 検証方法
+
+- `dotnet build OsmDotRoute.sln`: 0 警告・0 エラー
+- `tests/OsmDotRoute.Tests/GmlParserTests.cs` 9 ケース:
+  1. 最小 GML（1 Curve + 1 Surface + 1 フィーチャ）読込
+  2. Hole 込み Surface 読込（外周 1 + Hole 1 + 1 フィーチャ）
+  3. 複数フィーチャ（3 件）の順序保持
+  4. 架空フィーチャ要素名 `<test:DummyArea>` も解決（拡張性検証）
+  5. `<gml:MultiSurface>` → `NotSupportedException`
+  6. 不正 XML → `InvalidGmlException`
+  7. 未解決 Surface 参照 → `InvalidGmlException`
+  8. xlink:href なしフィーチャはサイレントスキップ（空結果）
+  9. `ParseStream` と `ParseString` の同等性
+- `tests/OsmDotRoute.Tests/RestrictedAreaServiceGmlTests.cs` 13 ケース:
+  1. `AddBlockAreaFromGml` で BlockArea 登録
+  2. `AddDifficultyAreaFromGml` で DifficultyType 付与
+  3. ユーザー定義難所タイプ（`"snow_heavy"`）受理
+  4. 難所タイプ空文字・null で `ArgumentException`（REQ-RST-007）
+  5. 複数フィーチャの ID 配列返却
+  6. `tag` の `RemoveByTag` 連携で一括削除
+  7. `AddBlockAreaFromGmlStream` の Stream ラウンドトリップ
+  8. `<gml:MultiSurface>` 例外伝播
+  9. 不正 GML 例外伝播
+  10. **マップ範囲フィルタ: 部分採用**（f1 のみマップ範囲内、f2/f3 は外、REQ-RST-040）
+  11. **マップ範囲フィルタ: 全フィーチャ範囲外で空配列**（REQ-RST-040）
+  12. **マップ範囲フィルタ: 境界線上の頂点は内側扱い**（REQ-RST-040、`Contains` の `<=`/`>=` 検証）
+  13. 実データ統合: `D:/ハザードデータ/A31-12_24_GML/A31-12_24.xml`（1.6GB、三重県浸水想定区域）を `AddDifficultyAreaFromGmlFile` で読込、フィーチャ数 ≥ 1 を確認
+
+**ステップ 10 実施結果（2026-05-19、マップ範囲フィルタ追加後）**:
+
+```text
+ビルドに成功しました。
+    0 個の警告
+    0 エラー
+
+成功!   -失敗:     0、合格:   147、スキップ:     0、合計:   147、期間: 12 s
+```
+
+A31 実データ 1.6GB の読込時間: **9 秒**（テスト実行ログ実測、`AddDifficultyAreaFromGmlFile` のフル読込）。ストリーミング XmlReader が効いてメモリ使用量も実用範囲内（座標辞書のみ常駐）。
+
+新規ファイル: `src/OsmDotRoute/Gml/GmlParser.cs`, `src/OsmDotRoute/Gml/InvalidGmlException.cs`, `src/OsmDotRoute/MapBounds.cs`, `tests/OsmDotRoute.Tests/GmlParserTests.cs`, `tests/OsmDotRoute.Tests/RestrictedAreaServiceGmlTests.cs`。  
+変更ファイル: `src/OsmDotRoute/Restrictions/RestrictedAreaService.cs`（`AddFromGeoJson*` 3 メソッド削除、`AddBlockAreaFromGml*` / `AddDifficultyAreaFromGml*` の 6 メソッド追加、各メソッドに `MapBounds?` 引数）。
+
+### 12.6 実装メモ
+
+- **`Depth == 1` の罠**: XmlReader の `Depth` はルート要素自体が 0、その子が 1。実装初版で `Depth` 判定を入れず、`<ksj:Dataset>` ルート自体を「フィーチャ候補」と誤認して全テスト失敗した（最初の xlink:href が Curve の `curveMember` を返してしまい、Surface 参照と勘違いした）。`Depth == 1` 限定で修正。XML 構造が違う KSJ プロダクトでルート直下に余計なネスト層があると本判定がずれる可能性あるが、KSJ アプリケーションスキーマ準拠ならフラット構造が保証される。
+- **`reader.ReadSubtree()` の挙動**: 子 reader を返し、Dispose で親 reader を部分木の EndElement に位置づける。親 reader の次の `Read()` で兄弟に進むため、ループ全体が自然に動く。注意点: 子 reader の `Depth` は部分木のルートを 0 として再カウントするので、子 reader 内で `Depth` 判定すると親 reader と一致しない。
+- **`xlink:href` 取得には 2 引数オーバーロード必須**: `reader.GetAttribute("href")` だと「名前空間なしの `href` 属性」を探す。`reader.GetAttribute("href", XlinkNs)` で `xlink:href` を取得する。要素にデフォルト名前空間が設定されている場合に重要。
+- **A31 実データ 9 秒の内訳**: 1.6GB ファイルから Curve 辞書を構築する I/O + parse がボトルネック。`<ksj:waterDepth>` 等の不要要素を `ReadSubtree` 内で読み飛ばすコストは比較的小さい（XmlReader のスキップ最適化が効く）。Phase 2 で `Span<char>` 直接走査による高速化を検討する余地あり。
+- **テストデータをファイルにせず verbatim string にした理由**: ミニ GML 5 種を `.xml` ファイルとして配置するより、テストファイル内 verbatim string に持つ方が変更が一目で追える。実データテストだけはサイズの都合でファイル参照（環境依存テスト、未配置ならスキップ）。
+- **`File.OpenRead` の例外**: `AddBlockAreaFromGmlFile` / `AddDifficultyAreaFromGmlFile` でファイル不在の場合は `FileNotFoundException` が `.NET` 標準で投げられる。`InvalidGmlException` でラップしていないのは、ファイル I/O エラーと GML パースエラーは異なる障害種別だから（呼び出し側が別ハンドリングしたい）。
 
 ---
 
