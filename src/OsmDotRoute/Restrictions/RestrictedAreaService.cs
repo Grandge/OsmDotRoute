@@ -1,5 +1,6 @@
 using OsmDotRoute.Geometry;
 using OsmDotRoute.Mesh;
+using OsmDotRoute.Profiles;
 
 namespace OsmDotRoute;
 
@@ -174,6 +175,70 @@ public sealed class RestrictedAreaService
 
     /// <summary>指定 ID の制約が登録済みかを返す（テスト・診断用）。</summary>
     internal bool Contains(RestrictedAreaId id) => _entries.ContainsKey(id);
+
+    /// <summary>
+    /// 与えられたエッジシェイプに沿って、登録済み制約を AABB プリフィルタ → 厳密判定で評価し、
+    /// 結合速度低下係数を返す（REQ-RST-013〜015, REQ-RST-030〜032）。
+    /// </summary>
+    /// <param name="edgeShape">エッジ全体の連続座標列（端点 + 中間シェイプ）。要素数 &lt; 2 のときは制約効果なし</param>
+    /// <param name="evaluator">プロファイル評価器。難所タイプから speedFactor/canPass を導出する</param>
+    /// <returns>
+    /// 結合 speedFactor（全該当 <see cref="DifficultyArea"/> の <c>speedFactor</c> の積）。
+    /// <see cref="BlockArea"/> 交差、または難所評価で <c>canPass=false</c> が含まれる場合は
+    /// <see cref="double.PositiveInfinity"/>（短絡評価）。制約効果なしのときは 1.0。
+    /// </returns>
+    internal double EvaluateConstraints(IReadOnlyList<GeoCoordinate> edgeShape, ProfileEvaluator evaluator)
+    {
+        ArgumentNullException.ThrowIfNull(edgeShape);
+        ArgumentNullException.ThrowIfNull(evaluator);
+
+        if (edgeShape.Count < 2) return 1.0;
+        if (_entries.Count == 0) return 1.0;
+
+        var edgeAabb = Aabb.FromCoordinates(edgeShape);
+        var seenIds = new HashSet<RestrictedAreaId>();
+        var combined = 1.0;
+
+        foreach (var sr in _index.Query(edgeAabb))
+        {
+            if (!seenIds.Add(sr.Id)) continue;
+
+            // ID 単位の厳密判定: 当該 ID の全 Shape を見て、いずれかと交差すれば「ヒット」
+            if (!EdgeIntersectsAreaShapes(edgeShape, _entries[sr.Id].Shapes)) continue;
+
+            if (sr.Area is BlockArea) return double.PositiveInfinity;          // REQ-RST-032
+            if (sr.Area is DifficultyArea diff)
+            {
+                var ev = evaluator.EvaluateDifficulty(diff.DifficultyType);
+                if (!ev.CanPass) return double.PositiveInfinity;                // REQ-RST-031
+                combined *= ev.SpeedFactor;
+                if (combined <= 0.0) return double.PositiveInfinity;
+            }
+        }
+
+        return combined;
+    }
+
+    /// <summary>
+    /// エッジシェイプの全セグメントに対し、当該制約 ID の全 Shape のいずれかと交差するかを判定する。
+    /// Shape ごとに AABB プリフィルタ → ポリゴン版は <see cref="PolygonIntersection.IntersectsSegment"/>、
+    /// メッシュ版は AABB 交差のみ（REQ-RST-015）で確定。
+    /// </summary>
+    private static bool EdgeIntersectsAreaShapes(IReadOnlyList<GeoCoordinate> edgeShape, Shape[] shapes)
+    {
+        for (var i = 0; i < edgeShape.Count - 1; i++)
+        {
+            var p1 = edgeShape[i];
+            var p2 = edgeShape[i + 1];
+            foreach (var s in shapes)
+            {
+                if (!s.Bounds.IntersectsSegment(p1, p2)) continue;
+                if (s.Polygon is null) return true;     // メッシュ AABB は AABB 交差で確定
+                if (PolygonIntersection.IntersectsSegment(s.Polygon, p1, p2)) return true;
+            }
+        }
+        return false;
+    }
 
     private void Register(RestrictedAreaId id, RestrictedArea area, Shape[] shapes)
     {

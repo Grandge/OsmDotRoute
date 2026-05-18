@@ -45,7 +45,7 @@ public sealed class Router
         var targetSnap = _routerDb.Snapper.Snap(profile.Name, to, SearchDistanceM);
         if (targetSnap is null) return null;
 
-        var calculator = new EdgeWeightCalculator(_routerDb.Graph, profile.Evaluator);
+        var calculator = new EdgeWeightCalculator(_routerDb.Graph, profile.Evaluator, _restrictions);
         var engine = new DijkstraEngine(_routerDb.Graph, calculator);
         var result = engine.Run(sourceSnap.Value, targetSnap.Value);
         if (result is null) return null;

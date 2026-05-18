@@ -1,8 +1,9 @@
 namespace OsmDotRoute.Routing;
 
 /// <summary>
-/// 単方向 Dijkstra による経路探索エンジン（REQ-RTE-001）。
-/// スナップ結果 2 点を入力に最短時間経路を探索する。
+/// 単方向 Dijkstra による経路探索エンジン（REQ-RTE-001、REQ-RST-013〜015）。
+/// スナップ結果 2 点を入力に最短時間経路を探索する。動的制約（進入不可エリア・難所エリア）は
+/// <see cref="EdgeWeightCalculator"/> 経由で各エッジ評価に反映される（ステップ 9 で統合）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,7 +17,7 @@ namespace OsmDotRoute.Routing;
 /// <c>bestCost</c> 初期値として設定し、それより悪い候補は枝刈りする。
 /// </para>
 /// <para>
-/// 重み = 距離 / 速度（秒）。距離・所要時間を別配列で並列管理する。
+/// 重み = 距離 / (速度 × 結合 speedFactor)（秒）。制約評価はエッジ単位で 1 回（部分通過時も同じ係数）。
 /// </para>
 /// </remarks>
 internal sealed class DijkstraEngine
@@ -63,19 +64,19 @@ internal sealed class DijkstraEngine
         var bestEntryVertex = uint.MaxValue;
         var bestSameEdge = false;
 
-        // 同一エッジ特殊ケース: 直接通過コストを bestCost 初期値に
+        // 同一エッジ特殊ケース: 直接通過コストを bestCost 初期値に（制約込み）
         if (sourceSnap.EdgeId == targetSnap.EdgeId)
         {
             if (fTarget > fSource && sourceCanForward)
             {
                 var d = (fTarget - fSource) * sourceDist;
-                var t = EdgeWeightCalculator.DurationSec(d, sourceEval.SpeedKmh);
+                var t = _calculator.EvaluateEdgePartialDurationSec(sourceEdge, d, sourceEval);
                 if (t < bestCost) { bestCost = t; bestDist = d; bestSameEdge = true; }
             }
             else if (fTarget < fSource && sourceCanReverse)
             {
                 var d = (fSource - fTarget) * sourceDist;
-                var t = EdgeWeightCalculator.DurationSec(d, sourceEval.SpeedKmh);
+                var t = _calculator.EvaluateEdgePartialDurationSec(sourceEdge, d, sourceEval);
                 if (t < bestCost) { bestCost = t; bestDist = d; bestSameEdge = true; }
             }
             else if (Math.Abs(fTarget - fSource) < double.Epsilon)
@@ -100,22 +101,25 @@ internal sealed class DijkstraEngine
 
         var pq = new BinaryHeap<uint>();
 
-        // ソース初期化: スナップ点 → エッジ両端点
+        // ソース初期化: スナップ点 → エッジ両端点（制約込み）
         if (sourceCanForward)
         {
             var d = (1.0 - fSource) * sourceDist;
-            var t = EdgeWeightCalculator.DurationSec(d, sourceEval.SpeedKmh);
-            cost[sourceEdge.To] = t;
-            dist[sourceEdge.To] = d;
-            parentEdge[sourceEdge.To] = sourceSnap.EdgeId;
-            parentVertex[sourceEdge.To] = uint.MaxValue; // 仮想ソース印
-            pq.Push(sourceEdge.To, t);
+            var t = _calculator.EvaluateEdgePartialDurationSec(sourceEdge, d, sourceEval);
+            if (!double.IsPositiveInfinity(t))
+            {
+                cost[sourceEdge.To] = t;
+                dist[sourceEdge.To] = d;
+                parentEdge[sourceEdge.To] = sourceSnap.EdgeId;
+                parentVertex[sourceEdge.To] = uint.MaxValue; // 仮想ソース印
+                pq.Push(sourceEdge.To, t);
+            }
         }
         if (sourceCanReverse)
         {
             var d = fSource * sourceDist;
-            var t = EdgeWeightCalculator.DurationSec(d, sourceEval.SpeedKmh);
-            if (t < cost[sourceEdge.From])
+            var t = _calculator.EvaluateEdgePartialDurationSec(sourceEdge, d, sourceEval);
+            if (!double.IsPositiveInfinity(t) && t < cost[sourceEdge.From])
             {
                 cost[sourceEdge.From] = t;
                 dist[sourceEdge.From] = d;
@@ -135,56 +139,55 @@ internal sealed class DijkstraEngine
             // 既知 bestCost より悪ければ以降のフロンティアは候補にならない
             if (uCost >= bestCost) break;
 
-            // ターゲットエッジ端点にあれば、エッジ通過で更新候補
+            // ターゲットエッジ端点にあれば、エッジ通過で更新候補（制約込み）
             if (u == targetEdge.From && targetCanForward)
             {
                 var remD = fTarget * targetDist;
-                var remT = EdgeWeightCalculator.DurationSec(remD, targetEval.SpeedKmh);
-                var total = uCost + remT;
-                if (total < bestCost)
+                var remT = _calculator.EvaluateEdgePartialDurationSec(targetEdge, remD, targetEval);
+                if (!double.IsPositiveInfinity(remT))
                 {
-                    bestCost = total;
-                    bestDist = dist[u] + remD;
-                    bestEntryVertex = u;
-                    bestSameEdge = false;
+                    var total = uCost + remT;
+                    if (total < bestCost)
+                    {
+                        bestCost = total;
+                        bestDist = dist[u] + remD;
+                        bestEntryVertex = u;
+                        bestSameEdge = false;
+                    }
                 }
             }
             if (u == targetEdge.To && targetCanReverse)
             {
                 var remD = (1.0 - fTarget) * targetDist;
-                var remT = EdgeWeightCalculator.DurationSec(remD, targetEval.SpeedKmh);
-                var total = uCost + remT;
-                if (total < bestCost)
+                var remT = _calculator.EvaluateEdgePartialDurationSec(targetEdge, remD, targetEval);
+                if (!double.IsPositiveInfinity(remT))
                 {
-                    bestCost = total;
-                    bestDist = dist[u] + remD;
-                    bestEntryVertex = u;
-                    bestSameEdge = false;
+                    var total = uCost + remT;
+                    if (total < bestCost)
+                    {
+                        bestCost = total;
+                        bestDist = dist[u] + remD;
+                        bestEntryVertex = u;
+                        bestSameEdge = false;
+                    }
                 }
             }
 
-            // 近傍展開
+            // 近傍展開（制約込み）
             var en = _graph.GetEdgeEnumerator(u);
             while (en.MoveNext())
             {
                 var v = en.To;
                 if (visited[v]) continue;
 
-                var eval = _calculator.Evaluate(en.EdgeProfileIndex);
-                if (!EdgeWeightCalculator.CanTraverseInEnumeratorDirection(eval, en.DataInverted))
-                {
-                    continue;
-                }
-
-                var edgeDist = (double)en.DistanceM;
-                var edgeTime = EdgeWeightCalculator.DurationSec(edgeDist, eval.SpeedKmh);
+                var edgeTime = _calculator.EvaluateEdgeDurationSec(en);
                 if (double.IsPositiveInfinity(edgeTime)) continue;
 
                 var newCost = uCost + edgeTime;
                 if (newCost < cost[v])
                 {
                     cost[v] = newCost;
-                    dist[v] = dist[u] + edgeDist;
+                    dist[v] = dist[u] + en.DistanceM;
                     parentVertex[v] = u;
                     parentEdge[v] = en.EdgeId;
                     pq.Push(v, newCost);

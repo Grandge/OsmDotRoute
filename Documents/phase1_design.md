@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.12（進行中）
+**バージョン**: 0.13（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-19
-**ステータス**: 進行中（Phase 1 ステップ 8 完了、制約管理基盤実装済、116/116 テスト成功）
+**ステータス**: 進行中（Phase 1 ステップ 9 完了、制約対応 Dijkstra 統合実装済、125/125 テスト成功）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -51,8 +51,8 @@
 | 8. 道路ネットワーク GeoJSON 出力 | ステップ 6 | 記述済（2026-05-18） |
 | 9. メッシュコード処理 | ステップ 7 | 記述済（2026-05-18） |
 | 10. 制約管理基盤 | ステップ 8 | 記述済（2026-05-19） |
-| 11. 制約対応 Dijkstra 統合 | ステップ 9 | 未記述 |
-| 12. GeoJSON 入力対応 | ステップ 10 | 未記述 |
+| 11. 制約対応 Dijkstra 統合 | ステップ 9 | 記述済（2026-05-19） |
+| 12. GML 入力対応 | ステップ 10 | 未記述 |
 | 13. 経路 GeoJSON 出力 | ステップ 11 | 未記述 |
 | 14. DI 拡張とドキュメント | ステップ 12 | 未記述 |
 | 15. 検証用地図アプリ MapVerifier | ステップ 13-14 | 未記述 |
@@ -1180,6 +1180,15 @@ Itinero アダプター実装は `Network.GetEdgeEnumerator()` → `MoveToEdge(e
 - 経路復元時のエッジ ID 配列 `EdgePath` は `RouteBuilder` で使用していない（`VertexPath` から都度 `GetEdge` で取り出すのが現状の実装）。
   ステップ 9 以降で「経路上のエッジに制約が交差したか」のログ用途で参照される可能性があり、敢えて返却型に含めて残している。
 
+### 7b.7 ステップ 9 での統合点（追記 2026-05-19）
+
+ステップ 9（制約対応 Dijkstra 統合）で本エンジンに以下の統合点を加えた:
+
+- **エッジ評価の置換**: 近傍展開（メインループ内）、ソース初期化（スナップ点 → エッジ両端点）、ターゲット流入（端点 → スナップ点）、および同一エッジ特殊ケース（直接通過）の 4 箇所すべてで、従来の `Evaluate + DurationSec` を `EdgeWeightCalculator.EvaluateEdgeDurationSec` / `EvaluateEdgePartialDurationSec` に置換。制約交差時は `+∞` が返り、`if (double.IsPositiveInfinity(t)) continue;` で短絡。
+- **`+∞` 短絡の挙動**: 既存の `cost[v] < cost[u]` 比較は `+∞` でも自然に「未到達」と等価に動くため、エンジン本体の制御構造は変更不要。`pq.Push(v, +∞)` を防ぐためのガード（`if (!double.IsPositiveInfinity(t))`）はソース／ターゲット初期化部のみ追加（メインループは比較で自然枝刈り）。
+- **制約評価の単位**: 「エッジ全体（端点 + 中間シェイプ）」を 1 単位として制約評価し、部分通過（スナップ点 → 端点）でも同じ結合 speedFactor を適用する。これは「このエッジが flooding 領域にかかっているから速度 0.3 倍」というモデルとして自然な解釈で、エッジ内位置に応じた細分判定を避けることで実装単純化と性能を両立。
+- **キャッシュ無し方針**: REQ-RST-012「制約変更は次回の `Calculate` から即時反映」を満たすため、エッジ単位の制約評価結果は呼び出しごとに毎回計算（Phase 1）。同一エッジを何度評価するかは Dijkstra の枝刈り次第だが、AABB プリフィルタが効くため大半は O(1) で抜ける想定。性能ベンチはステップ 15 で実測。
+
 ---
 
 ## 8. 道路ネットワーク GeoJSON 出力
@@ -1544,7 +1553,7 @@ RestrictedAreaService
 ### 10.4 トレードオフ・制約
 
 - **線形走査 `SpatialIndex` の性能限界**: 制約数 N、エッジ数 E、シェイプ点数 S のとき判定回数 O(N × E × S)。Phase 1 想定の N ≦ 数百、E ≦ 数万のスケールでは実用可能。N が数千を超える場合は R-tree 化必須（Phase 2 申し送り）。
-- **`PolygonIntersection.ComputeBoundingBox` が Hole を無視**: Hole は外周より内側にあるため AABB に影響しない（前提）。退化ポリゴン（Hole が外周を超える）は不正入力として無検証。`GeoJsonParser`（ステップ 10）で入力時検証することを推奨。
+- **`PolygonIntersection.ComputeBoundingBox` が Hole を無視**: Hole は外周より内側にあるため AABB に影響しない（前提）。退化ポリゴン（Hole が外周を超える）は不正入力として無検証。GML パーサー（ステップ 10、KSJ スキーマ準拠）で入力時検証することを推奨。
 - **メッシュコード AABB は WGS84 平面近似**: 厳密な JIS X0410 矩形は経緯度の楕円体補正を含むが、Phase 1 では `MeshCodeConverter` が経緯度差分のみで実装（許容誤差 ≦ 1 cm／250m メッシュ）。
 - **`RestrictedAreaService.Remove(unknownId)` は何もしない**: 存在しない ID で例外を投げず NoOp。シミュレーション側で「制約が消えたか確認したい」ケースは想定されず、冪等な API の方が呼びやすい。`Contains` で事前確認可能。
 - **複数メッシュ登録時の AABB 結合は行わない**: 各メッシュを個別 Shape として保持。隣接メッシュをまとめた大 AABB（Union）も計算可能だが、結合 AABB は「実領域より広い枝刈り精度」になるため線形走査の現実装では損のみ。R-tree 化時に再評価。
@@ -1583,18 +1592,146 @@ RestrictedAreaService
 ## 11. 制約対応 Dijkstra 統合
 
 **対応ステップ**: ステップ 9
-**ステータス**: 未記述
+**対応要件**: REQ-RST-012〜015, REQ-RST-030〜032, REQ-RTE-001
+**実装日**: 2026-05-19
+**実装バージョン**: 0.13（進行中）
+**主要ファイル**:
 
-（記述予定項目: `EdgeWeightCalculator` への `RestrictedAreaService` 注入、エッジ評価フロー（AABB プリフィルタ → 線分交差 → 重み計算）、進入不可エリアでの探索打切処理、速度低下係数の重み乗算式、制約変更の即時反映保証、エッジシェイプ AABB のキャッシュ可否判断、性能特性の実測値）
+- `src/OsmDotRoute/Restrictions/RestrictedAreaService.cs`（`EvaluateConstraints` 追加）
+- `src/OsmDotRoute/Routing/EdgeWeightCalculator.cs`（`RestrictedAreaService?` 注入、`EvaluateEdgeDurationSec` / `EvaluateEdgePartialDurationSec` 追加）
+- `src/OsmDotRoute/Routing/DijkstraEngine.cs`（4 評価点を制約込み API に置換）
+- `src/OsmDotRoute/Router.cs`（`_restrictions` を `EdgeWeightCalculator` に伝搬）
+- `tests/OsmDotRoute.Tests/RestrictedRoutingTests.cs`（新規 9 ケース）
+
+### 11.1 意図
+
+ステップ 8 で構築した制約管理基盤と、ステップ 5b で完成した独自 Dijkstra を統合し、進入不可エリア・難所エリアを経路探索が正しく考慮するようにする（REQ-RST-013〜015, REQ-RST-030〜032）。複数難所重複時のルール（積・短絡）も実装し、`Calculate` 呼出ごとに制約をキャッシュなしで再評価することで制約変更の即時反映を保証する（REQ-RST-012）。
+
+### 11.2 採用設計
+
+#### 11.2.1 評価フロー（エッジ単位）
+
+`EdgeWeightCalculator.EvaluateEdgeDurationSec(IRoadGraphEdgeEnumerator)` の処理順:
+
+1. `Evaluate(en.EdgeProfileIndex)` でプロファイル評価（access / speed / oneway）
+2. `CanTraverseInEnumeratorDirection(eval, en.DataInverted)` で方向適合性を確認 → 不適合は `+∞`
+3. `DurationSec(en.DistanceM, eval.SpeedKmh)` で基本所要時間
+4. `EvaluateConstraintFactor(en.From, en.To, en.Shape)` で結合 speedFactor を算出
+5. `baseDuration / factor` を返す（factor が `+∞` の場合は `+∞`）
+
+`EvaluateConstraintFactor` は `_restrictions is null` なら 1.0 を即返し、それ以外は `BuildFullShape(from, to, middle)` で `[GetVertex(from), …middle, GetVertex(to)]` を構築して `RestrictedAreaService.EvaluateConstraints(shape, evaluator)` に委譲する。
+
+部分通過版 `EvaluateEdgePartialDurationSec(RoadEdge edge, double partialDistanceM, EdgeEvaluation eval)` も同じ制約評価ロジック（エッジ全体のシェイプに対する評価）を使い、得られた結合係数を **部分距離の所要時間に**適用する。
+
+#### 11.2.2 `RestrictedAreaService.EvaluateConstraints` のアルゴリズム
+
+```text
+1) edgeShape の Aabb を 1 回計算
+2) _index.Query(edgeAabb) で候補 ShapeRef を取得（線形走査、AABB プリフィルタ）
+3) HashSet<RestrictedAreaId> で ID 重複除去（複数メッシュ 1 ID は 1 回扱い）
+4) ID ごとに entry.Shapes の各 Shape に対し:
+   - Aabb.IntersectsSegment(p1,p2) で AABB プリフィルタ
+   - Polygon != null なら PolygonIntersection.IntersectsSegment で厳密
+   - Polygon == null（メッシュ AABB）なら AABB 交差で確定（REQ-RST-015）
+5) 交差 ID が BlockArea → 即 +∞ 返却（短絡、REQ-RST-032）
+6) 交差 ID が DifficultyArea → evaluator.EvaluateDifficulty(type)
+   - canPass:false なら +∞ 返却（短絡、REQ-RST-031）
+   - speedFactor を積に乗せる（REQ-RST-030）
+   - 積が 0.0 以下なら +∞（数値安全弁）
+7) 全候補処理後、積を返す
+```
+
+#### 11.2.3 Dijkstra への統合点
+
+`DijkstraEngine.Run` の **4 つの評価点**すべてを新 API に置換:
+
+| 箇所 | 旧 | 新 |
+|---|---|---|
+| 同一エッジ直接通過（前進・後退） | `DurationSec(d, sourceEval.SpeedKmh)` | `EvaluateEdgePartialDurationSec(sourceEdge, d, sourceEval)` |
+| ソース初期化（端点 To / From） | `DurationSec((1-fs)*sd, sourceEval.SpeedKmh)` | `EvaluateEdgePartialDurationSec(sourceEdge, d, sourceEval)` |
+| ターゲット流入（端点 From / To） | `DurationSec(remD, targetEval.SpeedKmh)` | `EvaluateEdgePartialDurationSec(targetEdge, remD, targetEval)` |
+| 近傍展開 | `Evaluate + DurationSec` | `EvaluateEdgeDurationSec(en)` |
+
+ソース／ターゲット初期化部は `+∞` を `pq.Push` しないようガード追加。メインループの `cost[v] < cost[u]` 比較は `+∞` 自然枝刈りでそのまま動く。
+
+#### 11.2.4 難所重複ルール（計算式）
+
+エッジに対して候補制約 `R = {r₁, r₂, …, rₙ}` が交差判定で残ったとき:
+
+- `BlockArea ∈ R` または `∃ rᵢ ∈ R: rᵢ is DifficultyArea ∧ evaluator.EvaluateDifficulty(rᵢ.DifficultyType).CanPass == false`
+  → **通行不可**（重み `+∞`、REQ-RST-031, 032）
+- それ以外:
+  → **結合係数** = `Π { evaluator.EvaluateDifficulty(rᵢ.DifficultyType).SpeedFactor | rᵢ ∈ DifficultyAreas(R) }`
+  → エッジ所要時間 = `(distance / speed) / 結合係数`（REQ-RST-030）
+
+同じ `RestrictedAreaId` を持つ複数 Shape（複数メッシュ登録）は ID 単位で 1 回だけ係数に乗る。
+
+### 11.3 設計判断の根拠
+
+- **制約評価の単位を「エッジ全体」にした理由**: 「このエッジが flooding 領域にかかっている → 速度 0.3 倍」というモデルが直感的で、利用者（シミュレーション）が結果を解釈しやすい。エッジ内位置別の細分評価は実装複雑化・性能劣化を招き、Phase 1 の解像度（数十 m〜数百 m のエッジ）ではメリットも薄い。部分通過（スナップ点 → 端点）でも同じ係数を適用する一貫性が保てる。
+- **`EvaluateConstraints` を `RestrictedAreaService` 内に置いた理由**: 内部の `Shape` キャッシュ（AABB + ポリゴン）に最短経路でアクセスできる。`Aabb` も `Shape` も internal で公開しない方針なので、外側で同等ロジックを書くと public API 露出が増える。サービスが「自身の状態に対するクエリ」として担う方が自然。
+- **`HashSet<RestrictedAreaId>` で ID 重複除去する理由**: 複数メッシュ登録（REQ-RST-003/006）で 1 ID = 複数 Shape のエントリがインデックス内に並ぶため、ナイーブに走査すると同じ制約を複数回 `speedFactor` の積に乗せてしまう。ID 単位で 1 回が正しいモデル。
+- **`Π speedFactor` を 0.0 以下で `+∞` 化する理由**: プロファイル定義の検証で `speedFactor ∈ [0,1]` を保証しているが、`0.0 × 何か = 0.0` は数学的には通行可能（無限大時間）であり、Dijkstra で `pq.Push(v, 0/0)` 的な NaN になりうる。明示的な `+∞` 短絡で安全側に倒す。
+- **キャッシュ無しで毎回再評価する理由**: REQ-RST-012「制約変更は次回の `Calculate` から即時反映」を最も簡潔に満たす。エッジごとの制約評価結果は Calculate 内のローカル計算に閉じ、グローバル状態を持たない。性能は AABB プリフィルタで担保（候補が空のエッジは O(1) で抜ける）。
+- **ソース／ターゲット部分通過にも制約適用した理由**: スナップ点周辺だけ難所に入る場合（例: 起点が flooding 領域内に少し入り込む）でも、ユーザー期待は「その部分も遅くなる」。これを実装計画書の REQ-RST-030 解釈とした。部分距離 × 同じ係数で表現するため数式は単純。
+- **`_restrictions is null` の早期 return を残した理由**: 制約サービス未指定時のオーバヘッドを 0 にする。`EvaluateConstraints` 側で `_entries.Count == 0` の早期 return もあるため二重防御だが、`null` 時はシェイプ構築コスト（`BuildFullShape` の `List<GeoCoordinate>` 確保）も避けられる。
+
+### 11.4 トレードオフ・制約
+
+- **エッジ単位の係数モデルの限界**: 1 km の長いエッジが端だけ flooding にかかる場合でも「エッジ全体が 0.3 倍速」と判定する。これは「保守的すぎる（実際より遅く見積もる）」方向の誤差。Phase 1 の意思決定（迂回するか否か）には十分だが、所要時間絶対値の精度を求める用途では Phase 2 で「エッジ内分割評価」を検討。
+- **AABB プリフィルタの精度限界**: 細長いエッジが斜めに走り、制約 AABB と AABB は重なるがエッジは制約外という偽陽性はある。続く厳密判定で除外されるが、無駄走査は発生する。Phase 1 の制約数（数百）では実用範囲内。
+- **複数 Shape の早期打切なし**: `EdgeIntersectsAreaShapes` は ID 内の全 Shape を見るが、最初の 1 つで `return true`。これは最悪 O(M)（M = ID 内 Shape 数）。実用上 1 ID = 数〜数十 Shape を想定。
+- **テスト用迂回判定の脆弱性**: `Calculate_BlockArea_OnRoute_DetoursOrReturnsNull` と `Calculate_DifficultyArea_Landslide_...` / `Calculate_BlockArea_Overrides_DifficultyArea` は「迂回 or null」を許容する書き方。データ依存で必ず迂回するとは限らないため緩めの判定。代替路があるエリアでのテストにする工夫はしているが、データ依存性は残る。
+
+### 11.5 検証方法
+
+- `dotnet build OsmDotRoute.sln`: 0 警告・0 エラー
+- `tests/OsmDotRoute.Tests/RestrictedRoutingTests.cs` 9 ケース:
+  1. 制約サービス空インスタンス → baseline と完全一致
+  2. ベースライン中央局所 BlockArea → 迂回 or null
+  3. ベースライン全体を覆う flooding × car → 所要時間 ≈ baseline × 3.33 倍（許容 ±1%）
+  4. ベースライン全体を覆う flooding × pedestrian → 所要時間 ≈ baseline × 10 倍（±1%）
+  5. flooding + construction 重複 × car → 所要時間 ≈ baseline × 16.67 倍（±1%）
+  6. ベースライン全体を覆う landslide × car → 迂回 or null（canPass:false）
+  7. 同一領域に BlockArea + flooding 重複 → BlockArea 優先で迂回 or null
+  8. 未知タイプ `"meteor"` → `difficultyDefault` 適用、速度変化なし
+  9. `ClearAll` 後 → baseline と完全一致
+
+**ステップ 9 実施結果（2026-05-19）**:
+
+```text
+ビルドに成功しました。
+    0 個の警告
+    0 エラー
+
+成功!   -失敗:     0、合格:   125、スキップ:     0、合計:   125、期間: 4 s
+```
+
+新規ファイル: `tests/OsmDotRoute.Tests/RestrictedRoutingTests.cs`（9 ケース、+9）。  
+変更ファイル: `Restrictions/RestrictedAreaService.cs`（`EvaluateConstraints` 追加）、`Routing/EdgeWeightCalculator.cs`（注入＋ 2 新メソッド）、`Routing/DijkstraEngine.cs`（4 評価点置換）、`Router.cs`（`_restrictions` 伝搬）。
+
+### 11.6 実装メモ
+
+- **`EvaluateEdgePartialDurationSec` に `EdgeEvaluation` を引数で渡す理由**: ソース／ターゲット側では Dijkstra 開始時に 1 回だけ評価して結果をローカル変数 `sourceEval` / `targetEval` に保持している。同じ評価を 4 箇所で繰り返さないために引数化。近傍展開側（`EvaluateEdgeDurationSec`）はエニュメレータの現在エッジで毎回評価が必要なので内部で `Evaluate` 呼び出し。
+- **`BuildFullShape` で `IRoadGraphEdgeEnumerator.Shape` / `RoadEdge.Shape` のいずれも「中間のみ」だった件**: 端点座標は `_graph.GetVertex(uint)` で別取得が必要。エッジ評価のたびに `List<GeoCoordinate>` を 1 つ確保するが、Phase 1 では許容（性能ベンチで問題が出れば `ArrayPool<GeoCoordinate>` 化検討）。
+- **テストヘルパ重複**: `CalculateRouteTests.cs` と `RestrictedRoutingTests.cs` で `EnsureTestData` / `CollectCarAccessibleVertexPairs` / `IsCarHighway` が重複している。Phase 1 の他テストでも需要が出れば `tests/TestData/RoutingTestHelper.cs` として共通化する。今は YAGNI で見送り。
+- **Pedestrian + flooding=10 倍テスト**: pedestrian.json で `flooding.speedFactor=0.1`。`speedBounds.maxKmh=5` のクランプ範囲内なら 1/0.1=10 倍が正確に出る。最大速度に張り付いていない普通のエッジでは数値ぴったり 10 倍にならない可能性があったが、実装上は「baseline 計算時にすでにクランプ済み」「制約適用時は基本所要時間に係数を掛けるだけ」なので、係数比だけが効いて 10 倍が出る。テストは ±1% で許容。
+- **同一ポリゴンの BlockArea + DifficultyArea 検証**: 設計上 BlockArea が優先（短絡）で確認したが、テスト 7 は「迂回 or null」許容に留めている。データ依存で必ず迂回成立しないため。代わりに「flooding 単独だと同じ経路」を補足計算で確認することで、BlockArea 追加で経路変化したことが優先証拠になる構成にした。
 
 ---
 
-## 12. GeoJSON 入力対応
+## 12. GML 入力対応（KSJ アプリケーションスキーマ専用）
 
 **対応ステップ**: ステップ 10
-**ステータス**: 未記述
+**ステータス**: 未記述（GeoJSON 対応から GML 対応へ方針変更、2026-05-19 ユーザー合意）
 
-（記述予定項目: `System.Text.Json` での GeoJSON パーサー構成、Polygon / MultiPolygon / Feature / FeatureCollection の解釈、Hole の検出と内外判定への反映、座標軸順（経度→緯度）の徹底、`properties.speedFactor` / `properties.tag` の読取、不正データ時の例外戦略、ファイル/Stream/文字列 入力 API の共通化）
+**方針サマリ**:
+
+- 対応フォーマットは **国土数値情報 KSJ アプリケーションスキーマ準拠の GML 3.2 のみ**。汎用 GML / GeoJSON は対応しない（参考データを用意できないため検証が空転する、親プロジェクトの実用フローを最優先）
+- 座標軸は `<gml:posList>` の **「緯度 経度」順**（KSJ サンプル `A31-12_24.xml` で確認済）
+- ダウンロード元: <https://nlftp.mlit.go.jp/ksj/gml/datalist/>
+
+（記述予定項目: `System.Xml` / `XmlReader` ベースのストリーミングパーサー構成、`<ksj:Dataset>` ルート → `<gml:Curve>` リング → `<gml:Surface>` ポリゴン → `<ksj:ExpectedFloodArea>` 等のフィーチャ要素の解析手順、`xlink:href` による Surface ↔ Curve の ID 参照解決、`<gml:posList>` 緯度経度順読取、`ksj:waterDepth` / `ksj:creatingBody` 等の属性から `difficultyType` への変換規則、対応 KSJ プロダクト一覧（A31「浸水想定区域」を起点、他プロダクトは需要に応じ追加）、不正 GML / 未対応要素時の例外戦略、ファイル / Stream / 文字列入力 API の共通化、要件 REQ-RST-020〜029 の GML 用語への書き換え結果）
 
 ---
 
