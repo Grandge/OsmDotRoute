@@ -1,9 +1,9 @@
 # OsmDotRoute 要件定義書
 
-**バージョン**: 1.1（確定）
+**バージョン**: 1.2（確定）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 確定（Phase 0 完了）
+**ステータス**: 確定（Phase 1 進行中、プロファイル外部化＋難所エリア反映）
 
 ---
 
@@ -125,12 +125,14 @@
 - [ ] [P1] [Phase1] **REQ-RST-002**: 地域メッシュコード（JIS X0410 第3次メッシュおよびその細分メッシュ、後述の REQ-RST-016 で対応階層を規定）による進入不可エリアを登録できること。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-RST-003**: 複数の地域メッシュコードを一括で進入不可エリアとして登録できること（異なる階層の混在を許容）。(Ver. -)
 
-#### 5.2.b 移動困難エリア
+#### 5.2.b 難所エリア（Difficulty Area）
 
-- [ ] [P1] [Phase1] **REQ-RST-004**: 緯度経度ポリゴン + 速度低下係数による移動困難エリアを登録できること。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-RST-005**: 地域メッシュコード（REQ-RST-016 で規定する階層） + 速度低下係数による移動困難エリアを登録できること。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-RST-006**: 複数の地域メッシュコードを一括で移動困難エリアとして登録できること（異なる階層の混在を許容）。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-RST-007**: 速度低下係数の有効範囲を `0.0`〜`1.0` とし、範囲外の値は引数例外で拒否すること（0.0=通行不可、1.0=通常速度）。(Ver. -)
+「客観的事実（道路状況の種別）」を制約として登録し、「主観的反応（速度低下係数・通行可否）」は車両プロファイル側で規定する分離設計を採用する。
+
+- [ ] [P1] [Phase1] **REQ-RST-004**: 緯度経度ポリゴン + 難所タイプ（`string`、REQ-PRF-012 規定の組込み 8 種または REQ-PRF-013 のユーザー定義）による難所エリアを登録できること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-005**: 地域メッシュコード（REQ-RST-016 で規定する階層）+ 難所タイプによる難所エリアを登録できること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-006**: 複数の地域メッシュコードを一括で難所エリアとして登録できること（異なる階層の混在を許容）。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-007**: 難所タイプ文字列は空文字・`null` を拒否すること（引数例外）。組込み 8 種以外の任意キーは許容し、プロファイルが知らないキーには `difficultyDefault`（REQ-PRF-014）を適用すること。(Ver. -)
 
 #### 5.2.c 制約の削除・管理
 
@@ -154,28 +156,62 @@
 - [ ] [P1] [Phase1] **REQ-RST-018**: 桁数が REQ-RST-016 の規定に該当しないメッシュコードは、引数例外で拒否すること。(Ver. -)
 - [ ] [P3] [Phase4+] **REQ-RST-019**: 第1次メッシュ（80km）・第2次メッシュ（10km）への対応拡張は要望が出た時点で個別判断する。(Ver. -)
 
-#### 5.2.e GeoJSON 入力対応
+#### 5.2.e 難所重複時の判定ルール
 
-- [ ] [P1] [Phase1] **REQ-RST-020**: GeoJSON `Polygon` Geometry オブジェクトを入力として進入不可エリア／移動困難エリアを登録できること（RFC 7946 準拠）。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-030**: 同一エッジに複数の難所エリアが交差する場合、各難所に対する速度低下係数の**積**を採用すること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-031**: いずれかの難所判定で `canPass: false`（通行不可）が返された場合、他の判定結果に関わらず通行不可とすること（短絡評価）。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-RST-032**: 進入不可エリア（REQ-RST-001〜003）と難所エリア（REQ-RST-004〜006）の重複時も、進入不可が優先されること。(Ver. -)
+
+#### 5.2.f GeoJSON 入力対応
+
+- [ ] [P1] [Phase1] **REQ-RST-020**: GeoJSON `Polygon` Geometry オブジェクトを入力として進入不可エリア／難所エリアを登録できること（RFC 7946 準拠）。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-RST-021**: GeoJSON `MultiPolygon` Geometry オブジェクトに対応すること。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-RST-022**: GeoJSON `Polygon` の Hole（2番目以降の内側境界配列）に対応し、外側境界内かつ Hole 外の領域のみを制約対象とすること。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-RST-023**: GeoJSON `FeatureCollection` から複数の制約を一括登録できること。各 Feature ごとに登録 ID を返すこと。(Ver. -)
 - [ ] [P2] [Phase1] **REQ-RST-024**: GeoJSON ファイル（`.geojson` / `.json`）を直接読み込んで制約を一括登録できること。(Ver. -)
 - [ ] [P2] [Phase1] **REQ-RST-025**: GeoJSON 文字列（`string`）からの制約一括登録 API を提供すること。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-RST-026**: GeoJSON Feature の `properties` から速度低下係数を読み取れること（規定キー `speedFactor`、`double` 値、範囲 0.0〜1.0）。`speedFactor` キーが存在しない／`null` の場合は進入不可エリアとして扱うこと。(Ver. -)
+- [ ] [P2] [Phase1] **REQ-RST-026**: GeoJSON Feature の `properties` から難所タイプを読み取れること（規定キー `difficulty`、`string` 値）。`difficulty` キーが存在しない／`null` の場合は進入不可エリアとして扱うこと。(Ver. -)
 - [ ] [P2] [Phase1] **REQ-RST-027**: GeoJSON Feature の `properties` の規定キー `tag` からタグ文字列を読み取れること（REQ-RST-010 のタグ機構との連携）。(Ver. -)
 - [ ] [P2] [Phase1] **REQ-RST-028**: GeoJSON の座標系を WGS84（経度、緯度の順）として扱うこと（RFC 7946 準拠）。他の座標系は本ライブラリでは扱わず、利用者側で事前変換すること。(Ver. -)
 - [ ] [P3] [Phase4+] **REQ-RST-029**: TopoJSON 等の他形式対応は要望が出た時点で個別判断する。(Ver. -)
 
 ### 5.3 車両プロファイル (REQ-PRF)
 
-- [ ] [P1] [Phase1] **REQ-PRF-001**: 車両プロファイル `Car` に対応すること。(Ver. -)
-- [ ] [P1] [Phase1] **REQ-PRF-002**: 車両プロファイル `Pedestrian` に対応すること。(Ver. -)
-- [ ] [P2] [Phase2] **REQ-PRF-003**: 車両プロファイル `Bicycle` に対応すること。(Ver. -)
-- [ ] [P2] [Phase2] **REQ-PRF-004**: 車両プロファイル `Truck` に対応すること。(Ver. -)
-- [ ] [P3] [Phase3] **REQ-PRF-005**: 緊急車両プロファイル（救急車・消防車相当）に対応すること。(Ver. -)
-- [ ] [P3] [Phase3] **REQ-PRF-006**: 災害用車両プロファイル（災害時の特殊許可ルート・通行制限緩和を考慮）に対応すること。(Ver. -)
-- [ ] [P3] [Phase4+] **REQ-PRF-007**: プロファイルをユーザーがコードで拡張可能な API を提供すること。(Ver. -)
+#### 5.3.a 同梱プロファイル
+
+- [ ] [P1] [Phase1] **REQ-PRF-001**: 同梱車両プロファイル `car`（普通自動車）を提供すること。実装は JSON 外部ファイル、内容は Itinero `Vehicle.Car` 相当の OSM タグ解釈を踏襲。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-PRF-002**: 同梱車両プロファイル `pedestrian`（歩行者）を提供すること。実装は JSON 外部ファイル、内容は Itinero `Vehicle.Pedestrian` 相当の OSM タグ解釈を踏襲。(Ver. -)
+- [ ] [P2] [Phase2] **REQ-PRF-003**: 同梱車両プロファイル `bicycle`（自転車）を提供すること。(Ver. -)
+- [ ] [P2] [Phase2] **REQ-PRF-004**: 同梱車両プロファイル `truck`（大型貨物車）を提供すること。(Ver. -)
+- [ ] [P3] [Phase3] **REQ-PRF-005**: 同梱車両プロファイル `emergency`（緊急車両：救急車・消防車相当）を提供すること。(Ver. -)
+- [ ] [P3] [Phase3] **REQ-PRF-006**: 同梱車両プロファイル `disaster`（災害用車両：特殊許可ルート・通行制限緩和を考慮）を提供すること。(Ver. -)
+
+#### 5.3.b プロファイル外部ファイル化（リビルド不要の調整可能性）
+
+- [ ] [P1] [Phase1] **REQ-PRF-007**: 車両プロファイルは外部 JSON ファイル形式で定義可能とし、ライブラリのリビルドなしにパラメータ調整できること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-PRF-008**: 同梱プロファイル JSON はアセンブリ埋込リソースとして配置し、デフォルト動作で外部ファイル無しに利用可能とすること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-PRF-009**: ユーザーが独自の JSON プロファイルをファイルパスまたは文字列から読み込める API を提供すること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-PRF-010**: プロファイル JSON スキーマは少なくとも以下を含むこと: 名称 / 車両種別 / `highway` タグ別の通行可否と速度 / アクセスタグ評価ルール / `difficulty` セクション。(Ver. -)
+
+#### 5.3.c 難所タイプ対応（プロファイル × 難所のマトリクス）
+
+- [ ] [P1] [Phase1] **REQ-PRF-011**: プロファイルは難所タイプ毎の速度低下係数（0.0〜1.0）と通行可否（`canPass`）を保持すること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-PRF-012**: 組込み難所タイプを以下 8 種とすること（英語キー、日本語併記）。(Ver. -)
+  - `flooding`（冠水）
+  - `liquefaction`（液状化）
+  - `landslide`（土砂崩れ）
+  - `construction`（工事中）
+  - `obstacle`（障害物。瓦礫・落下物等を包含）
+  - `congestion`（交通集中）
+  - `snow`（積雪）
+  - `ice`（凍結）
+- [ ] [P1] [Phase1] **REQ-PRF-013**: ユーザーが独自の難所タイプ（任意の文字列キー、英数字とアンダースコアのみ）をプロファイル JSON で追加可能とすること。(Ver. -)
+- [ ] [P1] [Phase1] **REQ-PRF-014**: プロファイル定義に存在しない難所タイプが指定された場合、`difficultyDefault`（規定: `speedFactor=1.0`, `canPass=true`）を適用すること。(Ver. -)
+
+#### 5.3.d 将来拡張
+
+- [ ] [P3] [Phase4+] **REQ-PRF-015**: JSON では表現できない動的ルール（時間帯依存・条件分岐等）を C# でプラグインする拡張 API を提供すること。要望が出るまで未実装。(Ver. -)
+- [ ] [P3] [Phase4+] **REQ-PRF-016**: Itinero Lua プロファイル互換層を別アセンブリで提供すること。要望が出るまで未実装。(Ver. -)
 
 ### 5.4 地図データ・グラフ (REQ-MAP)
 
@@ -280,20 +316,35 @@ namespace OsmDotRoute
         public static RouterDb LoadFromFile(string filePath);
     }
 
+    // 車両プロファイル（enum ではなく JSON で外部化されたクラス）
+    public sealed class VehicleProfile
+    {
+        public string Name { get; }                 // "car", "pedestrian" 等
+
+        // 同梱プロファイル（埋込リソース）
+        public static VehicleProfile Car        { get; }   // Profiles/car.json
+        public static VehicleProfile Pedestrian { get; }   // Profiles/pedestrian.json
+
+        // ユーザー定義プロファイル読込
+        public static VehicleProfile LoadFromJsonFile(string filePath);
+        public static VehicleProfile LoadFromJsonString(string json);
+        public static VehicleProfile LoadFromJsonStream(System.IO.Stream stream);
+    }
+
     public sealed class RestrictedAreaService
     {
-        // ポリゴン指定
+        // ポリゴン指定（進入不可・難所）
         public RestrictedAreaId AddBlockArea(GeoPolygon polygon, string? tag = null);
-        public RestrictedAreaId AddSlowArea(GeoPolygon polygon, float speedFactor, string? tag = null);
+        public RestrictedAreaId AddDifficultyArea(GeoPolygon polygon, string difficultyType, string? tag = null);
 
         // 地域メッシュコード指定（JIS X0410 第3次〜1/10 細分、1km〜100m、8〜11 桁）
         public RestrictedAreaId AddBlockArea(MeshCode meshCode, string? tag = null);
         public RestrictedAreaId AddBlockArea(IEnumerable<MeshCode> meshCodes, string? tag = null);
-        public RestrictedAreaId AddSlowArea(MeshCode meshCode, float speedFactor, string? tag = null);
-        public RestrictedAreaId AddSlowArea(IEnumerable<MeshCode> meshCodes, float speedFactor, string? tag = null);
+        public RestrictedAreaId AddDifficultyArea(MeshCode meshCode, string difficultyType, string? tag = null);
+        public RestrictedAreaId AddDifficultyArea(IEnumerable<MeshCode> meshCodes, string difficultyType, string? tag = null);
 
         // GeoJSON 入力（Polygon / MultiPolygon / FeatureCollection、RFC 7946 準拠）
-        // speedFactor は properties.speedFactor から読み取り、無ければ進入不可エリアとして扱う
+        // difficulty は properties.difficulty (string) から読み取り、無ければ進入不可エリアとして扱う
         public RestrictedAreaId[] AddFromGeoJson(string geoJson, string? defaultTag = null);
         public RestrictedAreaId[] AddFromGeoJsonFile(string filePath, string? defaultTag = null);
         public RestrictedAreaId[] AddFromGeoJsonStream(Stream stream, string? defaultTag = null);
@@ -304,7 +355,19 @@ namespace OsmDotRoute
         public IReadOnlyList<RestrictedArea> ListAll();
     }
 
-    public enum VehicleProfile { Car, Pedestrian /* Phase 2: Bicycle, Truck / Phase 3: Emergency, Disaster */ }
+    // 組込み難所タイプの文字列定数（const string、ユーザー定義タイプとの混在可）
+    public static class DifficultyTypes
+    {
+        public const string Flooding     = "flooding";      // 冠水
+        public const string Liquefaction = "liquefaction";  // 液状化
+        public const string Landslide    = "landslide";     // 土砂崩れ
+        public const string Construction = "construction";  // 工事中
+        public const string Obstacle     = "obstacle";      // 障害物
+        public const string Congestion   = "congestion";    // 交通集中
+        public const string Snow         = "snow";          // 積雪
+        public const string Ice          = "ice";           // 凍結
+    }
+
     public readonly record struct GeoCoordinate(double Latitude, double Longitude);
     public sealed class GeoPolygon { /* 緯度経度頂点列 */ }
     public readonly record struct MeshCode(long Value) { /* 8〜11 桁の数値。桁数で階層を自動判定 */ }
@@ -313,12 +376,42 @@ namespace OsmDotRoute
 }
 ```
 
+#### プロファイル JSON スキーマ概要（同梱 `car.json` 抜粋）
+
+```jsonc
+{
+  "name": "car",
+  "vehicleType": "motor_vehicle",
+  "accessTagKeys": ["motor_vehicle", "vehicle", "access"],
+  "highway": {
+    "motorway":      { "speedKmh": 100, "access": "yes" },
+    "primary":       { "speedKmh": 60 },
+    "residential":   { "speedKmh": 30 },
+    "footway":       { "access": "no" }
+  },
+  "accessValueMap": { "yes": "allow", "no": "deny", "private": "deny" },
+  "fallback": { "speedKmh": 30, "access": "no" },
+  "difficulty": {
+    "flooding":     { "speedFactor": 0.3, "canPass": true  },
+    "liquefaction": { "speedFactor": 0.5, "canPass": true  },
+    "landslide":    { "speedFactor": 0.0, "canPass": false },
+    "construction": { "speedFactor": 0.2, "canPass": true  },
+    "obstacle":     { "speedFactor": 0.5, "canPass": true  },
+    "congestion":   { "speedFactor": 0.4, "canPass": true  },
+    "snow":         { "speedFactor": 0.4, "canPass": true  },
+    "ice":          { "speedFactor": 0.3, "canPass": true  }
+  },
+  "difficultyDefault": { "speedFactor": 1.0, "canPass": true }
+}
+```
+
 ### 7.2 関連要件
 
 - REQ-API-001〜REQ-API-008
 - REQ-FMT-001〜REQ-FMT-005
 - REQ-RTE-001〜REQ-RTE-008
-- REQ-RST-001〜REQ-RST-015
+- REQ-RST-001〜REQ-RST-032
+- REQ-PRF-001〜REQ-PRF-016
 
 ---
 
@@ -344,8 +437,31 @@ namespace OsmDotRoute
 
 | キー | 型 | 用途 | 関連要件 |
 |---|---|---|---|
-| `speedFactor` | `double`（0.0〜1.0） | 移動困難エリアの速度低下係数。省略時は進入不可エリアとして扱う | REQ-RST-026 |
+| `difficulty` | `string` | 難所タイプ。組込み 8 種または任意ユーザー定義キー。省略時は進入不可エリアとして扱う | REQ-RST-026 |
 | `tag` | `string` | 制約タグ（タグ単位での一括削除に使用） | REQ-RST-027 |
+
+### 8.1.c プロファイル定義ファイル（JSON）
+
+| 入力形式 | 内容 | 関連要件 |
+|---|---|---|
+| 埋込リソース | 同梱 `Profiles/car.json`, `Profiles/pedestrian.json` | REQ-PRF-008 |
+| ファイルパス | ユーザー定義 JSON プロファイル | REQ-PRF-009 |
+| 文字列 / Stream | ユーザー定義 JSON プロファイル（テストや動的生成用） | REQ-PRF-009 |
+
+スキーマは §7.1 の `car.json` 抜粋を参照。
+
+### 8.1.d 難所タイプ規定値
+
+| キー | 日本語名 | 想定用途 |
+|---|---|---|
+| `flooding` | 冠水 | 河川氾濫・内水氾濫・津波後の冠水 |
+| `liquefaction` | 液状化 | 地震による液状化現象 |
+| `landslide` | 土砂崩れ | 崖崩れ・地すべり・落石（道路寸断） |
+| `construction` | 工事中 | 道路工事・復旧工事による通行困難 |
+| `obstacle` | 障害物 | 瓦礫・倒木・落下物・放置車両等 |
+| `congestion` | 交通集中 | 避難集中・通常混雑による速度低下 |
+| `snow` | 積雪 | 降雪後の未除雪区間 |
+| `ice` | 凍結 | 路面凍結によるスリップリスク |
 
 ### 8.2 出力フォーマット
 
@@ -370,7 +486,7 @@ namespace OsmDotRoute
 
 **目標**: 親プロジェクトから `using Itinero` を完全に消せる状態にする。動的制約対応の Dijkstra 経路計算を提供。
 
-**スコープ**: REQ-RTE-001〜008, REQ-RST-001〜015, REQ-PRF-001〜002, REQ-MAP-001〜002, REQ-API-001〜006, REQ-API-008, REQ-FMT-001〜004, REQ-NFR-001〜003, REQ-NFR-005〜006, REQ-NFR-009〜010, REQ-PKG-001, REQ-LIC-001〜003, REQ-DEP-001
+**スコープ**: REQ-RTE-001〜008, REQ-RST-001〜032, REQ-PRF-001〜002, REQ-PRF-007〜014, REQ-MAP-001〜002, REQ-API-001〜006, REQ-API-008, REQ-FMT-001〜004, REQ-NFR-001〜003, REQ-NFR-005〜006, REQ-NFR-009〜010, REQ-PKG-001, REQ-LIC-001〜003, REQ-DEP-001
 
 **完了判定**:
 - 親プロジェクトの `MapService.cs` から `using Itinero` を完全に消去できる
@@ -407,7 +523,7 @@ namespace OsmDotRoute
 - REQ-NFR-004 (CH 対応), REQ-NFR-007〜008 (Linux/macOS、旧 .NET), REQ-NFR-011 (グローバル対応)
 - REQ-RTE-009 (高速化アルゴリズム)
 - REQ-RST-016 (メッシュ階層拡張)
-- REQ-PRF-007 (プロファイル拡張 API)
+- REQ-PRF-015〜016 (プロファイル C# 拡張 API、Lua 互換層)
 - REQ-API-007 (SemVer)
 - REQ-FMT-005 (Polyline)
 - REQ-PKG-004 (NuGet 公開)
@@ -450,14 +566,15 @@ namespace OsmDotRoute
 | **Itinero** | .NET ベースの OSS 経路計算ライブラリ。1.x はメンテナンス停止状態 |
 | **RouterDb** | Itinero がビルドしたグラフ表現のメモリ・ファイルフォーマット |
 | **Dijkstra（Dykstra）** | グラフ最短経路探索アルゴリズム。Itinero では `Dykstra` という綴り |
-| **Profile** | 車両種別ごとの通行可否・速度を OSM タグから決定する設定 |
+| **Profile（車両プロファイル）** | 車両種別ごとの通行可否・速度を OSM タグから決定する設定。本プロジェクトでは JSON 外部ファイルで定義（リビルド不要） |
 | **FactorAndSpeed** | Itinero の `Profile` が返すエッジ毎の重み係数と速度のペア |
 | **Edge / Vertex** | グラフの辺と頂点。OSM では辺=道路セグメント、頂点=交差点 |
 | **Shape** | エッジの中間座標列。曲がった道路を表現するための補助点 |
 | **RouterPoint** | 任意座標を道路ネットワーク上にスナップした結果点 |
 | **ポリゴン** | 緯度経度頂点列で定義される多角形（GeoJSON Polygon 相当） |
-| **進入不可エリア** | 経路探索でエッジが通過不可と扱われるポリゴン領域 |
-| **移動困難エリア** | 速度低下係数（0.0〜1.0）が適用されるポリゴン領域 |
+| **進入不可エリア (BlockArea)** | 経路探索でエッジが通過不可と扱われるポリゴン領域 |
+| **難所エリア (DifficultyArea)** | 「客観的事実（道路状況種別）」を登録する制約。速度低下係数・通行可否はプロファイル側で規定する |
+| **難所タイプ (Difficulty Type)** | 道路状況の客観的種別を示す文字列キー。組込み 8 種（flooding/liquefaction/landslide/construction/obstacle/congestion/snow/ice）と任意のユーザー定義キー |
 | **動的制約** | ランタイム中に追加・削除・変更可能な通行制約 |
 | **AABB** | Axis-Aligned Bounding Box。ポリゴン外接矩形。事前フィルタに使用 |
 | **CH** | Contraction Hierarchies。経路計算高速化手法。Phase 4 以降で検討 |
@@ -481,6 +598,7 @@ namespace OsmDotRoute
 | 0.2 (draft) | 2026-05-18 | 要件 ID（REQ-XXX-NNN）形式に再構成、ジャンル別整理、Phase/Ver 記法導入、地域メッシュコード対応反映 | Claude (Opus 4.7) |
 | 1.0 (確定) | 2026-05-18 | 車両プロファイル Phase 分割確定、メッシュ階層 1km〜100m の 4 階層対応確定、ユーザー合意済み | Claude (Opus 4.7) |
 | 1.1 (確定) | 2026-05-18 | 動的制約入力に GeoJSON（Polygon / MultiPolygon / FeatureCollection、Hole 対応、RFC 7946 準拠）を追加（REQ-RST-020〜029） | Claude (Opus 4.7) |
+| 1.2 (確定) | 2026-05-18 | プロファイル外部 JSON ファイル化（REQ-PRF-007〜010、リビルド不要要件）、難所エリア導入（REQ-PRF-011〜014、REQ-RST-004〜007 を移動困難エリア → 難所エリアに変更、組込み 8 タイプ、ユーザー定義可、重複時は積・短絡）、API 変更（`AddSlowArea` 削除、`AddDifficultyArea` 追加、`VehicleProfile` enum → class）、GeoJSON プロパティ `speedFactor` → `difficulty` 変更（REQ-RST-026）、難所重複ルール追加（REQ-RST-030〜032）、§7.1 API シグネチャ更新、§8.1.c プロファイル定義ファイル節と §8.1.d 難所タイプ規定値表追加、用語集更新 | Claude (Opus 4.7) |
 
 ---
 
