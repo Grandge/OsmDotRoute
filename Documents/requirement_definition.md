@@ -247,7 +247,7 @@
 
 #### 5.6.b 形式変換ユーティリティ
 
-- [ ] [P2] [Phase1] **REQ-FMT-004**: 経路を GeoJSON LineString に変換するユーティリティを提供すること。(Ver. -)
+- ~~**REQ-FMT-004**: 経路を GeoJSON LineString に変換するユーティリティを提供すること。~~ **【廃止・Ver. 1.7】** 親プロジェクトの実需要が不明確で、利用者側で `Route.Shape` から数行で GeoJSON 化可能なため YAGNI と判断。要望が出た時点で再度評価する（経緯は設計書 §13 参照）。
 - [ ] [P3] [Phase4+] **REQ-FMT-005**: 経路を Encoded Polyline 形式に変換するユーティリティを提供すること（要望次第）。(Ver. -)
 
 ---
@@ -489,7 +489,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 | 種別 | 内容 | 関連要件 |
 |---|---|---|
 | `OsmDotRoute.Route` 型 | 総距離・総所要時間・経路形状 | REQ-FMT-001 〜 REQ-FMT-003 |
-| GeoJSON LineString | 経路の地図表示用 | REQ-FMT-004 |
+| ~~GeoJSON LineString~~ | ~~経路の地図表示用~~ | ~~REQ-FMT-004~~（**廃止・v1.7**、利用者側で `Route.Shape` から数行で変換可能なため YAGNI 判断、設計書 §13 参照） |
 | GeoJSON FeatureCollection | 道路ネットワーク全体 | REQ-RTE-004 |
 
 ---
@@ -626,6 +626,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 | 1.4 (確定) | 2026-05-18 | REQ-RST-016 のメッシュ階層を 4 → 3 に縮小（1/10 細分 = 100m / 11 桁 を Phase 2 以降へ延期）。11 桁エンコーディング仕様が JIS X0410 cascade と整合しないため、親プロジェクト「災害廃棄物処理シミュレーション」と同範囲（8〜10 桁）に揃える。MeshLevel.TenthMesh を enum から削除。Phase 1 ステップ 7 実装で確定 | Claude (Opus 4.7) |
 | 1.5 (確定) | 2026-05-19 | 動的制約入力フォーマットを GeoJSON → 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2 に変更。REQ-RST-020〜029 を全面書き換え、§5.2.f 見出しを「GML 入力対応」に改題、§7.1 API シグネチャを `AddFromGeoJson*` (3 メソッド) → `AddBlockAreaFromGml*`/`AddDifficultyAreaFromGml*` (6 メソッド) に置換、§8.1.b 入力フォーマット表更新（GeoJSON Properties 規定キー表を削除し、GML 入力 API の難所タイプ・タグ指定方針表に置換）。難所タイプはユーザー API 引数指定（フィーチャ要素名からの自動判定はしない、複数 KSJ プロダクト共通基盤のため）、ハザード属性は保持せず形状のみ抽出。`<gml:MultiSurface>` 対応は Phase 2 へ延期（A31 サンプル 1.6GB で出現 0 件を確認）。汎用 GML / GeoJSON / Shapefile / TopoJSON 等の他形式対応は REQ-RST-029 で「要望が出た時点で個別判断」に統合。Phase 1 ステップ 10 実装で確定予定 | Claude (Opus 4.7) |
 | 1.6 (確定) | 2026-05-19 | GML 入力 API にマップ範囲フィルタを追加（REQ-RST-040、新規 P1）。`MapBounds` 公開値型を新設し、GML 入力 6 メソッドに optional `MapBounds? mapBounds = null` 引数（`difficultyType` の後・`tag` の前）を挿入。指定時はフィーチャ外周頂点が 1 つでも範囲内（境界線上含む）にあるフィーチャのみ採用、0 個はスキップ。未指定 (`null`) 時は全フィーチャ採用（互換）。シミュレーションのマップ範囲外フィーチャを自動除外するための機能で、利用者は `RouterDb.GetStatistics()` で得た範囲をそのまま渡せる。Phase 1 ステップ 10 実装で確定 | Claude (Opus 4.7) |
+| 1.7 (確定) | 2026-05-19 | REQ-FMT-004「経路 → GeoJSON LineString 変換ユーティリティ」を**廃止**。親プロジェクトの実需要が不明確で、利用者側で `Route.Shape: IReadOnlyList<GeoCoordinate>` から数行で GeoJSON 化可能なため YAGNI 判断（ユーザー合意 2026-05-19）。Phase 1 ステップ 11 を廃止扱いとし、ステップ 12 以降に直接進む。§8.2 出力フォーマット表の該当行も廃止表記。要望が出た時点で再評価する（設計書 §13 に検討経緯を記録） | Claude (Opus 4.7) |
 
 ---
 
