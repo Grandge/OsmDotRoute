@@ -6,11 +6,14 @@ namespace OsmDotRoute.Gml;
 public sealed class InvalidGmlException : Exception
 {
     /// <summary>新規例外を作成する。</summary>
+    /// <param name="message">例外メッセージ</param>
     public InvalidGmlException(string message) : base(message)
     {
     }
 
     /// <summary>内部例外つきで新規例外を作成する。</summary>
+    /// <param name="message">例外メッセージ</param>
+    /// <param name="innerException">原因となった内部例外</param>
     public InvalidGmlException(string message, Exception innerException) : base(message, innerException)
     {
     }

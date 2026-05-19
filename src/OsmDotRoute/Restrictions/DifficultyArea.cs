@@ -8,6 +8,12 @@ namespace OsmDotRoute;
 public sealed class DifficultyArea : RestrictedArea
 {
     /// <summary>ポリゴンで定義される難所エリアを作成する（REQ-RST-004）。</summary>
+    /// <param name="id">制約 ID</param>
+    /// <param name="polygon">難所領域を表すポリゴン</param>
+    /// <param name="difficultyType">難所タイプ文字列（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <exception cref="ArgumentNullException"><paramref name="polygon"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
     public DifficultyArea(RestrictedAreaId id, GeoPolygon polygon, string difficultyType, string? tag = null)
         : base(id, tag)
     {
@@ -19,6 +25,11 @@ public sealed class DifficultyArea : RestrictedArea
     }
 
     /// <summary>単一メッシュコードで定義される難所エリアを作成する（REQ-RST-005）。</summary>
+    /// <param name="id">制約 ID</param>
+    /// <param name="meshCode">難所領域とする単一メッシュコード</param>
+    /// <param name="difficultyType">難所タイプ文字列（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <exception cref="ArgumentException"><paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
     public DifficultyArea(RestrictedAreaId id, MeshCode meshCode, string difficultyType, string? tag = null)
         : base(id, tag)
     {
@@ -32,7 +43,12 @@ public sealed class DifficultyArea : RestrictedArea
     /// 複数メッシュコードで定義される難所エリアを作成する（REQ-RST-006）。
     /// 異なる階層（8〜10 桁）の混在を許容する。
     /// </summary>
-    /// <exception cref="ArgumentException"><paramref name="meshCodes"/> が空、または <paramref name="difficultyType"/> が空文字/null</exception>
+    /// <param name="id">制約 ID</param>
+    /// <param name="meshCodes">難所領域とするメッシュコード集合</param>
+    /// <param name="difficultyType">難所タイプ文字列（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <exception cref="ArgumentNullException"><paramref name="meshCodes"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="meshCodes"/> が空、または <paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
     public DifficultyArea(RestrictedAreaId id, IEnumerable<MeshCode> meshCodes, string difficultyType, string? tag = null)
         : base(id, tag)
     {

@@ -72,6 +72,7 @@ public sealed class Router
     /// <summary>
     /// 道路ネットワーク全体を GeoJSON FeatureCollection（LineString 列）として出力する（REQ-RTE-004）。
     /// </summary>
+    /// <returns>道路ネットワーク GeoJSON</returns>
     public RoadNetworkGeoJson GetRoadNetworkGeoJson()
         => new RoadNetworkGeoJson(GeoJsonWriter.WriteRoadNetwork(_routerDb.Graph));
 }

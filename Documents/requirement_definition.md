@@ -1,9 +1,9 @@
 # OsmDotRoute 要件定義書
 
-**バージョン**: 1.4（確定）
+**バージョン**: 1.8（確定）
 **作成日**: 2026-05-18
-**最終更新**: 2026-05-18
-**ステータス**: 確定（Phase 1 進行中、ステップ 3 完了反映）
+**最終更新**: 2026-05-19
+**ステータス**: 確定（Phase 1 進行中、ステップ 12 完了反映：DI 拡張・XML doc 完備・README 整備）
 
 ---
 
@@ -232,10 +232,10 @@
 - [ ] [P1] [Phase1] **REQ-API-002**: 出力型は OsmDotRoute 独自の `Route` 型とし、`Itinero.Route` 型を公開 API に露出させないこと。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-API-003**: 親プロジェクト側から `using Itinero;` を完全に消去できる API 設計とすること（Itinero 名前空間を内部実装に隠蔽）。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-API-004**: 動的制約の管理を `OsmDotRoute.RestrictedAreaService` クラスで提供すること。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-API-005**: `Microsoft.Extensions.DependencyInjection` 互換の DI 登録拡張メソッド（`AddOsmDotRoute()` 等）を提供すること。(Ver. -)
-- [ ] [P2] [Phase1] **REQ-API-006**: 公開型は XML ドキュメンテーションコメント（`<summary>` 等）を完備すること。(Ver. -)
+- [x] [P2] [Phase1] **REQ-API-005**: `Microsoft.Extensions.DependencyInjection` 互換の DI 登録拡張メソッド（`AddOsmDotRoute()` 等）を提供すること。(Ver. 0.17)
+- [x] [P2] [Phase1] **REQ-API-006**: 公開型は XML ドキュメンテーションコメント（`<summary>` 等）を完備すること。(Ver. 0.17)
 - [ ] [P2] [Phase4+] **REQ-API-007**: 1.0 リリース以降は SemVer に準拠したバージョニングを行うこと。(Ver. -)
-- [ ] [P3] [Phase1] **REQ-API-008**: 0.x 期間中の破壊的 API 変更はマイナー版アップで許容する旨を README に明記すること。(Ver. -)
+- [x] [P3] [Phase1] **REQ-API-008**: 0.x 期間中の破壊的 API 変更はマイナー版アップで許容する旨を README に明記すること。(Ver. 0.17)
 
 ### 5.6 データフォーマット (REQ-FMT)
 
@@ -276,14 +276,14 @@
 
 ### 6.4 配布・公開戦略 (REQ-PKG)
 
-- [ ] [P1] [Phase1] **REQ-PKG-001**: Phase 1 では本プロジェクトをソースとして親プロジェクトから `<ProjectReference>` で参照可能とすること。(Ver. -)
+- [x] [P1] [Phase1] **REQ-PKG-001**: Phase 1 では本プロジェクトをソースとして親プロジェクトから `<ProjectReference>` で参照可能とすること。(Ver. 0.17)
 - [ ] [P2] [Phase2] **REQ-PKG-002**: Phase 2 までは非公開リポジトリで管理し、外部公開しないこと。(Ver. -)
 - [ ] [P1] [Phase3] **REQ-PKG-003**: Phase 3 完了時点で GitHub 個人アカウント上で OSS 公開できる状態とすること（README/LICENSE/CI 整備済み）。(Ver. -)
 - [ ] [P3] [Phase4+] **REQ-PKG-004**: NuGet.org への公開可否は Phase 3 完了後に別途判断する（当面公開しない）。(Ver. -)
 
 ### 6.5 ライセンス (REQ-LIC)
 
-- [ ] [P1] [Phase1] **REQ-LIC-001**: ライブラリ本体のライセンスを MIT License とすること。(Ver. -)
+- [x] [P1] [Phase1] **REQ-LIC-001**: ライブラリ本体のライセンスを MIT License とすること。(Ver. 0.17)
 - [ ] [P1] [Phase1] **REQ-LIC-002**: Itinero（Apache 2.0）のソースコードを本プロジェクトにコピー・改変して取り込まないこと。(Ver. -)
 - [ ] [P1] [Phase1] **REQ-LIC-003**: Itinero への依存は NuGet 経由のバイナリ参照のみで行うこと。(Ver. -)
 - [ ] [P2] [Phase3] **REQ-LIC-004**: OSM データ（ODbL）の利用ガイドラインを README で利用者に案内すること（本ライブラリ自体は OSM データを内包しない）。(Ver. -)
@@ -627,6 +627,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 | 1.5 (確定) | 2026-05-19 | 動的制約入力フォーマットを GeoJSON → 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2 に変更。REQ-RST-020〜029 を全面書き換え、§5.2.f 見出しを「GML 入力対応」に改題、§7.1 API シグネチャを `AddFromGeoJson*` (3 メソッド) → `AddBlockAreaFromGml*`/`AddDifficultyAreaFromGml*` (6 メソッド) に置換、§8.1.b 入力フォーマット表更新（GeoJSON Properties 規定キー表を削除し、GML 入力 API の難所タイプ・タグ指定方針表に置換）。難所タイプはユーザー API 引数指定（フィーチャ要素名からの自動判定はしない、複数 KSJ プロダクト共通基盤のため）、ハザード属性は保持せず形状のみ抽出。`<gml:MultiSurface>` 対応は Phase 2 へ延期（A31 サンプル 1.6GB で出現 0 件を確認）。汎用 GML / GeoJSON / Shapefile / TopoJSON 等の他形式対応は REQ-RST-029 で「要望が出た時点で個別判断」に統合。Phase 1 ステップ 10 実装で確定予定 | Claude (Opus 4.7) |
 | 1.6 (確定) | 2026-05-19 | GML 入力 API にマップ範囲フィルタを追加（REQ-RST-040、新規 P1）。`MapBounds` 公開値型を新設し、GML 入力 6 メソッドに optional `MapBounds? mapBounds = null` 引数（`difficultyType` の後・`tag` の前）を挿入。指定時はフィーチャ外周頂点が 1 つでも範囲内（境界線上含む）にあるフィーチャのみ採用、0 個はスキップ。未指定 (`null`) 時は全フィーチャ採用（互換）。シミュレーションのマップ範囲外フィーチャを自動除外するための機能で、利用者は `RouterDb.GetStatistics()` で得た範囲をそのまま渡せる。Phase 1 ステップ 10 実装で確定 | Claude (Opus 4.7) |
 | 1.7 (確定) | 2026-05-19 | REQ-FMT-004「経路 → GeoJSON LineString 変換ユーティリティ」を**廃止**。親プロジェクトの実需要が不明確で、利用者側で `Route.Shape: IReadOnlyList<GeoCoordinate>` から数行で GeoJSON 化可能なため YAGNI 判断（ユーザー合意 2026-05-19）。Phase 1 ステップ 11 を廃止扱いとし、ステップ 12 以降に直接進む。§8.2 出力フォーマット表の該当行も廃止表記。要望が出た時点で再評価する（設計書 §13 に検討経緯を記録） | Claude (Opus 4.7) |
+| 1.8 (確定) | 2026-05-19 | Phase 1 ステップ 12 完了反映：REQ-API-005（DI 拡張 `AddOsmDotRoute`）、REQ-API-006（XML doc 完備）、REQ-API-008（README に 0.x 破壊的変更方針明記）、REQ-PKG-001（ProjectReference 参照確立）、REQ-LIC-001（MIT License）を完了マーク。新規 csproj `OsmDotRoute.Extensions.DependencyInjection`（`Microsoft.Extensions.DependencyInjection.Abstractions` 9.0.0 のみ依存）を追加。`Directory.Build.props` の `GenerateDocumentationFile` を `true` に切替（テスト/ベンチマーク/サンプル csproj で個別に `false` 上書き）。`README.md` を Phase 0 → Phase 1 進行中の内容に全面書き換え（最小サンプル・DI 統合・動的制約登録例・Phase ロードマップ）。6 プロジェクト・147/147 テスト・0 警告維持。設計書 §14「DI 拡張とドキュメント」を実装済みに記述（§2.2/2.4/3.2/3.4 にも追記） | Claude (Opus 4.7) |
 
 ---
 

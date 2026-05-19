@@ -15,8 +15,8 @@ public readonly record struct MeshCode(long Value)
 {
     /// <summary>
     /// メッシュ階層を桁数から判定する（REQ-RST-017）。
-    /// 桁数が 8〜10 桁の範囲外の場合は <see cref="ArgumentOutOfRangeException"/> をスローする（REQ-RST-018）。
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">桁数が 8〜10 桁の範囲外（REQ-RST-018）</exception>
     public MeshLevel Level => Value switch
     {
         >= 10_000_000L and < 100_000_000L => MeshLevel.Mesh3rd,

@@ -13,6 +13,7 @@ public static class ItineroRouterDbLoader
     /// Itinero RouterDb ファイルを読み込んで <see cref="OsmDotRoute.RouterDb"/> を返す。
     /// </summary>
     /// <param name="filePath">RouterDb ファイルパス</param>
+    /// <returns>OsmDotRoute 用 <see cref="OsmDotRoute.RouterDb"/> インスタンス</returns>
     /// <exception cref="ArgumentException"><paramref name="filePath"/> が <c>null</c> または空</exception>
     /// <exception cref="FileNotFoundException">ファイルが存在しない</exception>
     public static OsmDotRoute.RouterDb LoadFromFile(string filePath)
@@ -37,6 +38,8 @@ public static class ItineroRouterDbLoader
     /// 既存コード（親プロジェクト等）が独自に Itinero RouterDb を読み込むケース向け。
     /// </summary>
     /// <param name="itineroRouterDb">Itinero RouterDb インスタンス</param>
+    /// <returns>OsmDotRoute 用 <see cref="OsmDotRoute.RouterDb"/> インスタンス</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="itineroRouterDb"/> が <c>null</c></exception>
     public static OsmDotRoute.RouterDb FromItineroRouterDb(ItineroDb itineroRouterDb)
     {
         ArgumentNullException.ThrowIfNull(itineroRouterDb);

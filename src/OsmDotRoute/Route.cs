@@ -12,6 +12,7 @@ public sealed class Route
     /// <param name="totalDistanceM">総距離（メートル）</param>
     /// <param name="totalDurationSec">総所要時間（秒）</param>
     /// <param name="shape">経路形状（緯度経度頂点列、起点から終点まで）</param>
+    /// <exception cref="ArgumentNullException"><paramref name="shape"/> が <c>null</c></exception>
     public Route(double totalDistanceM, double totalDurationSec, IReadOnlyList<GeoCoordinate> shape)
     {
         ArgumentNullException.ThrowIfNull(shape);

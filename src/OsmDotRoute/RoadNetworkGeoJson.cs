@@ -9,6 +9,7 @@ public sealed class RoadNetworkGeoJson
     /// JSON 文字列から GeoJSON ラッパーを作成する。
     /// </summary>
     /// <param name="json">GeoJSON FeatureCollection の JSON 文字列</param>
+    /// <exception cref="ArgumentNullException"><paramref name="json"/> が <c>null</c></exception>
     public RoadNetworkGeoJson(string json)
     {
         ArgumentNullException.ThrowIfNull(json);

@@ -35,6 +35,7 @@ public sealed class RouterDb
     /// 都道府県単位（数百万エッジ）でも int 範囲内 (~2.1B) に収まる前提。
     /// Phase 4+ で全国対応する場合は long に拡張。
     /// </summary>
+    /// <returns>頂点数・辺数・経緯度範囲を含む統計</returns>
     public RouterDbStatistics GetStatistics()
     {
         var bounds = _graph.GetBounds();

@@ -663,26 +663,26 @@ DotRoute/
 
 ---
 
-### ステップ 12: DI 拡張・XML ドキュメンテーション・README 整備
+### ステップ 12: DI 拡張・XML ドキュメンテーション・README 整備（**完了 2026-05-19**）
 
 **目的**: 公開 API のドキュメント整備・DI 統合・配布準備。
 
-**作業**:
-- `OsmDotRoute.Extensions.DependencyInjection` プロジェクト追加（5.4 で確定後）
-- `AddOsmDotRoute(this IServiceCollection, string routerDbPath)` 実装
-- 公開型全てに XML コメント（`<summary>`, `<param>`, `<returns>`, `<exception>`）を完備
-- ルート `README.md` を整備:
-  - プロジェクト概要・MIT License
-  - 最小利用サンプル（数行）
-  - 0.x 期間中の破壊的変更方針（REQ-API-008）
-  - 親プロジェクトとの関係性
-  - Phase ロードマップ
-- `LICENSE` 確認
+**実施内容**:
+
+- `OsmDotRoute.Extensions.DependencyInjection` プロジェクト新設（`Microsoft.Extensions.DependencyInjection.Abstractions` 9.0.0 のみに依存、`OsmDotRoute` / `OsmDotRoute.Itinero` への ProjectReference）
+- `AddOsmDotRoute(IServiceCollection, string routerDbPath)` 実装 + `AddOsmDotRoute(IServiceCollection, Action<OsmDotRouteOptions>)` オーバーロード（`Router` / `RouterDb` / `RestrictedAreaService` を Singleton 登録）
+- 公開 20 型に `<summary>` / `<param>` / `<returns>` / `<exception>` 完備
+- `Directory.Build.props` の `GenerateDocumentationFile` を `false` → `true` に切替（テスト/ベンチマーク/サンプル csproj で個別に `false` 上書き）
+- ルート `README.md` を Phase 0 → Phase 1 進行中の内容に全面書き換え（最小サンプル、動的制約登録例、DI 統合、0.x 破壊的変更方針 REQ-API-008、Phase ロードマップ）
+- `LICENSE` は既存 MIT のまま据置（ステップ 1 で配置済）
+- `.sln` に DI 拡張プロジェクト登録、`src` ソリューションフォルダ配下に配置
 
 **完了判定**:
-- `dotnet build` で XML ドキュメント生成警告が出ない
-- README が GitHub で正しくレンダリング（プレビュー確認）
-- 設計書 §14「DI 拡張とドキュメント」を更新
+
+- ✅ `dotnet build OsmDotRoute.sln`: 6 プロジェクト全て **0 警告 0 エラー**（XML doc 生成警告含む）
+- ✅ `dotnet test`: 147/147 成功維持（新規テスト追加なし）
+- ✅ 設計書 §14「DI 拡張とドキュメント」を実装済みに記述（§2.2/2.4/3.2/3.4 にも追記反映）
+- ✅ 要件定義書: REQ-API-005 / REQ-API-006 / REQ-API-008 / REQ-PKG-001 / REQ-LIC-001 を `[x]` 完了マーク、v1.8 に改訂
 
 ---
 

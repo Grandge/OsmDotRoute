@@ -19,6 +19,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{B70E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleDemo", "samples\ConsoleDemo\ConsoleDemo.csproj", "{5587C5CD-45DE-4B33-A50B-4E76471B172A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmDotRoute.Extensions.DependencyInjection", "src\OsmDotRoute.Extensions.DependencyInjection\OsmDotRoute.Extensions.DependencyInjection.csproj", "{CE8EC963-2869-4661-9A60-B54B273E5890}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,6 +50,10 @@ Global
 		{5587C5CD-45DE-4B33-A50B-4E76471B172A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5587C5CD-45DE-4B33-A50B-4E76471B172A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5587C5CD-45DE-4B33-A50B-4E76471B172A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE8EC963-2869-4661-9A60-B54B273E5890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE8EC963-2869-4661-9A60-B54B273E5890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE8EC963-2869-4661-9A60-B54B273E5890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE8EC963-2869-4661-9A60-B54B273E5890}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F57DFE18-1F3C-42DC-9286-59D5D3E93627} = {285B79B6-4FA5-4371-A001-EA0AE19AE614}
@@ -55,5 +61,6 @@ Global
 		{6499919D-D170-47AC-89F9-FE433A77E57B} = {55DA6B30-D175-403B-A09E-D503F71E376E}
 		{54477095-7DFE-4A24-8888-B450B4F34E2B} = {55DA6B30-D175-403B-A09E-D503F71E376E}
 		{5587C5CD-45DE-4B33-A50B-4E76471B172A} = {B70E02BC-4815-423D-874F-FB364E7ADBEC}
+		{CE8EC963-2869-4661-9A60-B54B273E5890} = {285B79B6-4FA5-4371-A001-EA0AE19AE614}
 	EndGlobalSection
 EndGlobal

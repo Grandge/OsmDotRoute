@@ -47,6 +47,7 @@ public sealed class VehicleProfile
     /// JSON ファイルからユーザー定義プロファイルを読み込む（REQ-PRF-009）。
     /// </summary>
     /// <param name="filePath">JSON ファイルパス</param>
+    /// <returns>ロードされた <see cref="VehicleProfile"/> インスタンス</returns>
     /// <exception cref="ArgumentException">パスが null または空</exception>
     /// <exception cref="FileNotFoundException">ファイルが存在しない</exception>
     /// <exception cref="InvalidProfileException">JSON 形式不正または検証失敗</exception>
@@ -69,6 +70,7 @@ public sealed class VehicleProfile
     /// JSON 文字列からユーザー定義プロファイルを読み込む（REQ-PRF-009）。
     /// </summary>
     /// <param name="json">JSON 文字列</param>
+    /// <returns>ロードされた <see cref="VehicleProfile"/> インスタンス</returns>
     /// <exception cref="ArgumentException">JSON が null または空</exception>
     /// <exception cref="InvalidProfileException">JSON 形式不正または検証失敗</exception>
     public static VehicleProfile LoadFromJsonString(string json)
@@ -101,6 +103,7 @@ public sealed class VehicleProfile
     /// JSON Stream からユーザー定義プロファイルを読み込む（REQ-PRF-009）。
     /// </summary>
     /// <param name="stream">JSON Stream</param>
+    /// <returns>ロードされた <see cref="VehicleProfile"/> インスタンス</returns>
     /// <exception cref="ArgumentNullException">Stream が null</exception>
     /// <exception cref="InvalidProfileException">JSON 形式不正または検証失敗</exception>
     public static VehicleProfile LoadFromJsonStream(Stream stream)

@@ -7,11 +7,14 @@ namespace OsmDotRoute;
 public sealed class InvalidProfileException : Exception
 {
     /// <summary>メッセージを指定して例外を作成する。</summary>
+    /// <param name="message">例外メッセージ</param>
     public InvalidProfileException(string message) : base(message)
     {
     }
 
     /// <summary>メッセージと内部例外を指定して例外を作成する。</summary>
+    /// <param name="message">例外メッセージ</param>
+    /// <param name="innerException">原因となった内部例外</param>
     public InvalidProfileException(string message, Exception innerException)
         : base(message, innerException)
     {

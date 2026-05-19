@@ -22,6 +22,10 @@ public sealed class RestrictedAreaService
     // --- ポリゴン指定 ---
 
     /// <summary>ポリゴンによる進入不可エリアを登録する（REQ-RST-001）。</summary>
+    /// <param name="polygon">進入不可領域を表すポリゴン</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="polygon"/> が <c>null</c></exception>
     public RestrictedAreaId AddBlockArea(GeoPolygon polygon, string? tag = null)
     {
         ArgumentNullException.ThrowIfNull(polygon);
@@ -33,6 +37,12 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>ポリゴンによる難所エリアを登録する（REQ-RST-004）。</summary>
+    /// <param name="polygon">難所領域を表すポリゴン</param>
+    /// <param name="difficultyType">難所タイプ文字列（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="polygon"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
     public RestrictedAreaId AddDifficultyArea(GeoPolygon polygon, string difficultyType, string? tag = null)
     {
         ArgumentNullException.ThrowIfNull(polygon);
@@ -46,6 +56,9 @@ public sealed class RestrictedAreaService
     // --- メッシュコード指定 ---
 
     /// <summary>メッシュコードによる進入不可エリアを登録する（REQ-RST-002）。</summary>
+    /// <param name="meshCode">進入不可とする単一メッシュコード</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID</returns>
     public RestrictedAreaId AddBlockArea(MeshCode meshCode, string? tag = null)
     {
         var id = RestrictedAreaId.New();
@@ -56,6 +69,11 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>複数メッシュコードを一括で進入不可エリアとして登録する（REQ-RST-003）。</summary>
+    /// <param name="meshCodes">進入不可とするメッシュコード集合（異なる階層の混在可）</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="meshCodes"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="meshCodes"/> が空</exception>
     public RestrictedAreaId AddBlockArea(IEnumerable<MeshCode> meshCodes, string? tag = null)
     {
         ArgumentNullException.ThrowIfNull(meshCodes);
@@ -67,6 +85,11 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>メッシュコードによる難所エリアを登録する（REQ-RST-005）。</summary>
+    /// <param name="meshCode">難所領域とする単一メッシュコード</param>
+    /// <param name="difficultyType">難所タイプ文字列（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID</returns>
+    /// <exception cref="ArgumentException"><paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
     public RestrictedAreaId AddDifficultyArea(MeshCode meshCode, string difficultyType, string? tag = null)
     {
         var id = RestrictedAreaId.New();
@@ -77,6 +100,12 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>複数メッシュコードを一括で難所エリアとして登録する（REQ-RST-006）。</summary>
+    /// <param name="meshCodes">難所領域とするメッシュコード集合（異なる階層の混在可）</param>
+    /// <param name="difficultyType">難所タイプ文字列（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="tag">一括削除用の任意タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="meshCodes"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="meshCodes"/> が空、または <paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
     public RestrictedAreaId AddDifficultyArea(IEnumerable<MeshCode> meshCodes, string difficultyType, string? tag = null)
     {
         ArgumentNullException.ThrowIfNull(meshCodes);
@@ -94,6 +123,11 @@ public sealed class RestrictedAreaService
     /// <paramref name="mapBounds"/> 指定時は外周頂点が 1 つでも範囲内にあるフィーチャのみ採用（REQ-RST-040）。
     /// 全採用フィーチャに同一の <paramref name="tag"/> を付与する（REQ-RST-027）。
     /// </summary>
+    /// <param name="gml">KSJ アプリケーションスキーマ準拠 GML 3.2 文字列</param>
+    /// <param name="mapBounds">採用範囲フィルタ（REQ-RST-040）。<c>null</c> なら全フィーチャ採用</param>
+    /// <param name="tag">採用フィーチャ全体に共通付与する一括削除用タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID 配列（採用フィーチャと同順）</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="gml"/> が <c>null</c></exception>
     /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
     /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
     public RestrictedAreaId[] AddBlockAreaFromGml(string gml, MapBounds? mapBounds = null, string? tag = null)
@@ -104,6 +138,14 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>GML ファイルから進入不可エリアを一括登録する（REQ-RST-024/040）。</summary>
+    /// <param name="filePath">GML ファイルパス</param>
+    /// <param name="mapBounds">採用範囲フィルタ（REQ-RST-040）。<c>null</c> なら全フィーチャ採用</param>
+    /// <param name="tag">採用フィーチャ全体に共通付与する一括削除用タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID 配列（採用フィーチャと同順）</returns>
+    /// <exception cref="ArgumentException"><paramref name="filePath"/> が <c>null</c>/空/空白</exception>
+    /// <exception cref="FileNotFoundException">ファイルが存在しない</exception>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
     public RestrictedAreaId[] AddBlockAreaFromGmlFile(string filePath, MapBounds? mapBounds = null, string? tag = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
@@ -112,6 +154,13 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>GML Stream から進入不可エリアを一括登録する（REQ-RST-025/040）。</summary>
+    /// <param name="stream">GML を含む読み取り可能 Stream</param>
+    /// <param name="mapBounds">採用範囲フィルタ（REQ-RST-040）。<c>null</c> なら全フィーチャ採用</param>
+    /// <param name="tag">採用フィーチャ全体に共通付与する一括削除用タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID 配列（採用フィーチャと同順）</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> が <c>null</c></exception>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
     public RestrictedAreaId[] AddBlockAreaFromGmlStream(Stream stream, MapBounds? mapBounds = null, string? tag = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -124,6 +173,12 @@ public sealed class RestrictedAreaService
     /// <paramref name="mapBounds"/> 指定時は外周頂点が 1 つでも範囲内にあるフィーチャのみ採用（REQ-RST-040）。
     /// 全採用フィーチャに同一の <paramref name="difficultyType"/> と <paramref name="tag"/> を適用する。
     /// </summary>
+    /// <param name="gml">KSJ アプリケーションスキーマ準拠 GML 3.2 文字列</param>
+    /// <param name="difficultyType">採用フィーチャ全体に共通適用する難所タイプ（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="mapBounds">採用範囲フィルタ（REQ-RST-040）。<c>null</c> なら全フィーチャ採用</param>
+    /// <param name="tag">採用フィーチャ全体に共通付与する一括削除用タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID 配列（採用フィーチャと同順）</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="gml"/> が <c>null</c></exception>
     /// <exception cref="ArgumentException"><paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
     /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
     /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
@@ -135,6 +190,15 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>GML ファイルから難所エリアを一括登録する（REQ-RST-024/026/040）。</summary>
+    /// <param name="filePath">GML ファイルパス</param>
+    /// <param name="difficultyType">採用フィーチャ全体に共通適用する難所タイプ（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="mapBounds">採用範囲フィルタ（REQ-RST-040）。<c>null</c> なら全フィーチャ採用</param>
+    /// <param name="tag">採用フィーチャ全体に共通付与する一括削除用タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID 配列（採用フィーチャと同順）</returns>
+    /// <exception cref="ArgumentException"><paramref name="filePath"/> が <c>null</c>/空/空白、または <paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
+    /// <exception cref="FileNotFoundException">ファイルが存在しない</exception>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
     public RestrictedAreaId[] AddDifficultyAreaFromGmlFile(string filePath, string difficultyType, MapBounds? mapBounds = null, string? tag = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
@@ -143,6 +207,15 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>GML Stream から難所エリアを一括登録する（REQ-RST-025/026/040）。</summary>
+    /// <param name="stream">GML を含む読み取り可能 Stream</param>
+    /// <param name="difficultyType">採用フィーチャ全体に共通適用する難所タイプ（<see cref="DifficultyTypes"/> 参照）</param>
+    /// <param name="mapBounds">採用範囲フィルタ（REQ-RST-040）。<c>null</c> なら全フィーチャ採用</param>
+    /// <param name="tag">採用フィーチャ全体に共通付与する一括削除用タグ（REQ-RST-010）</param>
+    /// <returns>登録された制約の ID 配列（採用フィーチャと同順）</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="difficultyType"/> が空文字/null（REQ-RST-007）</exception>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
     public RestrictedAreaId[] AddDifficultyAreaFromGmlStream(Stream stream, string difficultyType, MapBounds? mapBounds = null, string? tag = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -190,6 +263,7 @@ public sealed class RestrictedAreaService
     // --- 削除 ---
 
     /// <summary>指定 ID の制約を削除する（REQ-RST-008）。存在しない ID は何もしない。</summary>
+    /// <param name="id">削除対象の制約 ID</param>
     public void Remove(RestrictedAreaId id)
     {
         if (_entries.Remove(id))
@@ -199,6 +273,8 @@ public sealed class RestrictedAreaService
     }
 
     /// <summary>指定タグの制約を一括削除する（REQ-RST-010）。<c>null</c> 渡しは例外。</summary>
+    /// <param name="tag">削除対象のタグ（完全一致）</param>
+    /// <exception cref="ArgumentNullException"><paramref name="tag"/> が <c>null</c></exception>
     public void RemoveByTag(string tag)
     {
         ArgumentNullException.ThrowIfNull(tag);
@@ -227,6 +303,7 @@ public sealed class RestrictedAreaService
     // --- 一覧 ---
 
     /// <summary>登録済み制約の一覧を読み取り専用ビューで取得する（REQ-RST-011）。</summary>
+    /// <returns>登録済み制約のスナップショット（登録順保証なし）</returns>
     public IReadOnlyList<RestrictedArea> ListAll()
     {
         return _entries.Values.Select(e => e.Area).ToArray();

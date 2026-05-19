@@ -10,6 +10,8 @@ public sealed class GeoPolygon
     /// 外側境界のみを持つ多角形を作成する。
     /// </summary>
     /// <param name="outerBoundary">外側境界の頂点列（3 頂点以上）</param>
+    /// <exception cref="ArgumentNullException"><paramref name="outerBoundary"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="outerBoundary"/> が 3 頂点未満</exception>
     public GeoPolygon(IReadOnlyList<GeoCoordinate> outerBoundary)
         : this(outerBoundary, Array.Empty<IReadOnlyList<GeoCoordinate>>())
     {
@@ -20,6 +22,8 @@ public sealed class GeoPolygon
     /// </summary>
     /// <param name="outerBoundary">外側境界の頂点列（3 頂点以上）</param>
     /// <param name="holes">内側境界（Hole）の頂点列配列。各リングは 3 頂点以上</param>
+    /// <exception cref="ArgumentNullException"><paramref name="outerBoundary"/> または <paramref name="holes"/> が <c>null</c></exception>
+    /// <exception cref="ArgumentException"><paramref name="outerBoundary"/> が 3 頂点未満</exception>
     public GeoPolygon(IReadOnlyList<GeoCoordinate> outerBoundary, IReadOnlyList<IReadOnlyList<GeoCoordinate>> holes)
     {
         ArgumentNullException.ThrowIfNull(outerBoundary);
