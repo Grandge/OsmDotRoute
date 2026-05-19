@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.18（進行中）
+**バージョン**: 0.19（進行中）
 **作成日**: 2026-05-18
-**最終更新**: 2026-05-19
-**ステータス**: 進行中（Phase 1 機能要件全件を MapVerifier 1.0.0 で end-to-end 検証済、要件定義書 v1.9 に反映。残作業は性能ベンチマーク (Step 15) と親プロジェクト統合 (Step 16)）
+**最終更新**: 2026-05-20
+**ステータス**: 進行中（ステップ 15 ベンチマーク完了、市単位で REQ-NFR-001〜003 全件達成・Itinero 比 0.48x。要件定義書 v2.0 に反映。残作業は親プロジェクト統合 (Step 16) と都道府県単位の最終検証 (Step 17)）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -56,7 +56,7 @@
 | 13. 経路 GeoJSON 出力（**廃止**） | ~~ステップ 11~~ | 廃止判断記録済（2026-05-19、v1.7） |
 | 14. DI 拡張とドキュメント | ステップ 12 | 未記述 |
 | 15. 検証用地図アプリ MapVerifier | ステップ 13-14 | 未記述 |
-| 16. ベンチマーク結果 | ステップ 15 | 未記述 |
+| 16. ベンチマーク結果 | ステップ 15 | 初版（2026-05-20） |
 | 17. 親プロジェクト統合 | ステップ 16 | 未記述 |
 
 ### 0.4 章内のテンプレート
@@ -2094,9 +2094,42 @@ MapVerifier はライブラリ本体（OsmDotRoute）とライフサイクル・
 ## 16. ベンチマーク結果
 
 **対応ステップ**: ステップ 15
-**ステータス**: 未記述
+**ステータス**: 初版（2026-05-20、市単位 RouterDb で計測完了）
 
-（記述予定項目: 計測環境（CPU / RAM / .NET ランタイム）、対象 RouterDb、起終点ペアの生成方法、制約 0/10/50/100 件パターンの結果テーブル、メモリ使用量、REQ-NFR-001（100ms）達成可否、最適化を実施した場合は前後比較）
+詳細結果は [`phase1_benchmark_results.md`](phase1_benchmark_results.md) を参照。本章では設計上の含意のみまとめる。
+
+### 16.1 達成状況サマリ
+
+| 要件 | 目標 | 実測 | 判定 |
+|---|---|---|---|
+| REQ-NFR-001 | 経路計算 ≤ 100 ms | OsmDotRoute 33 ms / Itinero 69 ms | ✅ 達成（市単位、都道府県単位は要追加検証） |
+| REQ-NFR-002 | 制約 100 件下でも維持 | C3 = 51 ms（C0 比 1.43x） | ✅ 達成 |
+| REQ-NFR-003 | 16 GB RAM で動作可能 | 定常 WorkingSet 54 MB | ✅ 達成 |
+| Itinero 比較 | Mean 比 ≤ 1.0x | 0.48x | ✅ Lua インタプリタ非依存の優位性が定量的に証明 |
+| 経路距離同等性 | 両方成功ペアで ±10% 以内 | 89/89 ペアで達成（Mean 乖離 0.07%） | ✅ 達成 |
+
+### 16.2 計測対象 RouterDb の規模
+
+親プロジェクト借用の `default.routerdb`: 43,685 頂点 / 57,331 エッジ（11km × 11km の市単位）。要件の「都道府県単位 数百万エッジ」より小さい。都道府県単位での最終確認はユーザー判断（CLAUDE.md ルール、Phase 1 完了判定）。
+
+### 16.3 設計上の含意
+
+- **§7a JSON プロファイル基盤の効果が定量化された**: Itinero の Lua インタプリタを介さないネイティブ C# 評価により、経路 1 本あたり **約 2 倍** の速度差。StdDev も 7 分の 1（OsmDotRoute 2.8 ms vs Itinero 21 ms）で実行揺らぎが小さい
+- **§5b 独自 Dijkstra の妥当性**: 全 100 ペアの距離乖離 Mean 0.07%、Max 3.09%。Itinero との機能パリティを維持しつつ、8 ペアで Itinero が見つけられない経路を追加発見（スナップ・探索の許容範囲が広い、好ましい挙動）
+- **§10 制約管理基盤の AABB プリフィルタが期待通り機能**: 制約 100 件下でも C0 比 1.43x、StdDev 揺らぎは大きいが Mean は許容範囲。空間インデックス（`SpatialIndex`）が現状で必要十分
+- **メモリ効率は Phase 2 で改善余地**: 経路 1 本あたり 77 MB アロケート（Itinero の 2.4 倍）。`RoadEdge` / `Shape` のコピーを Span/Memory ベースに切替えれば削減可能。Phase 2 の独自グラフ形式設計時に検討
+
+### 16.4 ベンチ実装の所在
+
+- プロジェクト: [`tests/OsmDotRoute.Benchmarks/`](../tests/OsmDotRoute.Benchmarks/)
+- 5 ベンチクラス: `RouterDbLoadBenchmark` / `RouteCalculationBenchmark` / `ItineroBaselineBenchmark` / `RouteWithConstraintsBenchmark` (C0〜C4) / `SnapBenchmark`
+- 補助ツール: `--memory-probe`（GC 強制後の定常メモリ実測） / `--verify-parity`（OsmDotRoute vs Itinero の経路発見 4 区分と距離乖離検証）
+- テストデータ: `route-pairs.json`（100 ペア、seed 20260520）、`restrictions-mixed-100.json` (seed 20260521)、`restrictions-block-100.json` (seed 20260522) — 決定論的に再現可能、コミット対象
+
+### 16.5 未解決の観測
+
+- **C4 (Block 100 件) の Mean 5.84 ms**: 期待した「`PositiveInfinity` 短絡効果」ではなく、小規模ネットワークの完全分断による「経路発見不可・null 即返し」が支配的と推定。都道府県単位 RouterDb での再計測時に再評価
+- **DifficultyArea の迂回拡大コスト**: ランダム配置の本ベンチでは捕捉不可。計画書 §7.4 のとおり、ステップ 17 で MapVerifier 上の手動シナリオ確認に回す
 
 ---
 
@@ -2128,4 +2161,5 @@ MapVerifier はライブラリ本体（OsmDotRoute）とライフサイクル・
 | 0.7 (進行中) | 2026-05-18 | ステップ 4 完了。§6「道路スナップ」記述（`IRoadSnapper` 抽象 + `SnapResult` 内部値型、`ItineroSnapper` 実装、`Router.SnapToRoad` 実装、6 テスト追加で計 12/12 成功）。`RouterDb` 内部コンストラクタを `(IRoadGraph, IRoadSnapper)` に拡張 | Claude (Opus 4.7) |
 | 0.8 (進行中) | 2026-05-18 | ステップ 5a 完了。§7a「JSON プロファイル基盤」記述（DTO 構造、`ProfileEvaluator` 8 ステップ評価、`speedMultiplier` 追加、hard-deny セマンティクス、埋込 `car.json`/`pedestrian.json` 同梱、`InvalidProfileException`、25 単体 + 2 パリティテスト = 計 46/46 成功）。Itinero `Vehicle.Car.Fastest()` とのパリティ: 通行可否 0/52 mismatch、速度 >10% 乖離 9/52 (17%) | Claude (Opus 4.7) |
 | 0.17 (進行中) | 2026-05-19 | ステップ 12 完了。§14「DI 拡張とドキュメント」記述（`OsmDotRoute.Extensions.DependencyInjection` プロジェクト新設、`AddOsmDotRoute` 2 オーバーロード、Singleton ライフタイム、`OsmDotRouteOptions`）。`Directory.Build.props` の `GenerateDocumentationFile` を `true` に切替（テスト/ベンチマーク/サンプル csproj で `false` 上書き）。公開 20 型に `<param>`/`<returns>`/`<exception>` 完備。`README.md` 全面書き換え（Phase 0 → Phase 1 進行中、最小サンプル、DI 統合、0.x 期間中の破壊的変更方針 REQ-API-008、Phase ロードマップ）。6 プロジェクト・147/147 テスト・0 警告維持。§2.2/2.4/3.2/3.4 にも追記反映 | Claude (Opus 4.7) |
+| 0.19 (進行中) | 2026-05-20 | **ステップ 15 (ベンチマーク・性能検証) 完了**。§16 「ベンチマーク結果」を初版記述。市単位 (津島市、57k エッジ) で REQ-NFR-001〜003 を全件達成: 経路計算 33ms / Itinero 比 **0.48x** (Lua インタプリタ非依存の優位性が定量証明) / 制約 100 件下 51ms (C0 比 1.43x) / 定常 WorkingSet 54MB。経路同等性検証で OsmDotRoute / Itinero の 89 両方成功ペア中 100% が距離 ±10% 以内、Itinero が見つけられない経路を 8 件追加発見。`tests/OsmDotRoute.Benchmarks/` に 5 ベンチクラス (Load / Calc / Itinero / WithConstraints C0〜C4 / Snap) + 補助ツール (--memory-probe / --verify-parity) + 決定論的 TestData (route-pairs / restrictions-mixed / restrictions-block の 3 JSON) を実装。詳細は [phase1_benchmark_results.md](phase1_benchmark_results.md) 参照。要件定義書 v2.0 連動、REQ-NFR-001〜003 は「条件付き完了」コメント追記済、都道府県単位 RouterDb での最終確認はステップ 17 へ送り | Claude (Opus 4.7) |
 | 0.18 (進行中) | 2026-05-19 | ステップ 14 (検証用地図アプリ) 経由で Phase 1 機能要件全件の end-to-end 検証完了。**Lib 追加**: `MeshCode.ToBounds()` + `MeshCode.EnumerateInBounds(MapBounds, MeshLevel)` を公開 API に追加（MapVerifier のメッシュグリッド GeoJSON 生成用、二重実装回避）、関連テスト 6 件追加で 153/153 維持。**§15 更新**: MapVerifier の現バージョンを 1.0.0（初版リリース）へ反映（独立 SemVer、設計書 `map_verifier_design.md` 参照）。**要件定義書 v1.9 連動**: REQ-RTE-001〜008 / REQ-RST-001〜018,020〜022,024〜028,030〜032,040 / REQ-PRF-001〜002,007〜014 / REQ-MAP-001〜002 / REQ-API-001〜004 / REQ-FMT-001〜003 / REQ-DEP-001 / REQ-LIC-002〜003 / REQ-NFR-005〜006,009〜010 を全件完了マーク。残作業は性能ベンチマーク (Step 15、REQ-NFR-001〜003) と親プロジェクト統合 (Step 16) のみ | Claude (Opus 4.7) |

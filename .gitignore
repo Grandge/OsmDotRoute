@@ -22,6 +22,9 @@ Thumbs.db
 *.nupkg
 *.snupkg
 
+# BenchmarkDotNet results (regenerated per run, not committed)
+BenchmarkDotNet.Artifacts/
+
 # Test data (large files)
 *.osm.pbf
 *.routerdb
