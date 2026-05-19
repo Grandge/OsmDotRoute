@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.17（進行中）
+**バージョン**: 0.18（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-19
-**ステータス**: 進行中（Phase 1 ステップ 12 完了。DI 拡張 `OsmDotRoute.Extensions.DependencyInjection` 追加、XML ドキュメント完備、README 全面書き換え、6 プロジェクト・147/147 テスト・0 警告）
+**ステータス**: 進行中（Phase 1 機能要件全件を MapVerifier 1.0.0 で end-to-end 検証済、要件定義書 v1.9 に反映。残作業は性能ベンチマーク (Step 15) と親プロジェクト統合 (Step 16)）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -2072,19 +2072,22 @@ Phase 0 のままだった README を全面書き換え。構成:
 ## 15. 検証用地図アプリ MapVerifier
 
 **対応ステップ**: ステップ 13〜14
-**ステータス**: 未記述
+**ステータス**: 別ドキュメントに分離
 
-### 15.1 サーバー API 仕様
+MapVerifier はライブラリ本体（OsmDotRoute）とライフサイクル・バージョン体系を独立させるため、
+設計記録は **[map_verifier_design.md](map_verifier_design.md)** に分離する。本書本節は概要と
+ポインタのみを置く。
 
-（記述予定項目: 全エンドポイントの URL・HTTP メソッド・リクエスト/レスポンス JSON スキーマ、エラーレスポンス、CORS 設定、認証なし方針）
+**現バージョン**: MapVerifier 1.0.0（リリース、初版、2026-05-19）— Phase 1 機能要件の end-to-end 検証手段として実用稼働中
 
-### 15.2 フロントエンド構成
+**主要トピック**（詳細は別ドキュメント参照）:
 
-（記述予定項目: Vite / React / MapLibre GL のバージョン、`MapView` の React ラッパー実装方針、各 Panel コンポーネントの状態管理、API クライアントの構成、メッシュグリッド描画のクライアント側 JIS X0410 変換実装、ポリゴン描画の自前実装フロー）
-
-### 15.3 動作シナリオ
-
-（記述予定項目: 主要検証シナリオ 7 ステップの実機操作手順、想定スクリーンショット参照先）
+- §1 スコープと検証ゴール（7 シナリオ受入条件）
+- §2 アーキテクチャ概観（`MapVerifier.Server` + `MapVerifier.Web`、ステップ 13/14 のスコープ分割）
+- §3 プロジェクト構成（`samples/MapVerifier/` 配下、独自バージョン採番）
+- §4 サーバー API 仕様（`/api/load` `/api/route` `/api/restrictions/{polygon,mesh,gml}` 等）
+- §5 フロントエンド構成（Vite + React + MapLibre GL、Panel 別責務、メッシュグリッド クライアント生成）
+- §7 SemVer バージョニング方針（OsmDotRoute 0.x との連動ルール）
 
 ---
 
@@ -2125,3 +2128,4 @@ Phase 0 のままだった README を全面書き換え。構成:
 | 0.7 (進行中) | 2026-05-18 | ステップ 4 完了。§6「道路スナップ」記述（`IRoadSnapper` 抽象 + `SnapResult` 内部値型、`ItineroSnapper` 実装、`Router.SnapToRoad` 実装、6 テスト追加で計 12/12 成功）。`RouterDb` 内部コンストラクタを `(IRoadGraph, IRoadSnapper)` に拡張 | Claude (Opus 4.7) |
 | 0.8 (進行中) | 2026-05-18 | ステップ 5a 完了。§7a「JSON プロファイル基盤」記述（DTO 構造、`ProfileEvaluator` 8 ステップ評価、`speedMultiplier` 追加、hard-deny セマンティクス、埋込 `car.json`/`pedestrian.json` 同梱、`InvalidProfileException`、25 単体 + 2 パリティテスト = 計 46/46 成功）。Itinero `Vehicle.Car.Fastest()` とのパリティ: 通行可否 0/52 mismatch、速度 >10% 乖離 9/52 (17%) | Claude (Opus 4.7) |
 | 0.17 (進行中) | 2026-05-19 | ステップ 12 完了。§14「DI 拡張とドキュメント」記述（`OsmDotRoute.Extensions.DependencyInjection` プロジェクト新設、`AddOsmDotRoute` 2 オーバーロード、Singleton ライフタイム、`OsmDotRouteOptions`）。`Directory.Build.props` の `GenerateDocumentationFile` を `true` に切替（テスト/ベンチマーク/サンプル csproj で `false` 上書き）。公開 20 型に `<param>`/`<returns>`/`<exception>` 完備。`README.md` 全面書き換え（Phase 0 → Phase 1 進行中、最小サンプル、DI 統合、0.x 期間中の破壊的変更方針 REQ-API-008、Phase ロードマップ）。6 プロジェクト・147/147 テスト・0 警告維持。§2.2/2.4/3.2/3.4 にも追記反映 | Claude (Opus 4.7) |
+| 0.18 (進行中) | 2026-05-19 | ステップ 14 (検証用地図アプリ) 経由で Phase 1 機能要件全件の end-to-end 検証完了。**Lib 追加**: `MeshCode.ToBounds()` + `MeshCode.EnumerateInBounds(MapBounds, MeshLevel)` を公開 API に追加（MapVerifier のメッシュグリッド GeoJSON 生成用、二重実装回避）、関連テスト 6 件追加で 153/153 維持。**§15 更新**: MapVerifier の現バージョンを 1.0.0（初版リリース）へ反映（独立 SemVer、設計書 `map_verifier_design.md` 参照）。**要件定義書 v1.9 連動**: REQ-RTE-001〜008 / REQ-RST-001〜018,020〜022,024〜028,030〜032,040 / REQ-PRF-001〜002,007〜014 / REQ-MAP-001〜002 / REQ-API-001〜004 / REQ-FMT-001〜003 / REQ-DEP-001 / REQ-LIC-002〜003 / REQ-NFR-005〜006,009〜010 を全件完了マーク。残作業は性能ベンチマーク (Step 15、REQ-NFR-001〜003) と親プロジェクト統合 (Step 16) のみ | Claude (Opus 4.7) |

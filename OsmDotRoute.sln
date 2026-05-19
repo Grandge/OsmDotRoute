@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleDemo", "samples\Cons
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmDotRoute.Extensions.DependencyInjection", "src\OsmDotRoute.Extensions.DependencyInjection\OsmDotRoute.Extensions.DependencyInjection.csproj", "{CE8EC963-2869-4661-9A60-B54B273E5890}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MapVerifier.Server", "samples\MapVerifier\MapVerifier.Server\MapVerifier.Server.csproj", "{58CE8B29-05E9-4947-8F2B-C48C494C84E2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -54,6 +56,10 @@ Global
 		{CE8EC963-2869-4661-9A60-B54B273E5890}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CE8EC963-2869-4661-9A60-B54B273E5890}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CE8EC963-2869-4661-9A60-B54B273E5890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{58CE8B29-05E9-4947-8F2B-C48C494C84E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{58CE8B29-05E9-4947-8F2B-C48C494C84E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{58CE8B29-05E9-4947-8F2B-C48C494C84E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{58CE8B29-05E9-4947-8F2B-C48C494C84E2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F57DFE18-1F3C-42DC-9286-59D5D3E93627} = {285B79B6-4FA5-4371-A001-EA0AE19AE614}
@@ -62,5 +68,6 @@ Global
 		{54477095-7DFE-4A24-8888-B450B4F34E2B} = {55DA6B30-D175-403B-A09E-D503F71E376E}
 		{5587C5CD-45DE-4B33-A50B-4E76471B172A} = {B70E02BC-4815-423D-874F-FB364E7ADBEC}
 		{CE8EC963-2869-4661-9A60-B54B273E5890} = {285B79B6-4FA5-4371-A001-EA0AE19AE614}
+		{58CE8B29-05E9-4947-8F2B-C48C494C84E2} = {B70E02BC-4815-423D-874F-FB364E7ADBEC}
 	EndGlobalSection
 EndGlobal

@@ -90,4 +90,94 @@ internal static class MeshCodeConverter
             new GeoCoordinate(swLat, swLon),
             new GeoCoordinate(swLat + latStep, swLon + lonStep));
     }
+
+    /// <summary>
+    /// 指定範囲 <paramref name="bounds"/> と交差する全メッシュコードを <paramref name="level"/> 階層で列挙する。
+    /// 第3次（1km）→ 1/2 細分 → 1/4 細分の順に階層が細かい。出力順は緯度（南→北）×経度（西→東）の格子走査。
+    /// </summary>
+    public static IEnumerable<MeshCode> EnumerateInBounds(MapBounds bounds, MeshLevel level)
+    {
+        // ステップ幅と桁構成は階層毎に固定
+        var (latStep, lonStep) = level switch
+        {
+            MeshLevel.Mesh3rd => (Lat3StepDeg, Lon3StepDeg),
+            MeshLevel.HalfMesh => (Lat3StepDeg / 2, Lon3StepDeg / 2),
+            MeshLevel.QuarterMesh => (Lat3StepDeg / 4, Lon3StepDeg / 4),
+            _ => throw new ArgumentOutOfRangeException(nameof(level), level, "未対応の MeshLevel"),
+        };
+
+        // 範囲の南西を含む基準セルのインデックスと、北東を超えない最後のセルのインデックスを整数で求める。
+        // 入力 bounds の各座標はメッシュ境界に対し ±数 ULP の浮動小数誤差を持ちうるので（例: ToBounds() の結果）、
+        // 境界付近では整数側にスナップする（eps = 1e-7 度 ≒ 1cm 相当、メッシュ最小幅 250m から十分小さい）。
+        const double snapEps = 1e-7;
+
+        var iLatStart = (long)Math.Floor(bounds.MinLatitude / latStep + snapEps);
+        var iLatEnd = (long)Math.Ceiling(bounds.MaxLatitude / latStep - snapEps);
+        var iLonStart = (long)Math.Floor(bounds.MinLongitude / lonStep + snapEps);
+        var iLonEnd = (long)Math.Ceiling(bounds.MaxLongitude / lonStep - snapEps);
+
+        for (var iLat = iLatStart; iLat < iLatEnd; iLat++)
+        {
+            // 各セルの中心座標で MeshCode を導出（境界ぴったりを避ける）
+            var centerLat = (iLat + 0.5) * latStep;
+            for (var iLon = iLonStart; iLon < iLonEnd; iLon++)
+            {
+                var centerLon = (iLon + 0.5) * lonStep;
+                yield return ToMeshCode(centerLat, centerLon, level);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 緯度経度から指定階層のメッシュコードを算出する。<paramref name="lat"/> / <paramref name="lon"/> は
+    /// 当該メッシュ矩形の内部を指す座標であること（境界ピッタリの場合は南西側のメッシュを返す）。
+    /// </summary>
+    public static MeshCode ToMeshCode(double lat, double lon, MeshLevel level)
+    {
+        // 第1次メッシュ
+        var p1 = (int)Math.Floor(lat * 1.5);
+        var u1 = (int)Math.Floor(lon - 100);
+
+        // 第2次メッシュ番号（0〜7）
+        var lat2Origin = p1 / 1.5;
+        var lon2Origin = u1 + 100;
+        var p2 = (int)Math.Floor((lat - lat2Origin) / Lat2StepDeg);
+        var u2 = (int)Math.Floor((lon - lon2Origin) / Lon2StepDeg);
+
+        // 第3次メッシュ番号（0〜9）
+        var lat3Origin = lat2Origin + p2 * Lat2StepDeg;
+        var lon3Origin = lon2Origin + u2 * Lon2StepDeg;
+        var p3 = (int)Math.Floor((lat - lat3Origin) / Lat3StepDeg);
+        var u3 = (int)Math.Floor((lon - lon3Origin) / Lon3StepDeg);
+
+        long code = (long)p1 * 1_000_000 + (long)u1 * 10_000 + (long)p2 * 1_000 + (long)u2 * 100 + (long)p3 * 10 + u3;
+
+        if (level == MeshLevel.Mesh3rd)
+        {
+            return new MeshCode(code);
+        }
+
+        // 1/2 細分: SW=1, SE=2, NW=3, NE=4
+        var lat4Origin = lat3Origin + p3 * Lat3StepDeg;
+        var lon4Origin = lon3Origin + u3 * Lon3StepDeg;
+        var halfLat = (lat - lat4Origin) >= (Lat3StepDeg / 2) ? 1 : 0;
+        var halfLon = (lon - lon4Origin) >= (Lon3StepDeg / 2) ? 1 : 0;
+        var sub1 = halfLat * 2 + halfLon + 1;
+        code = code * 10 + sub1;
+
+        if (level == MeshLevel.HalfMesh)
+        {
+            return new MeshCode(code);
+        }
+
+        // 1/4 細分
+        var halfSwLat = lat4Origin + halfLat * (Lat3StepDeg / 2);
+        var halfSwLon = lon4Origin + halfLon * (Lon3StepDeg / 2);
+        var qLat = (lat - halfSwLat) >= (Lat3StepDeg / 4) ? 1 : 0;
+        var qLon = (lon - halfSwLon) >= (Lon3StepDeg / 4) ? 1 : 0;
+        var sub2 = qLat * 2 + qLon + 1;
+        code = code * 10 + sub2;
+
+        return new MeshCode(code);
+    }
 }

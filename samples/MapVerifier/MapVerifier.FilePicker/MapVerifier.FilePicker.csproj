@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WinExe (GUI subsystem) にすることで Windows が起動時に完全な UI セッションを割当てる。
+         ASP.NET Core プロセスからの子起動でも OpenFileDialog が確実に画面表示される。 -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0</Version>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <RootNamespace>MapVerifier.FilePicker</RootNamespace>
+    <AssemblyName>MapVerifier.FilePicker</AssemblyName>
+  </PropertyGroup>
+
+</Project>

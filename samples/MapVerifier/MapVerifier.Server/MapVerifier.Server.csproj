@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>MapVerifier.Server</RootNamespace>
+    <AssemblyName>MapVerifier.Server</AssemblyName>
+    <Version>1.0.0</Version>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- OS ダイアログは諦め、Web 内モーダルで自前ファイルブラウザを実装する方式に変更 (v1.3.0)。
+         サーバーは GET /api/files/browse でディレクトリ内容を返すだけ。Windows 専用機能は不要。 -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\OsmDotRoute\OsmDotRoute.csproj" />
+    <ProjectReference Include="..\..\..\src\OsmDotRoute.Itinero\OsmDotRoute.Itinero.csproj" />
+  </ItemGroup>
+
+
+</Project>

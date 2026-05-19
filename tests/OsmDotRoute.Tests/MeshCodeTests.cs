@@ -176,6 +176,81 @@ public class MeshCodeTests
     }
 
     [Fact]
+    public void ToBounds_PublicApi_MatchesInternalConverter()
+    {
+        var mesh = new MeshCode(53394611L);
+        var bounds = mesh.ToBounds();
+        var aabb = MeshCodeConverter.ToBoundingBox(mesh);
+        Assert.Equal(aabb.SouthWest, bounds.SouthWest);
+        Assert.Equal(aabb.NorthEast, bounds.NorthEast);
+    }
+
+    [Fact]
+    public void EnumerateInBounds_Mesh3rd_SingleCell_YieldsThatCell()
+    {
+        // 53394611 の AABB そのものを範囲に渡すと、そのメッシュ 1 個だけ列挙される
+        var target = new MeshCode(53394611L);
+        var bounds = target.ToBounds();
+        var codes = MeshCode.EnumerateInBounds(bounds, MeshLevel.Mesh3rd).ToArray();
+        Assert.Single(codes);
+        Assert.Equal(target.Value, codes[0].Value);
+    }
+
+    [Fact]
+    public void EnumerateInBounds_Mesh3rd_TwoByTwoArea_Yields4Cells()
+    {
+        // 53394611 と東/北/北東の隣接 3 メッシュ計 4 個を含む範囲
+        var sw = new MeshCode(53394611L).ToBounds().SouthWest;
+        var bounds = new MapBounds(
+            sw,
+            new GeoCoordinate(sw.Latitude + Lat3StepDeg * 1.9, sw.Longitude + Lon3StepDeg * 1.9));
+        var codes = MeshCode.EnumerateInBounds(bounds, MeshLevel.Mesh3rd).ToArray();
+        Assert.Equal(4, codes.Length);
+    }
+
+    [Fact]
+    public void EnumerateInBounds_HalfMesh_Of_1km_Yields4SubCells()
+    {
+        // 1km メッシュ 1 個分の範囲を 1/2 細分で列挙すると 4 個
+        var bounds = new MeshCode(53394611L).ToBounds();
+        var codes = MeshCode.EnumerateInBounds(bounds, MeshLevel.HalfMesh).ToArray();
+        Assert.Equal(4, codes.Length);
+        var values = codes.Select(c => c.Value).ToHashSet();
+        Assert.Contains(533946111L, values);
+        Assert.Contains(533946112L, values);
+        Assert.Contains(533946113L, values);
+        Assert.Contains(533946114L, values);
+    }
+
+    [Fact]
+    public void EnumerateInBounds_QuarterMesh_Of_1km_Yields16SubCells()
+    {
+        var bounds = new MeshCode(53394611L).ToBounds();
+        var codes = MeshCode.EnumerateInBounds(bounds, MeshLevel.QuarterMesh).ToArray();
+        Assert.Equal(16, codes.Length);
+    }
+
+    [Fact]
+    public void EnumerateInBounds_EnumeratedCells_AreInsideTheirComputedBounds()
+    {
+        // 列挙された各メッシュ ID を ToBounds() で逆算すると、元の bounds と交差すること
+        var bounds = new MapBounds(
+            new GeoCoordinate(35.65, 139.74),
+            new GeoCoordinate(35.70, 139.80));
+        var codes = MeshCode.EnumerateInBounds(bounds, MeshLevel.Mesh3rd).ToArray();
+        Assert.NotEmpty(codes);
+        foreach (var c in codes)
+        {
+            var cellBounds = c.ToBounds();
+            // 中心が範囲内にあれば交差している
+            var midLat = (cellBounds.SouthWest.Latitude + cellBounds.NorthEast.Latitude) / 2;
+            var midLon = (cellBounds.SouthWest.Longitude + cellBounds.NorthEast.Longitude) / 2;
+            Assert.True(midLat >= bounds.MinLatitude - Lat3StepDeg && midLat <= bounds.MaxLatitude + Lat3StepDeg);
+            Assert.True(midLon >= bounds.MinLongitude - Lon3StepDeg && midLon <= bounds.MaxLongitude + Lon3StepDeg);
+        }
+    }
+
+    [Fact]
     public void ToBoundingBox_AllFourHalfQuadrants_TileWithoutGap()
     {
         // sub=1〜4 の 4 つの 1/2 細分が 親メッシュを隙間なく分割（タイル化）することを確認

@@ -686,7 +686,30 @@ DotRoute/
 
 ---
 
-### ステップ 13: 検証用地図アプリ - サーバー API + 地図基盤・範囲指定
+### ステップ 13: 検証用地図アプリ - サーバー API + 地図基盤・範囲指定（**完了 2026-05-19**）
+
+**実施内容**:
+
+- `samples/MapVerifier/MapVerifier.Server/` を新規作成（minimal API、CORS、ResponseCompression、`<Version>1.0.0</Version>`）
+- 実装エンドポイント（ステップ 13 スコープ）: `GET /api/version`、`POST /api/load`、`GET /api/stats`、`GET /api/road-network`、`POST /api/snap`、`POST /api/route`
+- `RouterState` Singleton で RouterDb / Router ホルダーを管理（`AddOsmDotRoute` は使わず、起動時未ロード前提に手動登録）
+- `samples/MapVerifier/MapVerifier.Web/` を新規作成（Vite 5 + React 18 + TypeScript 5 + MapLibre GL 4、`version: 1.0.0`）
+- 実装 UI: `VersionBanner`（フロント版+サーバー版併記、不一致時警告）、`LoadPanel`（パス入力→読込→統計表示+道路ネットワーク表示トグル）、`MapView`（MapLibre GL React ラッパー、OSM raster、`fitBounds`/`setRoadNetwork` API 公開）、`MapBoundsPanel`（現在範囲表示+手動 fit）
+- 設計書を別ドキュメント `Documents/map_verifier_design.md` に分離（OsmDotRoute 本体とは独立 SemVer）
+
+**完了判定**:
+
+- ✅ `dotnet run --project samples/MapVerifier/MapVerifier.Server`: 起動成功、実機 RouterDb 読込・統計・road-network (10.3MB)・経路計算が動作（curl スモーク検証）
+- ✅ `npm run build`: tsc + vite build 成功（0 エラー）
+- ✅ `npm run dev`: dev サーバー起動、`/api/*` proxy 経由で `/api/version` が `{name:"MapVerifier.Server",version:"1.0.0"}` を返す
+- ✅ ライブラリ本体 147/147 テスト維持
+- ✅ MapVerifier 設計書 v1.0.0 リリース
+
+**ブラウザ動作確認**: dev サーバー＋API サーバー起動後、ブラウザで `http://localhost:5173` を開き、RouterDb パスを入力 →「読込」→統計表示・マップが該当範囲にフィット →「道路ネットワークを表示」で青線描画されることを目視確認する（手動）
+
+---
+
+### ステップ 13 計画（参考、原文）：検証用地図アプリ - サーバー API + 地図基盤・範囲指定
 
 **目的**: ブラウザ上で OsmDotRoute の動作を視覚的に確認できる検証ツール基盤を構築する。親プロジェクト `App/DisasterWasteSim.Viewer/` の構成（React + Vite + MapLibre GL）を流用しつつ大幅に簡素化する。
 
@@ -732,7 +755,46 @@ DotRoute/
 
 ---
 
-### ステップ 14: 検証用地図アプリ - メッシュ表示・ポリゴン作成・経路 UI
+### ステップ 14: 検証用地図アプリ - メッシュ表示・ポリゴン作成・経路 UI（**完了 2026-05-19、MapVerifier 1.0.0 初版リリースで確定**）
+
+**実施内容**:
+
+- **Lib v0.18 (153/153 tests)**: `MeshCode.ToBounds()` + `MeshCode.EnumerateInBounds(MapBounds, MeshLevel)` を公開 API として追加。サーバー側でメッシュグリッド GeoJSON 生成に利用 (二重実装回避)。テスト 6 件追加
+- **MapVerifier 1.0.0 (初版リリース)**: Phase 1 ステップ 13〜14 で構築した検証用地図アプリの完成形。複数の試行錯誤 (OS ネイティブダイアログ: WinForms / WPF / PowerShell サブプロセス / WinExe 専用 EXE — ユーザー環境で全て画面非表示) を経て、最終的に **Web 内モーダル + HTTP API による自前ファイルブラウザ方式** に着地 (親プロジェクト `UserSettingsDialog` 方式に倣う、OS UI 依存ゼロ)。詳細仕様は `Documents/map_verifier_design.md` v1.0.0 を参照
+- **本版で確定した機能群** (ユーザー承認済 2026-05-19):
+  - Server: `/api/version`、`/api/load`、`/api/stats`、`/api/road-network`、`/api/snap`、`/api/route`、`/api/mesh/grid` (1km/500m/250m)、`/api/restrictions/{polygon,mesh,gml-file}`、`/api/restrictions[/{id}|/geojson|?tag=]`、`/api/files/browse`
+  - Web: `VersionBanner` / `LoadPanel` / `MapBoundsPanel` / `RoutePanel` / `MeshGridPanel` / `PolygonEditorPanel` / `GmlImportPanel` / `RestrictionListPanel` / `FileBrowserDialog` + MapView 6 レイヤー
+- **E2E 検証実績**: 実機 RouterDb 43k 頂点で動作確認、ベースライン経路 3784m → ブロックポリゴン登録後 4968m 迂回確認、A31 1.6GB GML をマップ範囲フィルタで 31 ポリゴン 20 秒インポート確認
+- **MapVerifier 1.1.0 (MINOR up)**:
+  - Server エンドポイント追加: `GET /api/mesh/grid?swLat&swLon&neLat&neLon&level=1km|500m|250m` (過大要求 10k セル上限ガード)、`POST /api/restrictions/polygon`、`POST /api/restrictions/mesh`、`GET /api/restrictions`、`GET /api/restrictions/geojson`、`DELETE /api/restrictions/{id}`、`DELETE /api/restrictions[?tag=]`
+  - Server 内部: 描画用メタデータを `RestrictionMetadataStore` Singleton で保持 (RestrictedAreaService は形状を内部表現で持つため、UI 描画用に別途キャッシュ)
+  - Web 新規コンポーネント: `MeshGridPanel` (階層選択+描画+メッシュクリックで属性付与)、`PolygonEditorPanel` (マウス描画+属性付与)、`RoutePanel` (起終点マップ指定+プロファイル+計算)、`RestrictionListPanel` (一覧+個別/全削除)
+  - MapView 拡張: mesh-grid / restrictions / route / route-endpoints / polygon-draft の 5 レイヤー追加、クリックハンドラで feature の `meshCode` プロパティを App 側に通知
+  - App.tsx でモード管理 (`pickMode` for route / `drawing` for polygon / mesh-click for restriction)、制約変更時の自動再描画
+
+**完了判定**:
+
+- ✅ `dotnet build` / `npm run build`: 0 エラー
+- ✅ `dotnet test OsmDotRoute.sln`: 153/153 成功（mesh 公開 API テスト 6 件追加）
+- ✅ E2E スモーク: ベースライン経路 3784m → ブロックポリゴン登録後 4968m への迂回を curl で確認 (制約反映 OK)
+- ✅ `GET /api/mesh/grid`: 1km / 500m / 250m すべての階層で GeoJSON FeatureCollection を返却
+- ✅ MapVerifier 設計書 v1.1.0 リリース、§5.4 を「サーバー側生成」に方針変更
+
+**ブラウザ動作確認手順**:
+
+1. `./start-map-verifier.ps1` で起動
+2. ヘッダーが `MapVerifier v1.1.0 (server: v1.1.0)` を表示
+3. RouterDb パス入力 → 「読込」→ マップが自動でデータ範囲にフィット、統計表示
+4. 「現在の表示範囲のメッシュを描画」(1km) → メッシュ格子がマップに描画される
+5. 任意メッシュをクリック → 「選択中メッシュ」表示 → 種別 (block/difficulty) + 難所タイプ + タグ → 「登録」
+6. 「マウスで描画開始」→ 数頂点クリック → 種別/タイプ/タグ → 「登録」
+7. 「起点をマップで指定」→ 道路上クリック → 同様に終点 → 「経路計算」 → 緑線で経路描画、距離・所要時間表示
+8. 登録済み制約一覧から個別削除 → マップから当該領域が消える
+9. 制約のあるエリアを通る経路と、無いときの経路で結果が異なることを確認
+
+---
+
+### ステップ 14 計画（参考、原文）：検証用地図アプリ - メッシュ表示・ポリゴン作成・経路 UI
 
 **目的**: 動的制約と経路計算をマウス操作で直感的に検証できる UI を完成させる。
 
