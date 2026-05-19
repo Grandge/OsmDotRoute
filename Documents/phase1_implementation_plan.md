@@ -3,7 +3,7 @@
 **バージョン**: 1.1（確定）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-18
-**ステータス**: 確定（ユーザー承認済み、Phase 1 進行中・ステップ 1 完了）
+**ステータス**: 確定（ユーザー承認済み、Phase 1 進行中・ステップ 1〜15 完了、ステップ 16 は Phase 3 完了まで延期、残作業はステップ 17 のみ）
 **対象フェーズ**: Phase 1（経路探索エンジン独自化）
 **関連ドキュメント**:
 
@@ -387,7 +387,7 @@ DotRoute/
 | 13 | 検証用地図アプリ - サーバー API + 地図基盤・範囲指定 | REQ-API-001〜004, REQ-RTE-001〜004（検証手段） | 未着手 |
 | 14 | 検証用地図アプリ - メッシュ表示・ポリゴン作成・経路 UI | REQ-RST-001〜028, REQ-RTE-001〜002（検証手段） | 未着手 |
 | 15 | ベンチマーク・性能検証 | REQ-NFR-001〜003 | 未着手 |
-| 16 | 親プロジェクト統合・パリティ検証 | REQ-API-003, REQ-PKG-001 | 未着手 |
+| 16 | 親プロジェクト統合・パリティ検証 | REQ-API-003, REQ-PKG-001 | **Phase 3 完了後に実施へ延期**（2026-05-20、§8 ステップ 16 参照） |
 | 17 | ユーザー検証・Phase 1 確定 | — | 未着手 |
 
 各ステップ完了時に **ユーザー報告 → 承認 → 次ステップ着手** のサイクルを厳守する（CLAUDE.md ルール）。
@@ -884,24 +884,32 @@ DotRoute/
 
 ---
 
-### ステップ 16: 親プロジェクト統合・パリティ検証
+### ステップ 16: 親プロジェクト統合・パリティ検証（**Phase 3 完了まで延期**、2026-05-20）
 
-**目的**: 親プロジェクトの `MapService.cs` を OsmDotRoute に置き換え、`using Itinero;` を消去できる状態を実証する。
+**延期判断**:
 
-**作業**:
+2026-05-20 ステップ 16 着手前の事前調査で、親プロジェクトの `ScenarioEditorService.GenerateRouterDbAsync` が `Itinero.IO.Osm` の `RouterDb.LoadOsmData(stream, Vehicle.Car, Vehicle.Pedestrian)` で **OSM PBF → RouterDb 変換** を行っていることが判明。これは Phase 3 で OsmDotRoute が独自 PBF パーサーを実装した後に対応すべき機能のため、Phase 1 段階で `using Itinero` 完全消去は技術的に困難。
+
+ユーザー判断（2026-05-20）: 「Phase 3 完了まで親プロジェクトを変更しない」。本ステップ全体を Phase 3 完了後に実施へ延期。
+
+**当初計画（参考、Phase 3 完了後に実施予定）**:
+
 - 親プロジェクト `DisasterWasteSim.Server.csproj` に `<ProjectReference>` で OsmDotRoute プロジェクト群を参照
 - 親プロジェクト側で `MapService.cs` の試験的書き換え用ブランチを作成（**親プロジェクト本体はマージしない、検証ブランチのみ**）
 - `using Itinero;` / `using Itinero.IO.Osm;` / `using Itinero.Osm.Vehicles;` を削除
 - 既存メソッド `LoadRouterDbFromFile` / `CalculateRoute` / `SnapToRoad` / `GetRoadNetworkGeoJson` を OsmDotRoute API で再実装
 - 親プロジェクトのビルド・既存テスト通過確認
 
-**完了判定**:
-- 親プロジェクト検証ブランチで `using Itinero` が完全消去できビルド成功
-- 既存テストが通過
-- 親プロジェクト動作確認: シナリオ実行で経路計算結果が大きく変わらない
-- 設計書 §17「親プロジェクト統合」を更新
+**Phase 1 段階での代替実証手段**:
 
-**Note**: 親プロジェクト側の正式マージ可否はユーザー判断。本ステップは「Phase 1 が要件を満たすことの実証」が目的。
+- ステップ 13〜14 の MapVerifier 1.0.0 で Phase 1 機能要件全件を end-to-end 検証済（要件定義書 v1.9）
+- ステップ 15 ベンチで Itinero 比 0.48x の性能優位性を定量証明済（[`phase1_benchmark_results.md`](phase1_benchmark_results.md)）
+- 「Phase 1 が要件を満たすことの実証」は本ステップに依存せず達成済み
+
+**Phase 3 完了時の再活性化条件**:
+
+- OsmDotRoute に独自 OSM PBF パーサー（REQ-MAP-007）が実装され、`ItineroRouterDbLoader` への依存を完全除去可能になった時点
+- そのタイミングで本ステップを「未着手」に戻し、検証ブランチを切って実施
 
 ---
 
@@ -1015,8 +1023,8 @@ DotRoute/
 ## 12. Phase 1 完了判定
 
 - [ ] 要件定義書 Phase 1 該当要件（REQ-RTE-001〜008, REQ-RST-001〜015, REQ-RST-016〜028, REQ-PRF-001〜002, REQ-MAP-001〜002, REQ-API-001〜006, REQ-API-008, REQ-FMT-001〜004, REQ-NFR-001〜003, REQ-NFR-005〜006, REQ-NFR-009〜010, REQ-PKG-001, REQ-LIC-001〜003, REQ-DEP-001）が全 `[x]`
-- [ ] 親プロジェクト検証ブランチで `using Itinero` 完全消去ビルド成功
-- [ ] ベンチマーク REQ-NFR-001 達成（または未達の場合のユーザー合意ある対応方針確定）
+- [ ] ~~親プロジェクト検証ブランチで `using Itinero` 完全消去ビルド成功~~ → **Phase 3 完了後に実施へ延期**（2026-05-20、ステップ 16 §8 参照）
+- [x] ベンチマーク REQ-NFR-001 達成（または未達の場合のユーザー合意ある対応方針確定） → 市単位で達成 (Itinero 比 0.48x)、都道府県単位は Phase 3 完了後に再検証
 - [ ] README / LICENSE / XML ドキュメント整備完了
 - [ ] ユーザー OK
 
@@ -1029,6 +1037,7 @@ Phase 1 完了時点で以下を Phase 2 計画書に引き継ぐ:
 - 独自バイナリグラフ形式の仕様（REQ-MAP-003、別文書 `phase2_graph_format_spec.md`）
 - Itinero RouterDb → 独自形式変換ツール仕様（REQ-MAP-004）
 - ランタイム Itinero 依存削除手順（`OsmDotRoute.Itinero` プロジェクト削除）
+- **ステップ 16 (親プロジェクト統合・パリティ検証) は Phase 3 完了後に実施**: Phase 3 で独自 PBF パーサーが完成し `ItineroRouterDbLoader` 不要になった時点で、親プロジェクト `MapService.cs` を OsmDotRoute API で書き換える検証ブランチを作成、`using Itinero` 完全消去を実証
 - 車両プロファイル `Bicycle` / `Truck` 追加（REQ-PRF-003〜004）
 - Phase 1 ベンチマーク基準値（Phase 2 で同等以上の性能維持確認用）
 
@@ -1057,3 +1066,4 @@ Phase 1 完了時点で以下を Phase 2 計画書に引き継ぐ:
 | 0.3 (draft) | 2026-05-18 | 設計書 [`phase1_design.md`](phase1_design.md) を新設（ひな形）。§2.5 に「各ステップ完了時に設計書該当章を更新」ルール追加、全ステップの完了判定に「設計書 §NN を更新」を組込。会話セッションを跨いでも実装意図を把握できる体制とした | Claude (Opus 4.7) |
 | 1.0 (確定) | 2026-05-18 | ユーザー承認、Phase 1 着手、ステップ 1（ソリューション・プロジェクト基盤）完了 | Claude (Opus 4.7) |
 | 1.1 (確定) | 2026-05-18 | プロファイル外部 JSON 化（リビルド不要要件）と難所エリア導入を反映。ステップ 5 を 5a（JSON プロファイル基盤）+ 5b（独自 Dijkstra）に分割。ステップ 3/8/9/10 を難所対応に更新。工数 17〜20 日 → 20〜23 日。要件定義書 v1.2 と整合 | Claude (Opus 4.7) |
+| 1.2 (確定) | 2026-05-20 | **ステップ 16 (親プロジェクト統合・パリティ検証) を Phase 3 完了まで延期**。事前調査で `ScenarioEditorService.GenerateRouterDbAsync` が `Itinero.IO.Osm` の PBF パーサーに依存していることが判明、Phase 1 段階で `using Itinero` 完全消去が技術的に困難なため。ユーザー判断「Phase 3 完了まで親プロジェクトを変更しない」（2026-05-20）。§7 ステップ表・§8 ステップ 16 詳細・§12 完了判定・§13 Phase 2 引き継ぎ事項を更新。Phase 1 残作業はステップ 17（MapVerifier 手動検証・REQ-ID 完了マーク・v0.1.0 タグ）のみ | Claude (Opus 4.7) |

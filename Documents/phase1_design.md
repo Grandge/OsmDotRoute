@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 1 設計書
 
-**バージョン**: 0.19（進行中）
+**バージョン**: 0.20（進行中）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-20
-**ステータス**: 進行中（ステップ 15 ベンチマーク完了、市単位で REQ-NFR-001〜003 全件達成・Itinero 比 0.48x。要件定義書 v2.0 に反映。残作業は親プロジェクト統合 (Step 16) と都道府県単位の最終検証 (Step 17)）
+**ステータス**: 進行中（ステップ 15 まで完了、ステップ 16 は Phase 3 完了まで延期、残作業はステップ 17 MapVerifier 手動検証と Phase 1 確定処理のみ）
 **対象**: OsmDotRoute Phase 1 実装の設計記録
 **関連ドキュメント**:
 
@@ -57,7 +57,7 @@
 | 14. DI 拡張とドキュメント | ステップ 12 | 未記述 |
 | 15. 検証用地図アプリ MapVerifier | ステップ 13-14 | 未記述 |
 | 16. ベンチマーク結果 | ステップ 15 | 初版（2026-05-20） |
-| 17. 親プロジェクト統合 | ステップ 16 | 未記述 |
+| 17. 親プロジェクト統合 | ステップ 16 | Phase 3 完了後に実施へ延期（2026-05-20） |
 
 ### 0.4 章内のテンプレート
 
@@ -2136,9 +2136,52 @@ MapVerifier はライブラリ本体（OsmDotRoute）とライフサイクル・
 ## 17. 親プロジェクト統合
 
 **対応ステップ**: ステップ 16
-**ステータス**: 未記述
+**ステータス**: **Phase 3 完了後に実施へ延期**（2026-05-20）
 
-（記述予定項目: 親プロジェクト検証ブランチ名、`<ProjectReference>` 追加内容、`MapService.cs` の書き換え方針、`using Itinero` 消去結果、既存テスト通過状況、動作確認シナリオの結果、本体マージ判断のためのユーザー観点）
+### 17.1 延期判断の根拠
+
+ステップ 16 着手前の事前調査（2026-05-20）で、親プロジェクト `DisasterWasteSim.Server` の Itinero 利用状況が以下と判明:
+
+| ファイル | Itinero 利用箇所 | 置換可能性（Phase 1 段階） |
+|---|---|---|
+| `Services/MapService.cs` | `RouterDb.Deserialize` / `Router.Resolve` / `Router.Calculate` / `Network` 走査 | ✅ OsmDotRoute API で置換可能 |
+| `Controllers/MapController.cs` | `using Itinero` + `IRoute = Itinero.Route` alias | ✅ `OsmDotRoute.Route` で置換可能 |
+| `Controllers/ScenarioEditorController.cs` | `_mapService.SnapToRoad` 呼出（戻り値型のみ） | ✅ 戻り値型変更で対応 |
+| `Services/DemolitionCrewBehaviorService.cs` | `route.TotalDistance` / `route.Shape` 参照 | ✅ `TotalDistanceM`（double） に変更で対応 |
+| `Services/SurveyAgentBehaviorService.cs` | 同上 | ✅ |
+| `Services/WasteTransportAgentBehaviorService.cs` | 同上 | ✅ |
+| `Services/ResidentBehaviorService.cs` | 同上 | ✅ |
+| `Services/ResidentFlowService.cs` | `route.TotalDistance` 参照 | ✅ |
+| **`Services/ScenarioEditorService.cs`** | **`RouterDb.LoadOsmData(stream, Vehicle.Car, Vehicle.Pedestrian)` で OSM PBF → RouterDb 変換** | ❌ **Phase 3 (REQ-MAP-007) で独自 PBF パーサー実装後でないと置換不可** |
+
+`ScenarioEditorService.GenerateRouterDbAsync` の PBF パース機能は Phase 1 では OsmDotRoute では未対応のため、**Phase 1 段階で `using Itinero` 完全消去は技術的に困難**。
+
+ユーザー判断（2026-05-20）: 「Phase 3 完了まで親プロジェクトを変更しない」 → 本ステップ全体を Phase 3 完了後に延期。
+
+### 17.2 Phase 1 段階での代替実証
+
+「Phase 1 が要件を満たすことの実証」は以下で達成済み:
+
+- **機能要件**: MapVerifier 1.0.0（ステップ 13〜14）で end-to-end 検証済（要件定義書 v1.9）
+- **性能要件**: ステップ 15 ベンチで Itinero 比 0.48x の優位性を定量証明（[`phase1_benchmark_results.md`](phase1_benchmark_results.md)、§16 参照）
+
+### 17.3 Phase 3 完了時の再活性化条件
+
+- OsmDotRoute に独自 OSM PBF パーサー（REQ-MAP-007）が実装され、`Itinero.IO.Osm` への依存を完全除去可能になった時点
+- そのタイミングで本ステップを「未着手」に戻し、検証ブランチを切って実施
+- 検証ブランチ名は将来のユーザー判断（命名規則候補: `feature/v?.?.?-osmDotRoute-integration` または `claude/osmDotRoute-integration`）
+- 完了判定（当初計画）: ビルド成功 + 既存動作確認 + 設計書 §17 を本格記述で置換
+
+### 17.4 Phase 1 → Phase 3 移行時の覚書
+
+Phase 1 ステップ 16 着手で得た事前調査結果は本章 §17.1 表に残置済。Phase 3 完了後にステップ 16 を再開する際は本表を出発点に置換計画を立てられる。
+
+主要な置換ポイント:
+
+- `route.TotalDistance` (Itinero float) → `route.TotalDistanceM` (OsmDotRoute double、要キャスト) を 11 箇所
+- `route.Shape` foreach 内の `shape.Latitude` / `shape.Longitude` は `GeoCoordinate` でも同名プロパティのため変更不要
+- `MapService.LoadOsmPbf` (`RouterDb.LoadOsmData`) → OsmDotRoute Phase 3 PBF パーサーで置換
+- `Router.Resolve` → `OsmDotRoute.Router.SnapToRoad` （戻り値が `RouterPoint` → `GeoCoordinate?` に変わるため、呼出元のロジック調整必要）
 
 ---
 
@@ -2161,5 +2204,6 @@ MapVerifier はライブラリ本体（OsmDotRoute）とライフサイクル・
 | 0.7 (進行中) | 2026-05-18 | ステップ 4 完了。§6「道路スナップ」記述（`IRoadSnapper` 抽象 + `SnapResult` 内部値型、`ItineroSnapper` 実装、`Router.SnapToRoad` 実装、6 テスト追加で計 12/12 成功）。`RouterDb` 内部コンストラクタを `(IRoadGraph, IRoadSnapper)` に拡張 | Claude (Opus 4.7) |
 | 0.8 (進行中) | 2026-05-18 | ステップ 5a 完了。§7a「JSON プロファイル基盤」記述（DTO 構造、`ProfileEvaluator` 8 ステップ評価、`speedMultiplier` 追加、hard-deny セマンティクス、埋込 `car.json`/`pedestrian.json` 同梱、`InvalidProfileException`、25 単体 + 2 パリティテスト = 計 46/46 成功）。Itinero `Vehicle.Car.Fastest()` とのパリティ: 通行可否 0/52 mismatch、速度 >10% 乖離 9/52 (17%) | Claude (Opus 4.7) |
 | 0.17 (進行中) | 2026-05-19 | ステップ 12 完了。§14「DI 拡張とドキュメント」記述（`OsmDotRoute.Extensions.DependencyInjection` プロジェクト新設、`AddOsmDotRoute` 2 オーバーロード、Singleton ライフタイム、`OsmDotRouteOptions`）。`Directory.Build.props` の `GenerateDocumentationFile` を `true` に切替（テスト/ベンチマーク/サンプル csproj で `false` 上書き）。公開 20 型に `<param>`/`<returns>`/`<exception>` 完備。`README.md` 全面書き換え（Phase 0 → Phase 1 進行中、最小サンプル、DI 統合、0.x 期間中の破壊的変更方針 REQ-API-008、Phase ロードマップ）。6 プロジェクト・147/147 テスト・0 警告維持。§2.2/2.4/3.2/3.4 にも追記反映 | Claude (Opus 4.7) |
+| 0.20 (進行中) | 2026-05-20 | **ステップ 16 (親プロジェクト統合・パリティ検証) を Phase 3 完了まで延期**。事前調査で親プロ `ScenarioEditorService.GenerateRouterDbAsync` が `Itinero.IO.Osm` の PBF パーサーに依存していることが判明、Phase 1 段階での `using Itinero` 完全消去が技術的に困難なため。ユーザー判断「Phase 3 完了まで親プロジェクトを変更しない」（2026-05-20）。§17 を「Phase 3 完了後に実施へ延期」ステータスに更新、事前調査で判明した影響範囲表と Phase 3 再開時の置換ポイント（`route.TotalDistance` 11 箇所など）を覚書として残置。Phase 1 残作業はステップ 17 (MapVerifier 手動検証・REQ-ID 完了マーク・v0.1.0 タグ) のみ | Claude (Opus 4.7) |
 | 0.19 (進行中) | 2026-05-20 | **ステップ 15 (ベンチマーク・性能検証) 完了**。§16 「ベンチマーク結果」を初版記述。市単位 (津島市、57k エッジ) で REQ-NFR-001〜003 を全件達成: 経路計算 33ms / Itinero 比 **0.48x** (Lua インタプリタ非依存の優位性が定量証明) / 制約 100 件下 51ms (C0 比 1.43x) / 定常 WorkingSet 54MB。経路同等性検証で OsmDotRoute / Itinero の 89 両方成功ペア中 100% が距離 ±10% 以内、Itinero が見つけられない経路を 8 件追加発見。`tests/OsmDotRoute.Benchmarks/` に 5 ベンチクラス (Load / Calc / Itinero / WithConstraints C0〜C4 / Snap) + 補助ツール (--memory-probe / --verify-parity) + 決定論的 TestData (route-pairs / restrictions-mixed / restrictions-block の 3 JSON) を実装。詳細は [phase1_benchmark_results.md](phase1_benchmark_results.md) 参照。要件定義書 v2.0 連動、REQ-NFR-001〜003 は「条件付き完了」コメント追記済、都道府県単位 RouterDb での最終確認はステップ 17 へ送り | Claude (Opus 4.7) |
 | 0.18 (進行中) | 2026-05-19 | ステップ 14 (検証用地図アプリ) 経由で Phase 1 機能要件全件の end-to-end 検証完了。**Lib 追加**: `MeshCode.ToBounds()` + `MeshCode.EnumerateInBounds(MapBounds, MeshLevel)` を公開 API に追加（MapVerifier のメッシュグリッド GeoJSON 生成用、二重実装回避）、関連テスト 6 件追加で 153/153 維持。**§15 更新**: MapVerifier の現バージョンを 1.0.0（初版リリース）へ反映（独立 SemVer、設計書 `map_verifier_design.md` 参照）。**要件定義書 v1.9 連動**: REQ-RTE-001〜008 / REQ-RST-001〜018,020〜022,024〜028,030〜032,040 / REQ-PRF-001〜002,007〜014 / REQ-MAP-001〜002 / REQ-API-001〜004 / REQ-FMT-001〜003 / REQ-DEP-001 / REQ-LIC-002〜003 / REQ-NFR-005〜006,009〜010 を全件完了マーク。残作業は性能ベンチマーク (Step 15、REQ-NFR-001〜003) と親プロジェクト統合 (Step 16) のみ | Claude (Opus 4.7) |

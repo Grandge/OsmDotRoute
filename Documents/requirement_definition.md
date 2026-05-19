@@ -1,9 +1,9 @@
 # OsmDotRoute 要件定義書
 
-**バージョン**: 2.0（確定）
+**バージョン**: 2.1（確定）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-20
-**ステータス**: 確定（Phase 1 機能要件全件完了済、ステップ 15 ベンチマークで REQ-NFR-001〜003 を市単位で達成・条件付き完了マーク。残作業はステップ 17 で都道府県単位 RouterDb による最終確認のみ）
+**ステータス**: 確定（Phase 1 機能要件＋性能要件達成済、ステップ 16 親プロ統合は Phase 3 完了まで延期。残作業はステップ 17 MapVerifier 手動検証と Phase 1 確定処理のみ）
 
 ---
 
@@ -510,12 +510,12 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 **スコープ**: REQ-RTE-001〜008, REQ-RST-001〜032, REQ-PRF-001〜002, REQ-PRF-007〜014, REQ-MAP-001〜002, REQ-API-001〜006, REQ-API-008, REQ-FMT-001〜004, REQ-NFR-001〜003, REQ-NFR-005〜006, REQ-NFR-009〜010, REQ-PKG-001, REQ-LIC-001〜003, REQ-DEP-001
 
 **完了判定**:
-- 親プロジェクトの `MapService.cs` から `using Itinero` を完全に消去できる
-- 既存の `CalculateRoute` / `SnapToRoad` / `GetRoadNetworkGeoJson` 相当機能が動作
-- 動的制約の追加削除が次回経路計算で反映される（REQ-RST-012）
-- ベンチマーク結果が REQ-NFR-001 を満たす
+- ~~親プロジェクトの `MapService.cs` から `using Itinero` を完全に消去できる~~ → **Phase 3 完了後に実証へ延期**（2026-05-20、親プロ `ScenarioEditorService.GenerateRouterDbAsync` が `Itinero.IO.Osm` PBF パーサーに依存しているため、Phase 1 段階での完全消去は技術的に困難。実装計画書 §8 ステップ 16 / 設計書 §17 参照）
+- 既存の `CalculateRoute` / `SnapToRoad` / `GetRoadNetworkGeoJson` 相当機能が動作（OsmDotRoute 公開 API として実装済、MapVerifier で検証済）
+- 動的制約の追加削除が次回経路計算で反映される（REQ-RST-012、実装済）
+- ベンチマーク結果が REQ-NFR-001 を満たす（市単位で達成、都道府県単位は Phase 3 完了後に再ベンチ）
 
-**公開アクション**: Phase 1 完了後、親プロジェクトに `<ProjectReference>` で組み込み
+**公開アクション**: Phase 1 完了後、親プロジェクトに `<ProjectReference>` で組み込み（**Phase 3 完了まで延期**、2026-05-20）
 
 ### Phase 2: 中間グラフフォーマット
 
@@ -628,6 +628,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 | 1.6 (確定) | 2026-05-19 | GML 入力 API にマップ範囲フィルタを追加（REQ-RST-040、新規 P1）。`MapBounds` 公開値型を新設し、GML 入力 6 メソッドに optional `MapBounds? mapBounds = null` 引数（`difficultyType` の後・`tag` の前）を挿入。指定時はフィーチャ外周頂点が 1 つでも範囲内（境界線上含む）にあるフィーチャのみ採用、0 個はスキップ。未指定 (`null`) 時は全フィーチャ採用（互換）。シミュレーションのマップ範囲外フィーチャを自動除外するための機能で、利用者は `RouterDb.GetStatistics()` で得た範囲をそのまま渡せる。Phase 1 ステップ 10 実装で確定 | Claude (Opus 4.7) |
 | 1.7 (確定) | 2026-05-19 | REQ-FMT-004「経路 → GeoJSON LineString 変換ユーティリティ」を**廃止**。親プロジェクトの実需要が不明確で、利用者側で `Route.Shape: IReadOnlyList<GeoCoordinate>` から数行で GeoJSON 化可能なため YAGNI 判断（ユーザー合意 2026-05-19）。Phase 1 ステップ 11 を廃止扱いとし、ステップ 12 以降に直接進む。§8.2 出力フォーマット表の該当行も廃止表記。要望が出た時点で再評価する（設計書 §13 に検討経緯を記録） | Claude (Opus 4.7) |
 | 1.8 (確定) | 2026-05-19 | Phase 1 ステップ 12 完了反映：REQ-API-005（DI 拡張 `AddOsmDotRoute`）、REQ-API-006（XML doc 完備）、REQ-API-008（README に 0.x 破壊的変更方針明記）、REQ-PKG-001（ProjectReference 参照確立）、REQ-LIC-001（MIT License）を完了マーク。新規 csproj `OsmDotRoute.Extensions.DependencyInjection`（`Microsoft.Extensions.DependencyInjection.Abstractions` 9.0.0 のみ依存）を追加。`Directory.Build.props` の `GenerateDocumentationFile` を `true` に切替（テスト/ベンチマーク/サンプル csproj で個別に `false` 上書き）。`README.md` を Phase 0 → Phase 1 進行中の内容に全面書き換え（最小サンプル・DI 統合・動的制約登録例・Phase ロードマップ）。6 プロジェクト・147/147 テスト・0 警告維持。設計書 §14「DI 拡張とドキュメント」を実装済みに記述（§2.2/2.4/3.2/3.4 にも追記） | Claude (Opus 4.7) |
+| 2.1 (確定) | 2026-05-20 | **Phase 1 ステップ 16 (親プロジェクト統合・パリティ検証) を Phase 3 完了まで延期** (Ver. 0.20)。事前調査で親プロ `ScenarioEditorService.GenerateRouterDbAsync` が `Itinero.IO.Osm` の PBF パーサーに依存していることが判明、Phase 1 段階で `using Itinero` 完全消去は技術的に困難なため。ユーザー判断「Phase 3 完了まで親プロジェクトを変更しない」（2026-05-20）。§11 Phase 1 完了判定の「親プロ `using Itinero` 消去」を Phase 3 完了後の実証へ延期と明記、関連項目を更新。Phase 1 残作業はステップ 17 (MapVerifier 手動検証・REQ-ID 完了マーク・v0.1.0 タグ) のみ | Claude (Opus 4.7) |
 | 2.0 (確定) | 2026-05-20 | **Phase 1 ステップ 15 ベンチマーク完了** (Ver. 0.19)。REQ-NFR-001〜003 に「条件付き完了」コメントを追記（チェックは `[ ]` のまま、ステップ 17 で都道府県単位再検証後に [x] 確定）。市単位（津島市、57k エッジ）での計測結果: 経路計算 33ms / Itinero 比 0.48x / 制約 100 件下 51ms / WorkingSet 54MB。全判定基準を達成（経路距離同等性 89/89 ペアで ±10% 以内、OsmDotRoute-only 経路発見 8 件、Itinero-only 0 件）。詳細は [phase1_benchmark_results.md](phase1_benchmark_results.md) と設計書 §16 参照。残作業は REQ-NFR-001〜003 の都道府県単位最終確認（ステップ 17）と Phase 2+ 延期項目のみ | Claude (Opus 4.7) |
 | 1.9 (確定) | 2026-05-19 | **Phase 1 機能要件全件を完了マーク** (Ver. 0.18)。MapVerifier 1.0.0 (初版リリース) を通じた end-to-end 検証で、ユーザーが「機能が動作しているのを確認」と承認したことを反映。完了マーク対象: REQ-RTE-001〜008 (経路探索・スナップ・道路ネットワーク GeoJSON 全 8 件)、REQ-RST-001〜018 (進入不可・難所・削除・一覧・即時反映・空間判定・メッシュ階層 全 18 件)、REQ-RST-020〜022 / 024〜028 (KSJ GML 入力 全 8 件)、REQ-RST-030〜032 (重複ルール 3 件)、REQ-RST-040 (マップ範囲フィルタ)、REQ-PRF-001〜002 (車両 2 プロファイル)、REQ-PRF-007〜014 (JSON プロファイル基盤 + 難所タイプ 8 件)、REQ-MAP-001〜002 (RouterDb 読込・統計)、REQ-API-001〜004 (Router/RouterDb/Route/RestrictedAreaService ファサード)、REQ-FMT-001〜003 (Route フィールド)、REQ-DEP-001 (Itinero+System.* のみ)、REQ-LIC-002〜003 (Apache コピー禁止・NuGet バイナリのみ)、REQ-NFR-005〜006 (.NET 9 + Windows x64)、REQ-NFR-009〜010 (日本国内+メートル法)。未完了として残るのは REQ-NFR-001〜003 (性能要件、Phase 1 ステップ 15 ベンチマーク待ち)、REQ-RST-019/023/029 等 Phase 2+ 延期項目、および将来 Phase 用 (REQ-RTE-009/PRF-003〜006/MAP-003〜009/API-007/FMT-005/PKG-002〜004/LIC-004/DEP-002〜003/NFR-004/007〜008/011)。検証手段の MapVerifier はサンプルアプリとして独自 SemVer 管理 (現 v1.0.0 初版リリース)、設計書 `map_verifier_design.md` 参照 | Claude (Opus 4.7) |
 
