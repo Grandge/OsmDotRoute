@@ -292,7 +292,7 @@ OsmDotRoute.Converter            (RouterDb→.odrg、Itinero 1.5.1 参照)
 | # | ステップ | 主要要件 | 状態 |
 |---|---|---|---|
 | 1 | 独自バイナリグラフ形式 `.odrg` 仕様策定（`phase2_graph_format_spec.md` 起こし、Span/Memory ベース API 設計、**STR パック静的 R-tree のビルド/シリアライズアルゴリズム設計**、エッジ AABB（double×4）/ シェイプ連続バッファ / エッジフラグ（1〜2 バイト bitflag、§3.6 候補一覧）の配置確定、MMF レイアウト確定） | REQ-MAP-003 | **完了**（2026-05-21、仕様書 v0.2 確定、設計書 §3 v0.2.1 反映、commit 099969a で骨子・本セッションで残オープン課題 4 件 確定） |
-| 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **着手中** — 2.1 プロジェクト骨格 ✅ / 2.2 protobuf ワイヤ形式 ProtoReader ✅ (27/27 テスト) / 2.3 Blob 構造 + ZLib 解凍 ✅ (25/25 テスト) / 2.4 HeaderBlock 解析 ✅ (18/18 テスト、`OsmHeader` + `OsmHeaderParser`、SupportedRequiredFeatures = OsmSchema-V0.6/DenseNodes) / 2.5〜2.10 未着手 |
+| 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **着手中** — 2.1 プロジェクト骨格 ✅ / 2.2 protobuf ワイヤ形式 ProtoReader ✅ (27/27 テスト) / 2.3 Blob 構造 + ZLib 解凍 ✅ (25/25 テスト) / 2.4 HeaderBlock 解析 ✅ (18/18 テスト) / 2.5 PrimitiveBlock + stringtable ✅ (19/19 テスト、`PrimitiveBlock` + `OsmStringTable` + 座標変換、PrimitiveGroup はスキップ) / 2.6〜2.10 未着手 |
 | 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | 未着手 |
 | 4-opt | （末尾オプション）Itinero RouterDb → `.odrg` 変換ツール `OsmDotRoute.Converter`。ステップ 1 完了時点で技術的負担を評価し、軽ければ実装、重ければ Phase 3 以降に延期 | REQ-MAP-004 | 未着手・実施判断保留 |
 | 5 | Phase 2 検証・確定（`OsmDotRoute.Extractor` 出力 `.odrg` の形式正当性検査、Phase 1 RouterDb と同等の頂点数・辺数・経緯度範囲が出ることを確認、設計書 §10 で Phase 3 申し送り整理、v0.2.0 タグ判断） | — | 未着手 |
@@ -368,7 +368,8 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 - [x] ステップ 1 着手 → `phase2_graph_format_spec.md` v0.2 確定（2026-05-21、本セッションで残オープン課題 4 件 確定）
 - [x] ステップ 2.3 完了（2026-05-21、`PbfBlobReader` + 25 テスト、`PbfBlobType` enum、`ZLibStream` 解凍、ArrayPool バッファリング）
 - [x] ステップ 2.4 完了（2026-05-21、`OsmHeader` + `OsmBoundingBox` + `OsmHeaderParser` + 18 テスト、`SupportedRequiredFeatures = {OsmSchema-V0.6, DenseNodes}`、HeaderBBox ナノ度→度変換）
-- [ ] ステップ 2.5 着手（PrimitiveBlock + stringtable 解析：granularity / lat_offset / lon_offset / 文字列テーブル）
+- [x] ステップ 2.5 完了（2026-05-21、`PrimitiveBlock` + `OsmStringTable` + `PrimitiveBlockParser` + 19 テスト、座標変換 `lon = 1e-9 × (LonOffset + Granularity × encoded)`、PrimitiveGroup はスキップ）
+- [ ] ステップ 2.6 着手（Node 解析：単体ノード、PBF では稀）
 
 ---
 
@@ -383,3 +384,4 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 | 0.2.1 (draft) | 2026-05-21 | ステップ 1 完了反映。仕様書 [`phase2_graph_format_spec.md`](phase2_graph_format_spec.md) v0.2 確定（残オープン課題 4 件をユーザー判断で確定：エッジフラグ 12 bit 案 / Edge Shape Buffer エッジ ID 順 / `bakedProfileIndex == edgeId` / R-tree M=16 初期値）。§6 ステップ表のステップ 1 を完了マーク化、§10 次のアクションをチェック更新（ステップ 2.3 着手を新規追加） | Claude (Opus 4.7) |
 | 0.2.2 (draft) | 2026-05-21 | ステップ 2.3 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.3 完了 / 2.4〜2.10 未着手」に更新。§10 次のアクションを「2.4 着手」へ繰下げ。設計書 §4.2 に `PbfBlobReader` の意図・採用設計・判断根拠・検証方法（25/25 テスト）を記録（[`phase2_design.md`](phase2_design.md) v0.2.2） | Claude (Opus 4.7) |
 | 0.2.3 (draft) | 2026-05-21 | ステップ 2.4 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.4 完了 / 2.5〜2.10 未着手」に更新。§10 次のアクションを「2.5 着手」へ繰下げ。設計書 §4.3 に `OsmHeaderParser` の意図・採用設計・判断根拠・検証方法（18/18 テスト、SupportedRequiredFeatures = OsmSchema-V0.6/DenseNodes）を記録（[`phase2_design.md`](phase2_design.md) v0.2.3） | Claude (Opus 4.7) |
+| 0.2.4 (draft) | 2026-05-21 | ステップ 2.5 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.5 完了 / 2.6〜2.10 未着手」に更新。§10 次のアクションを「2.6 着手」へ繰下げ。設計書 §4.4 に `PrimitiveBlock` + `OsmStringTable` + `PrimitiveBlockParser` の意図・採用設計・判断根拠・検証方法（19/19 テスト、座標変換式、PrimitiveGroup スキップ）を記録（[`phase2_design.md`](phase2_design.md) v0.2.4） | Claude (Opus 4.7) |
