@@ -1,9 +1,9 @@
 # OsmDotRoute 要件定義書
 
-**バージョン**: 2.2（確定）
+**バージョン**: 2.3（確定）
 **作成日**: 2026-05-18
 **最終更新**: 2026-05-20
-**ステータス**: 確定（Phase 1 機能要件＋性能要件全件達成済、ステップ 17 ユーザー検証 32/32 OK、REQ-NFR-001〜003 を [x] 確定マーク済。残作業は v0.1.0 タグ付与の判断のみ）
+**ステータス**: 確定（Phase 1 完了 / v0.1.0 タグ付与済、commit `e5d90f2`。Phase 2/3 のスコープを再編：Phase 2 = `.odrg` 形式策定 + 独自 OSM PBF パーサー + PBF→`.odrg` 抽出に絞り、Phase 3 = ランタイム読込 + Itinero 依存削除 + Bicycle/Truck + ベンチ + 親プロジェクト統合へ移行。理由は §12 v2.3 改訂エントリ参照）
 
 ---
 
@@ -30,9 +30,10 @@
 
 ### 2.2. 実装フェーズ (Phase)
 
-- **[Phase1]** — 経路探索エンジン独自化（Itinero をデータ層として残す）
-- **[Phase2]** — 中間グラフフォーマット策定、ランタイム Itinero 依存削除
-- **[Phase3]** — OSM PBF パーサー独自化、Itinero への完全独立
+- **[Phase1]** — 経路探索エンジン独自化（Itinero をデータ層として残す）。完了 (v0.1.0, 2026-05-20)
+- **[Phase2]** — **データ供給側の独自化**：独自バイナリグラフ形式 `.odrg` 策定 + 独自 OSM PBF パーサー + PBF → `.odrg` 抽出ツール。末尾オプションで Itinero RouterDb → `.odrg` 変換ツール（v2.3 で再編、§12 改訂履歴参照）
+- **[Phase2-opt]** — Phase 2 末尾のオプションタスク。`.odrg` 設計完了後に「変換可能なら低優先度で作る」スタンス
+- **[Phase3]** — **データ利用側の独自化**：ランタイム `.odrg` 読込 + ランタイム Itinero 依存完全削除 + Bicycle/Truck プロファイル + 性能ベンチマーク + 親プロジェクト統合・パリティ検証
 - **[Phase4+]** — 将来検討（NuGet 公開、CH 対応、マルチプラットフォーム等）
 
 ### 2.3. 進捗管理 (Progress)
@@ -182,8 +183,8 @@
 
 - [x] [P1] [Phase1] **REQ-PRF-001**: 同梱車両プロファイル `car`（普通自動車）を提供すること。実装は JSON 外部ファイル、内容は Itinero `Vehicle.Car` 相当の OSM タグ解釈を踏襲。(Ver. 0.18)
 - [x] [P1] [Phase1] **REQ-PRF-002**: 同梱車両プロファイル `pedestrian`（歩行者）を提供すること。実装は JSON 外部ファイル、内容は Itinero `Vehicle.Pedestrian` 相当の OSM タグ解釈を踏襲。(Ver. 0.18)
-- [ ] [P2] [Phase2] **REQ-PRF-003**: 同梱車両プロファイル `bicycle`（自転車）を提供すること。(Ver. -)
-- [ ] [P2] [Phase2] **REQ-PRF-004**: 同梱車両プロファイル `truck`（大型貨物車）を提供すること。(Ver. -)
+- [ ] [P2] [Phase3] **REQ-PRF-003**: 同梱車両プロファイル `bicycle`（自転車）を提供すること。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動。Phase 2 はデータ供給側に集中させるため）
+- [ ] [P2] [Phase3] **REQ-PRF-004**: 同梱車両プロファイル `truck`（10 t トラック）を提供すること。**独自設計**（Itinero / OSRM 流用ではなく日本道路法ベース、最大積載量 10 t・車両総重量 20 t 級・高さ/幅制限・`hgv=*` / `access=destination` 等を考慮）。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動、Truck=10 t を確定)
 - [ ] [P3] [Phase3] **REQ-PRF-005**: 同梱車両プロファイル `emergency`（緊急車両：救急車・消防車相当）を提供すること。(Ver. -)
 - [ ] [P3] [Phase3] **REQ-PRF-006**: 同梱車両プロファイル `disaster`（災害用車両：特殊許可ルート・通行制限緩和を考慮）を提供すること。(Ver. -)
 
@@ -218,13 +219,13 @@
 
 - [x] [P1] [Phase1] **REQ-MAP-001**: Itinero RouterDb（`.routerdb`）ファイルを読み込めること。(Ver. 0.18)
 - [x] [P2] [Phase1] **REQ-MAP-002**: 読み込み済みグラフから頂点数・辺数・経緯度範囲の統計情報を取得できること。(Ver. 0.18)
-- [ ] [P1] [Phase2] **REQ-MAP-003**: 独自バイナリグラフ形式を策定すること（仕様は別文書 `phase2_graph_format_spec.md` に記載）。(Ver. -)
-- [ ] [P1] [Phase2] **REQ-MAP-004**: Itinero RouterDb → 独自バイナリグラフへの一括変換ツール（CLI 等）を提供すること。(Ver. -)
-- [ ] [P1] [Phase2] **REQ-MAP-005**: 独自バイナリグラフ形式のファイルを読み込めること。(Ver. -)
-- [ ] [P1] [Phase2] **REQ-MAP-006**: ランタイム経路計算から Itinero アセンブリへの依存を排除すること。(Ver. -)
-- [ ] [P1] [Phase3] **REQ-MAP-007**: OSM PBF ファイルを直接読み込む独自パーサーを提供すること。(Ver. -)
-- [ ] [P1] [Phase3] **REQ-MAP-008**: OSM PBF から独自バイナリグラフを直接ビルドできること。(Ver. -)
-- [ ] [P1] [Phase3] **REQ-MAP-009**: ライブラリ全体（変換ツールを含む）から Itinero への一切の依存を排除すること。(Ver. -)
+- [ ] [P1] [Phase2] **REQ-MAP-003**: 独自バイナリグラフ形式 `.odrg` を策定すること（仕様は別文書 `phase2_graph_format_spec.md` に記載）。動的制約のホットパスをデータ形式自体が支援する設計とする（エッジ AABB bake / STR パック静的 R-tree / エッジシェイプ連続バッファ / エッジ bitflag）。(Ver. -)
+- [ ] [P3] [Phase2-opt] **REQ-MAP-004**: Itinero RouterDb → `.odrg` 一括変換ツール（CLI 等）を提供すること。**Phase 2 末尾のオプション**：v2.3 で「`.odrg` 設計を RouterDb 構造に引きずられないようにする」ため Phase 2 主軸から外した。`.odrg` 設計完了後に技術的負担が軽ければ作る、重ければ Phase 3 以降に延期。(Ver. -、v2.3 で P1 → P3、Phase2 → Phase2-opt へ降格)
+- [ ] [P1] [Phase2] **REQ-MAP-007**: OSM PBF ファイルを直接読み込む独自 protobuf パーサーを提供すること。**System.\* のみで実装**（外部依存 protobuf-net 等は使わない）。サポート要素は OsmDotRoute 必要分（HeaderBlock / PrimitiveGroup の Way / Node / DenseNodes / Relation）に限定。(Ver. -、v2.3 で Phase 3 → Phase 2 へ前倒し)
+- [ ] [P1] [Phase2] **REQ-MAP-008**: OSM PBF から `.odrg` を直接ビルドする CLI ツール `OsmDotRoute.Extractor` を提供すること。`extract --input *.osm.pbf --profiles car,pedestrian --output *.odrg` 形式。(Ver. -、v2.3 で Phase 3 → Phase 2 へ前倒し)
+- [ ] [P1] [Phase3] **REQ-MAP-005**: 独自バイナリグラフ形式 `.odrg` のファイルをランタイムから読み込めること。`MemoryMappedFile` でビュー化、`ReadOnlySpan<T>` でゼロコピー公開。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動)
+- [ ] [P1] [Phase3] **REQ-MAP-006**: ランタイム経路計算から Itinero アセンブリへの依存を排除すること。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動)
+- [ ] [P1] [Phase3] **REQ-MAP-009**: ライブラリ全体（変換ツールを含む）から Itinero への一切の依存を排除すること。**v2.3 で Phase 2 が PBF 直接抽出主軸となったことにより、Phase 2 完了時点で実質達成見込み**（RouterDb 変換ツール REQ-MAP-004 を作らない場合）。(Ver. -)
 
 ### 5.5 パブリック API 設計 (REQ-API)
 
@@ -277,7 +278,7 @@
 ### 6.4 配布・公開戦略 (REQ-PKG)
 
 - [x] [P1] [Phase1] **REQ-PKG-001**: Phase 1 では本プロジェクトをソースとして親プロジェクトから `<ProjectReference>` で参照可能とすること。(Ver. 0.17)
-- [ ] [P2] [Phase2] **REQ-PKG-002**: Phase 2 までは非公開リポジトリで管理し、外部公開しないこと。(Ver. -)
+- [ ] [P2] [Phase3] **REQ-PKG-002**: Phase 3 完了までは非公開リポジトリで管理し、外部公開しないこと。(Ver. -、v2.3 で Phase 2 まで → Phase 3 完了まで に変更。Phase 2 はデータ供給側のみ完了する段階で単体実用にならないため、Phase 3 完了をもって OSS 公開判断とする)
 - [ ] [P1] [Phase3] **REQ-PKG-003**: Phase 3 完了時点で GitHub 個人アカウント上で OSS 公開できる状態とすること（README/LICENSE/CI 整備済み）。(Ver. -)
 - [ ] [P3] [Phase4+] **REQ-PKG-004**: NuGet.org への公開可否は Phase 3 完了後に別途判断する（当面公開しない）。(Ver. -)
 
@@ -291,8 +292,8 @@
 ### 6.6 依存ライブラリ方針 (REQ-DEP)
 
 - [x] [P1] [Phase1] **REQ-DEP-001**: Phase 1 ではランタイムが Itinero 1.5.1 系および System.* 標準ライブラリのみに依存すること。(Ver. 0.18)
-- [ ] [P1] [Phase2] **REQ-DEP-002**: Phase 2 ではランタイムから Itinero 依存を排除し、System.* 標準ライブラリのみに依存すること（変換ツール内部の Itinero 利用は許容）。(Ver. -)
-- [ ] [P1] [Phase3] **REQ-DEP-003**: Phase 3 では変換ツールを含む全コンポーネントから Itinero 依存を排除すること（OSM PBF パース用に protobuf 関連を限定追加することを許容）。(Ver. -)
+- [ ] [P1] [Phase2] **REQ-DEP-002**: Phase 2 では `.odrg` 形式策定・独自 PBF パーサー・PBF→`.odrg` 抽出ツール（`OsmDotRoute.Extractor`）のすべてが **System.\* 標準ライブラリのみに依存すること**。protobuf-net 等の外部依存は使わず、PBF プロトコルバッファは独自実装する（v2.3 で「変換ツール内部の Itinero 利用は許容」条項を削除、Phase 2 スコープから RouterDb 変換ツールを外したため）。(Ver. -、v2.3 で条文書き換え)
+- [ ] [P1] [Phase3] **REQ-DEP-003**: Phase 3 ではランタイム経路計算・スナップ・プロファイル評価・ベンチマークのすべてが **System.\* 標準ライブラリのみに依存すること**。`OsmDotRoute.Itinero` プロジェクトを撤去し、ライブラリ全体（REQ-MAP-004 オプション RouterDb 変換ツールを作らない場合）から Itinero への依存を排除する。(Ver. -、v2.3 で条文書き換え)
 
 ---
 
@@ -438,11 +439,12 @@ namespace OsmDotRoute
 
 ### 8.1 グラフ入力フォーマット
 
-| Phase | 入力データ | 関連要件 |
-|---|---|---|
-| Phase 1 | Itinero RouterDb (`.routerdb`) | REQ-MAP-001 |
-| Phase 2 | OsmDotRoute 独自バイナリグラフ | REQ-MAP-003 〜 REQ-MAP-005 |
-| Phase 3 | OSM PBF（独自パーサー） | REQ-MAP-007 〜 REQ-MAP-008 |
+| Phase | 入力データ（ランタイム） | データ供給経路 | 関連要件 |
+|---|---|---|---|
+| Phase 1 | Itinero RouterDb (`.routerdb`) | Itinero `.routerdb` を直接読込 | REQ-MAP-001 |
+| Phase 2 | （ランタイム変化なし） | **OSM PBF → `.odrg` 独自抽出ツール** で `.odrg` を生成（ランタイムは Phase 3 で `.odrg` 読込開始） | REQ-MAP-003 / REQ-MAP-007 / REQ-MAP-008 |
+| Phase 2-opt | — | （オプション）Itinero RouterDb → `.odrg` 変換ツールを設計完了後に検討 | REQ-MAP-004 |
+| Phase 3 | OsmDotRoute 独自バイナリグラフ `.odrg` | `MemoryMappedFile` ビューで直接利用 | REQ-MAP-005 / REQ-MAP-006 / REQ-MAP-009 |
 
 ### 8.1.b 動的制約入力フォーマット
 
@@ -629,6 +631,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 | 1.7 (確定) | 2026-05-19 | REQ-FMT-004「経路 → GeoJSON LineString 変換ユーティリティ」を**廃止**。親プロジェクトの実需要が不明確で、利用者側で `Route.Shape: IReadOnlyList<GeoCoordinate>` から数行で GeoJSON 化可能なため YAGNI 判断（ユーザー合意 2026-05-19）。Phase 1 ステップ 11 を廃止扱いとし、ステップ 12 以降に直接進む。§8.2 出力フォーマット表の該当行も廃止表記。要望が出た時点で再評価する（設計書 §13 に検討経緯を記録） | Claude (Opus 4.7) |
 | 1.8 (確定) | 2026-05-19 | Phase 1 ステップ 12 完了反映：REQ-API-005（DI 拡張 `AddOsmDotRoute`）、REQ-API-006（XML doc 完備）、REQ-API-008（README に 0.x 破壊的変更方針明記）、REQ-PKG-001（ProjectReference 参照確立）、REQ-LIC-001（MIT License）を完了マーク。新規 csproj `OsmDotRoute.Extensions.DependencyInjection`（`Microsoft.Extensions.DependencyInjection.Abstractions` 9.0.0 のみ依存）を追加。`Directory.Build.props` の `GenerateDocumentationFile` を `true` に切替（テスト/ベンチマーク/サンプル csproj で個別に `false` 上書き）。`README.md` を Phase 0 → Phase 1 進行中の内容に全面書き換え（最小サンプル・DI 統合・動的制約登録例・Phase ロードマップ）。6 プロジェクト・147/147 テスト・0 警告維持。設計書 §14「DI 拡張とドキュメント」を実装済みに記述（§2.2/2.4/3.2/3.4 にも追記） | Claude (Opus 4.7) |
 | 2.2 (確定) | 2026-05-20 | **Phase 1 ステップ 17 (ユーザー検証) 完了** (Ver. 0.21)。MapVerifier 1.0.0 で検証チェックリスト 32/32 をユーザーが全件 OK 確認 (`Documents/phase1_step17_verification_checklist.md`)。REQ-NFR-001〜003 を「条件付き完了」コメント付き [x] に確定マーク (市単位達成、都道府県単位は Phase 3 完了後に再検証)。Phase 1 機能要件＋性能要件全件達成、設計書 §18 「制約事項と既知の課題」も初版記述済。Phase 1 残作業は v0.1.0 タグ付与のユーザー判断のみ | Claude (Opus 4.7) |
+| 2.3 (確定) | 2026-05-20 | **Phase 2/3 のスコープを再編**。ユーザー判断「Itinero RouterDb からの変換ツールを意識すると `.odrg` 構造が最適化できなくなる懸念、OSM PBF からの直接抽出を Phase 2 主軸に据える」を反映 (2026-05-20)。Phase 2 = 独自バイナリグラフ形式 `.odrg` 策定 + 独自 OSM PBF パーサー (System.\* 完結) + PBF→`.odrg` 抽出ツール `OsmDotRoute.Extractor` + (末尾オプション) RouterDb 変換ツール。Phase 3 = ランタイム `.odrg` 読込 + ランタイム Itinero 依存削除 + Bicycle/Truck プロファイル + ベンチマーク + 親プロジェクト統合・パリティ検証。Phase タグ付け替え: REQ-MAP-004 を P1[Phase2] → P3[Phase2-opt]、REQ-MAP-005/006 を Phase 2 → Phase 3、REQ-MAP-007/008 を Phase 3 → Phase 2、REQ-PRF-003/004 を Phase 2 → Phase 3、REQ-PKG-002 を Phase 2 まで → Phase 3 完了まで非公開、REQ-DEP-002/003 を再構成 (Phase 2 で System.\* 完結を確定、protobuf 独自実装、変換ツール内部 Itinero 許容条項を削除)。Truck=10t トラックを独自設計と確定 (REQ-PRF-004)。§2.2 実装フェーズ説明、§8.1 グラフ入力フォーマット表を新スコープに合わせて全面更新 | Claude (Opus 4.7) |
 | 2.1 (確定) | 2026-05-20 | **Phase 1 ステップ 16 (親プロジェクト統合・パリティ検証) を Phase 3 完了まで延期** (Ver. 0.20)。事前調査で親プロ `ScenarioEditorService.GenerateRouterDbAsync` が `Itinero.IO.Osm` の PBF パーサーに依存していることが判明、Phase 1 段階で `using Itinero` 完全消去は技術的に困難なため。ユーザー判断「Phase 3 完了まで親プロジェクトを変更しない」（2026-05-20）。§11 Phase 1 完了判定の「親プロ `using Itinero` 消去」を Phase 3 完了後の実証へ延期と明記、関連項目を更新。Phase 1 残作業はステップ 17 (MapVerifier 手動検証・REQ-ID 完了マーク・v0.1.0 タグ) のみ | Claude (Opus 4.7) |
 | 2.0 (確定) | 2026-05-20 | **Phase 1 ステップ 15 ベンチマーク完了** (Ver. 0.19)。REQ-NFR-001〜003 に「条件付き完了」コメントを追記（チェックは `[ ]` のまま、ステップ 17 で都道府県単位再検証後に [x] 確定）。市単位（津島市、57k エッジ）での計測結果: 経路計算 33ms / Itinero 比 0.48x / 制約 100 件下 51ms / WorkingSet 54MB。全判定基準を達成（経路距離同等性 89/89 ペアで ±10% 以内、OsmDotRoute-only 経路発見 8 件、Itinero-only 0 件）。詳細は [phase1_benchmark_results.md](phase1_benchmark_results.md) と設計書 §16 参照。残作業は REQ-NFR-001〜003 の都道府県単位最終確認（ステップ 17）と Phase 2+ 延期項目のみ | Claude (Opus 4.7) |
 | 1.9 (確定) | 2026-05-19 | **Phase 1 機能要件全件を完了マーク** (Ver. 0.18)。MapVerifier 1.0.0 (初版リリース) を通じた end-to-end 検証で、ユーザーが「機能が動作しているのを確認」と承認したことを反映。完了マーク対象: REQ-RTE-001〜008 (経路探索・スナップ・道路ネットワーク GeoJSON 全 8 件)、REQ-RST-001〜018 (進入不可・難所・削除・一覧・即時反映・空間判定・メッシュ階層 全 18 件)、REQ-RST-020〜022 / 024〜028 (KSJ GML 入力 全 8 件)、REQ-RST-030〜032 (重複ルール 3 件)、REQ-RST-040 (マップ範囲フィルタ)、REQ-PRF-001〜002 (車両 2 プロファイル)、REQ-PRF-007〜014 (JSON プロファイル基盤 + 難所タイプ 8 件)、REQ-MAP-001〜002 (RouterDb 読込・統計)、REQ-API-001〜004 (Router/RouterDb/Route/RestrictedAreaService ファサード)、REQ-FMT-001〜003 (Route フィールド)、REQ-DEP-001 (Itinero+System.* のみ)、REQ-LIC-002〜003 (Apache コピー禁止・NuGet バイナリのみ)、REQ-NFR-005〜006 (.NET 9 + Windows x64)、REQ-NFR-009〜010 (日本国内+メートル法)。未完了として残るのは REQ-NFR-001〜003 (性能要件、Phase 1 ステップ 15 ベンチマーク待ち)、REQ-RST-019/023/029 等 Phase 2+ 延期項目、および将来 Phase 用 (REQ-RTE-009/PRF-003〜006/MAP-003〜009/API-007/FMT-005/PKG-002〜004/LIC-004/DEP-002〜003/NFR-004/007〜008/011)。検証手段の MapVerifier はサンプルアプリとして独自 SemVer 管理 (現 v1.0.0 初版リリース)、設計書 `map_verifier_design.md` 参照 | Claude (Opus 4.7) |
