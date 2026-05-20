@@ -291,7 +291,7 @@ OsmDotRoute.Converter            (RouterDb→.odrg、Itinero 1.5.1 参照)
 
 | # | ステップ | 主要要件 | 状態 |
 |---|---|---|---|
-| 1 | 独自バイナリグラフ形式 `.odrg` 仕様策定（`phase2_graph_format_spec.md` 起こし、Span/Memory ベース API 設計、**STR パック静的 R-tree のビルド/シリアライズアルゴリズム設計**、エッジ AABB（double×4）/ シェイプ連続バッファ / エッジフラグ（1〜2 バイト bitflag、§3.6 候補一覧）の配置確定、MMF レイアウト確定） | REQ-MAP-003 | 未着手 |
+| 1 | 独自バイナリグラフ形式 `.odrg` 仕様策定（`phase2_graph_format_spec.md` 起こし、Span/Memory ベース API 設計、**STR パック静的 R-tree のビルド/シリアライズアルゴリズム設計**、エッジ AABB（double×4）/ シェイプ連続バッファ / エッジフラグ（1〜2 バイト bitflag、§3.6 候補一覧）の配置確定、MMF レイアウト確定） | REQ-MAP-003 | **完了**（2026-05-21、仕様書 v0.2 確定、設計書 §3 v0.2.1 反映、commit 099969a で骨子・本セッションで残オープン課題 4 件 確定） |
 | 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **着手中** — 2.1 プロジェクト骨格 ✅ / 2.2 protobuf ワイヤ形式 ProtoReader ✅ (27/27 テスト) / 2.3〜2.10 未着手 |
 | 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | 未着手 |
 | 4-opt | （末尾オプション）Itinero RouterDb → `.odrg` 変換ツール `OsmDotRoute.Converter`。ステップ 1 完了時点で技術的負担を評価し、軽ければ実装、重ければ Phase 3 以降に延期 | REQ-MAP-004 | 未着手・実施判断保留 |
@@ -362,10 +362,11 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 
 ## 10. 次のアクション
 
-- [ ] 本計画書 v0.2 のユーザーレビュー
-- [ ] §5.6「v0.2 で新たに確定すべきユーザー判断事項」5 件の暫定回答収集
-- [ ] ユーザー合意後、設計書 [`phase2_design.md`](phase2_design.md) v0.2 起こしに反映
-- [ ] ステップ 1 着手 → `phase2_graph_format_spec.md` v0.1 起こし
+- [x] 本計画書 v0.2 のユーザーレビュー（2026-05-20、commit 099969a）
+- [x] §5.6「v0.2 で新たに確定すべきユーザー判断事項」5 件の暫定回答収集（2026-05-20 確定）
+- [x] ユーザー合意後、設計書 [`phase2_design.md`](phase2_design.md) v0.2 起こしに反映（2026-05-20、commit 099969a）
+- [x] ステップ 1 着手 → `phase2_graph_format_spec.md` v0.2 確定（2026-05-21、本セッションで残オープン課題 4 件 確定）
+- [ ] ステップ 2.3 着手（PBF Blob 構造：BlobHeader 4B BE サイズ + BlobHeader protobuf + Blob protobuf + ZLib 解凍）
 
 ---
 
@@ -377,3 +378,4 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 | 0.1.1 (draft) | 2026-05-20 | ユーザー指摘「OsmDotRoute 最大の差別化要素である動的制約を最大限に活かすデータ実装に」を反映。§1 ゴール 5・方針追記、§3.1 形式構成にエッジ AABB / エッジ空間インデックス / シェイプ連続バッファ / エッジフラグを追加、§3.2 にホットパスゼロアロケート動機を明記、§3.6「動的制約を最大限に活かすデータ設計」を新設、§5.4 判断事項 4 件追加、§6 ステップ 1〜3・6 を動的制約特化に拡張、§8 リスク R8〜R9 追加、§9 性能目標に制約 100 件時劣化率・`Add*Area` 単発コスト追加 | Claude (Opus 4.7) |
 | 0.1.2 (draft) | 2026-05-20 | §5.4 判断事項 10 件すべてユーザー確定（拡張子 `.odrg` / インデックス R-tree STR パック静的版 / AABB double / フラグできるだけ多く採用 / キャッシュ API はステップ 3 確定 / MMF 採用 / `System.CommandLine` / `Route.Shape` 破壊変更可 / ベンチ津島市 / プロファイル独自設計・Truck 10 t）。§3.1・§3.3・§3.5・§3.6・§6 ステップ表を確定値で書き換え。Phase 1 ベンチ対象都市の誤記（松山市→津島市）を修正 | Claude (Opus 4.7) |
 | 0.2 (draft) | 2026-05-20 | **Phase 2/3 スコープを再編**（ユーザー判断 2026-05-20）。Phase 2 = `.odrg` 形式策定 + 独自 OSM PBF パーサー + PBF→`.odrg` 抽出ツール + (末尾オプション) RouterDb 変換ツール、Phase 3 = ランタイム読込 + Itinero 依存削除 + Bicycle/Truck + ベンチ + 親プロ統合。理由：Itinero RouterDb 変換ツールを意識した `.odrg` 設計は構造を最適化阻害するため、PBF からの直接抽出を Phase 2 主軸に据える。要件定義書を v2.3 へ同時改訂（REQ-MAP-004 を P3[Phase2-opt]、REQ-MAP-005/006 を Phase 3、REQ-MAP-007/008 を Phase 2、REQ-PRF-003/004 を Phase 3、REQ-PKG-002 を Phase 3 完了まで非公開、REQ-DEP-002/003 再構成）。§1 ゴール再構築、§3.3 独自 PBF パーサー節新設、§3.4 PBF→`.odrg` 抽出ツール節新設、§3.5 Phase 3 申し送り設計節新設、§3.7 RouterDb 変換ツール末尾オプション節新設、§5 プロジェクト構成変更（`OsmDotRoute.Pbf` / `OsmDotRoute.Extractor` 新規）、§5.6 新たな確定判断事項 5 件、§6 ステップ表を 7 段 → 5 段に短縮、§7 工数 14〜22 日 → 11〜20 日、§8 リスク R1〜R8 を新スコープ向けに再編、§9 性能基準は Phase 3 で検証する旨を明記 | Claude (Opus 4.7) |
+| 0.2.1 (draft) | 2026-05-21 | ステップ 1 完了反映。仕様書 [`phase2_graph_format_spec.md`](phase2_graph_format_spec.md) v0.2 確定（残オープン課題 4 件をユーザー判断で確定：エッジフラグ 12 bit 案 / Edge Shape Buffer エッジ ID 順 / `bakedProfileIndex == edgeId` / R-tree M=16 初期値）。§6 ステップ表のステップ 1 を完了マーク化、§10 次のアクションをチェック更新（ステップ 2.3 着手を新規追加） | Claude (Opus 4.7) |

@@ -1,9 +1,9 @@
 # OsmDotRoute 独自バイナリグラフ形式 `.odrg` 仕様書
 
-**バージョン**: 0.1（ドラフト・初版骨子）
+**バージョン**: 0.2（ステップ 1 完了確定版）
 **作成日**: 2026-05-20
-**最終更新**: 2026-05-20
-**ステータス**: ドラフト v0.1（ステップ 1 着手・ユーザーレビュー前）
+**最終更新**: 2026-05-21
+**ステータス**: v0.2 確定（Phase 2 ステップ 1 完了・ユーザー合意済）
 **対象**: Phase 2 ステップ 1 成果物。OsmDotRoute 独自バイナリグラフ形式 `.odrg` のレイアウト・アルゴリズム・読書 API パターンを規定する
 **関連ドキュメント**:
 
@@ -35,7 +35,7 @@
 
 ### 0.3 本書の更新ルール
 
-ステップ 1 完了時に v0.1 → v0.2 へ昇格（ユーザー合意後）。以降は実装で判明した制約・修正をその都度追記。
+ステップ 1 完了時に v0.1 → v0.2 へ昇格（ユーザー合意済、2026-05-21）。以降は実装で判明した制約・修正をその都度追記し、互換性破壊を伴う変更時のみメジャー昇格（v1.0）。
 
 ---
 
@@ -196,6 +196,20 @@ internal readonly struct Vertex
 
 `shapeLength` は端点（fromVertex / toVertex）を**含まない**中間点の数とする。`shapeLength = 0` は直線エッジ（端点 2 つのみ）を意味する。
 
+#### 4.3.1 並び順（v0.2 確定）
+
+シェイプ点は **エッジ ID 順** に配置する（2026-05-21 ユーザー判断）。
+
+採用理由：
+
+- 抽出ツール側の書出が単純（エッジを ID 順に処理 → そのままバッファ末尾に追記）
+- 主ワークロード「エッジ ID 順スキャン」（プロファイル評価・ベンチマーク等）でキャッシュ局所性が効く
+- Phase 3 R-tree クエリは結果としてランダム ID アクセスになるが、MMF ページキャッシュで吸収できる見込み
+
+採用しなかった案：
+
+- **Hilbert カーブ / R-tree 葉順での並べ替え**：Phase 3 ホットパス最適化として理論上は有効だが、抽出ツール実装が複雑化し、Phase 2 のスコープを超える。Phase 3 ステップ 3E のベンチで「ランダム ID アクセスがボトルネックになっている」と判定された場合に、Phase 3 末尾オプションとして再評価する
+
 `NativeRoadGraph.GetShape(edgeId)` は次のいずれかのビューを返す：
 
 - 中間点のみ：`ReadOnlySpan<GeoCoordinate>` 長さ `shapeLength`
@@ -231,9 +245,9 @@ internal readonly struct Aabb
 
 エッジ ID 順、1 エッジあたり `edgeFlagBytes`（1 または 2 バイト、ヘッダーで指定）。
 
-#### Phase 2 v0.1 で予約するビット割り当て
+#### Phase 2 v0.2 で確定するビット割り当て
 
-初版は **2 バイト（uint16）** を採用予定。OSM タグから機械的に bake できる属性を広めに採用（§5.4-4 計画書、メモリ [[project-phase2-dynamic-restriction-design]]）。
+**2 バイト（uint16）** で確定（2026-05-21 ユーザー判断）。OSM タグから機械的に bake できる属性を広めに採用（§5.4-4 計画書、メモリ [[project-phase2-dynamic-restriction-design]]）。Bridge〜SchoolZone の 12 属性 + Oneway 2 bit = 14 bit 使用、残り 2 bit 予約。
 
 | ビット | 名前                      | OSM タグ → bake ルール（v0.1 案）                                           |
 | ------ | ------------------------- | ---------------------------------------------------------------------------- |
@@ -259,6 +273,8 @@ internal readonly struct Aabb
 #### 運用方針
 
 §5.6-4 計画書のとおり「できるだけ多く採用、運用上不要と判断した時点で削る」方針。Phase 3 ステップ 3H で剪定判断を行う。
+
+`SchoolZone` は OSM タグ単独 (`hazard=school_zone`) からの bake が難しい（実運用上ほぼ未使用、近傍 `amenity=school` 連携は複雑）。v0.2 では bit 11 を予約し、抽出ツール側では `IsSchoolZone = 0` 固定として出力する。Phase 3 で実用上不要と判断したら剪定、必要なら bake ルール（半径 N m 内に school 施設）をステップ 3 で確定する。
 
 ### 4.6 Edge Spatial Index（kind = 0x0006）— STR パック静的 R-tree
 
@@ -288,7 +304,7 @@ internal readonly struct Aabb
 | ---------- | ------ | ----------------------- | ----------- | -------------------------- |
 | 0          | 4      | `nodeCount`           | uint32      | 全ノード数（葉 + 内部）    |
 | 4          | 4      | `rootIndex`           | uint32      | ルートノードのインデックス |
-| 8          | 4      | `nodeBranchingFactor` | uint32      | 分岐数 M（初版 = 16）      |
+| 8          | 4      | `nodeBranchingFactor` | uint32      | 分岐数 M（v0.2 初期値 = 16、Phase 2 ステップ 3 で実測再評価） |
 | 12         | 4      | `treeHeight`          | uint32      | ツリー高（参考情報）       |
 | 16         | 〜     | ノード配列              | RTreeNode[] | 各ノードは 56 バイト固定   |
 
@@ -377,7 +393,19 @@ var entry = bakedProfileTable[profileId, edgeRow.bakedProfileIndex];
 // entry.speedKmh, entry.CanPass, entry.Forward, entry.Backward
 ```
 
-`bakedProfileIndex` は同じ OSM タグ集合を持つエッジを集約する余地を残す（初版は edgeId そのままでも OK）。
+#### 4.7.5 `bakedProfileIndex` の運用（v0.2 確定）
+
+v0.2 では **`bakedProfileIndex == edgeId`** とする（2026-05-21 ユーザー判断、YAGNI）。
+
+採用理由：
+
+- 抽出ツール側の実装が単純（OSM タグ集合のハッシュテーブル不要）
+- テーブルサイズは `profileCount × edgeCount × 8B`。津島市（57k エッジ × 2 プロファイル）で 0.9 MB、愛知県想定（数百万エッジ × 4 プロファイル）でも数十 MB 程度。MMF 経由でランタイム RAM 圧迫なし
+- 同一 OSM タグ集合エッジの集約は **Phase 3 ベンチで `.odrg` ファイルサイズや IO 量がボトルネックと判明した場合のみ**、Phase 3 末尾オプションとして導入を再評価
+
+採用しなかった案：
+
+- **OSM タグ集合ハッシュでの集約**：テーブルサイズを 10〜30% 削減できる見込みだが、抽出ツールに `Dictionary<TagSet, uint>` 相当のハッシュテーブルが必要。Phase 2 のスコープを膨らませる割に効果が明確でない（Phase 1 ベンチでも IO がボトルネックではなかった）
 
 ### 4.8 Turn Restriction Table（kind = 0x0008、Phase 4+ 予約）
 
@@ -770,23 +798,26 @@ public static RouterDb LoadFromFile(string path)
 
 ### 10.1 ステップ 1 完了に向けて確認すべきこと
 
-- [ ] **エッジフラグ（§4.5）の bit 割り当て**：12 種採用案で OK か、追加・削除するか
-- [ ] **R-tree 分岐数 M = 16**：他の値（8, 32）と比べた最適値（ステップ 2-3 で実測）
-- [ ] **Baked Profile Table の集約**：同一 OSM タグ集合のエッジを `bakedProfileIndex` で集約するか、エッジ ID そのまま使うか
-- [ ] **Edge Shape Buffer の整列**：エッジ ID 順に並べるか、空間局所性で並べ替えるか（Phase 3 の R-tree クエリでキャッシュ局所性を活かす）
+- [x] **エッジフラグ（§4.5）の bit 割り当て**：12 種採用案で確定（v0.2、2026-05-21、§4.5）
+- [x] **R-tree 分岐数 M = 16**：v0.2 初期値 = 16、Phase 2 ステップ 3 で実測再評価（§4.6.2）
+- [x] **Baked Profile Table の集約**：`bakedProfileIndex == edgeId` で確定（v0.2、2026-05-21、§4.7.5）
+- [x] **Edge Shape Buffer の整列**：エッジ ID 順で確定（v0.2、2026-05-21、§4.3.1）
 - [x] **`--bbox` オプションの座標系**：lon/lat 直接指定のみ（v0.1.3 確定、§5.3.1）
 - [x] **bbox 外シェイプの扱い（§5.3.3 パス 2）**：完全 way 単位採用（v0.1.3 確定、§5.3.3）
 - [x] **`--bbox` 未指定時の挙動**：エラーで中断（v0.1.3 確定、§5.3.1）
 
-### 10.2 v0.2 への昇格条件
+### 10.2 ステップ 2-3 以降で実測判断する事項
 
-ステップ 1 ユーザーレビュー後、本書を v0.2 に昇格。バイト単位の詳細レイアウト（特に §4.7 Baked Profile Table）はステップ 2 で `OsmDotRoute.Pbf` 実装と並行して詰める。
+- R-tree 分岐数 M：Phase 2 ステップ 3 で 8 / 16 / 32 を実測比較、最適値を `nodeBranchingFactor` に確定
+- エッジフラグ bit 11 (`SchoolZone`) の bake ルール（半径 N m 内 `amenity=school`）：Phase 3 で実用上必要なら確定、不要なら剪定
+- Baked Profile Table の OSM タグ集合集約：Phase 3 ベンチで `.odrg` ファイルサイズ・IO がボトルネックと判明した場合のみ末尾オプションで再評価
 
 ### 10.3 Phase 3 で確定する事項
 
-- §6 ゼロコピー Span ビューの実装パターン
+- §6 ゼロコピー Span ビューの実装パターン（`MemoryMappedSegment<T>` ラッパー型）
 - §9 公開 API シグネチャの最終確定
 - §7 妥当性検証の実装位置（`NativeRoadGraph.Open` 内 / 別 `OdrgValidator` クラス）
+- Edge Shape Buffer の空間局所性並べ替え（必要と判定された場合の末尾オプション）
 
 ---
 
@@ -832,3 +863,14 @@ Japan-wide PBF (2.3 GB) 対応を反映（v0.1.2 で誤解訂正済）。
 - bbox 外シェイプ way の扱いは **完全 way 単位採用**（バッファ付き bbox や接続性ベース再帰は不採用、§5.3.3 に採用理由を記述）
 - `--bbox` 未指定時は **エラーで中断**（PBF HeaderBlock の自動採用や警告継続もしない、Phase 2 要件外の Japan-wide `.odrg` 誤生成を不可能にする）
 - §5.3.1 / §5.3.3 に確定値を反映、§10.1 から該当 3 項目を完了マーク化
+
+### v0.2 — 2026-05-21
+
+ステップ 1 完了確定版。§10.1 残オープン課題 4 件をユーザー判断で確定。
+
+- **エッジフラグ（§4.5）**：12 属性 + Oneway 2 bit = 14 bit 使用、残り 2 bit 予約で確定。`SchoolZone`（bit 11）は v0.2 では予約のみ、抽出ツール側は 0 固定出力。Phase 3 で実用上不要なら剪定、必要なら bake ルール（半径 N m 内 `amenity=school`）確定
+- **Edge Shape Buffer の並び順（§4.3.1 新設）**：エッジ ID 順で確定。Hilbert カーブ / R-tree 葉順は Phase 3 ベンチで必要と判定された場合の末尾オプションとして §10.3 に申し送り
+- **Baked Profile Table の `bakedProfileIndex`（§4.7.5 新設）**：`bakedProfileIndex == edgeId` で確定（YAGNI）。OSM タグ集合集約は Phase 3 で IO がボトルネックと判定された場合のみ再評価
+- **R-tree 分岐数 M（§4.6.2）**：v0.2 初期値 = 16、Phase 2 ステップ 3 で実測再評価する旨を明記
+- §10.1 を全件確定マーク化、§10.2「ステップ 2-3 以降で実測判断する事項」を新設、§10.3 に「Edge Shape Buffer の空間局所性並べ替え」を追加
+- ステータスを「v0.2 確定（ユーザー合意済）」に変更、§0.3 更新ルールに「互換性破壊を伴う変更時のみメジャー昇格（v1.0）」を追記
