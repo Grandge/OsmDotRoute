@@ -292,7 +292,7 @@ OsmDotRoute.Converter            (RouterDb→.odrg、Itinero 1.5.1 参照)
 | # | ステップ | 主要要件 | 状態 |
 |---|---|---|---|
 | 1 | 独自バイナリグラフ形式 `.odrg` 仕様策定（`phase2_graph_format_spec.md` 起こし、Span/Memory ベース API 設計、**STR パック静的 R-tree のビルド/シリアライズアルゴリズム設計**、エッジ AABB（double×4）/ シェイプ連続バッファ / エッジフラグ（1〜2 バイト bitflag、§3.6 候補一覧）の配置確定、MMF レイアウト確定） | REQ-MAP-003 | **完了**（2026-05-21、仕様書 v0.2 確定、設計書 §3 v0.2.1 反映、commit 099969a で骨子・本セッションで残オープン課題 4 件 確定） |
-| 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **着手中** — 2.1 プロジェクト骨格 ✅ / 2.2 ProtoReader ✅ (27 テスト) / 2.3 Blob + ZLib ✅ (25 テスト) / 2.4 HeaderBlock ✅ (18 テスト) / 2.5 PrimitiveBlock ✅ (19 テスト) / 2.6 単体 Node ✅ (15 テスト) / 2.7 DenseNodes ✅ (17 テスト) / 2.8 Way ✅ (16 テスト) / 2.9 Relation ✅ (16 テスト、3 並列 member 配列 + MemberType 厳密検証、`type=restriction` も形式上解析可) / 2.10 未着手 |
+| 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **完了** — 2.1〜2.10 全完了 (169 テスト pass、津島市 PBF 1,646,875 ノードを OsmSharp と完全一致確認、座標 precision 7 桁一致) |
 | 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | 未着手 |
 | 4-opt | （末尾オプション）Itinero RouterDb → `.odrg` 変換ツール `OsmDotRoute.Converter`。ステップ 1 完了時点で技術的負担を評価し、軽ければ実装、重ければ Phase 3 以降に延期 | REQ-MAP-004 | 未着手・実施判断保留 |
 | 5 | Phase 2 検証・確定（`OsmDotRoute.Extractor` 出力 `.odrg` の形式正当性検査、Phase 1 RouterDb と同等の頂点数・辺数・経緯度範囲が出ることを確認、設計書 §10 で Phase 3 申し送り整理、v0.2.0 タグ判断） | — | 未着手 |
@@ -373,7 +373,9 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 - [x] ステップ 2.7 完了（2026-05-21、`DenseNodesParser` + 17 テスト、delta-coded zigzag varint × 3 配列 + keys_vals 0 区切り、`PackedReader` 共通化）
 - [x] ステップ 2.8 完了（2026-05-21、`OsmWay` + `OsmWayParser` + 16 テスト、id は int64 plain varint、refs は packed sint64 delta zigzag、PrimitiveBlock 不要、LocationsOnWays 拡張スキップ）
 - [x] ステップ 2.9 完了（2026-05-21、`OsmRelation` + `OsmMemberType` + `OsmRelationMember` + `OsmRelationParser` + 16 テスト、3 並列 member 配列の同期検証、memids delta デコード、MemberType 0/1/2 厳密検証、`type=restriction` も形式上解析可）
-- [ ] ステップ 2.10 着手（高レベル `PbfReader` API + 津島市 PBF で Itinero と Node/Way/Relation 数を突合する単体テスト）
+- [x] ステップ 2.10 完了（2026-05-21、`PbfReader` 高レベル API + 16 テスト（単体 12 + 統合 4）、津島市 PBF 13MB を 13 秒で完走、Node 1,646,875 件を OsmSharp と完全一致、座標 precision 7 桁一致）
+- [x] **ステップ 2 全完了** — `OsmDotRoute.Pbf` は System.\* 完結で OSM PBF 完全読込可能
+- [ ] ステップ 3 着手（PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装）
 
 ---
 
@@ -393,3 +395,4 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 | 0.2.6 (draft) | 2026-05-21 | ステップ 2.7 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.7 完了 / 2.8〜2.10 未着手」に更新。§10 次のアクションを「2.8 着手」へ繰下げ。設計書 §4.6 に `DenseNodesParser` の意図・採用設計・判断根拠・検証方法（17/17 テスト、delta zigzag + keys_vals 0 区切り、`PackedReader` 共通化と `OsmNodeParser` refactor）を記録（[`phase2_design.md`](phase2_design.md) v0.2.6） | Claude (Opus 4.7) |
 | 0.2.7 (draft) | 2026-05-21 | ステップ 2.8 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.8 完了 / 2.9〜2.10 未着手」に更新。§10 次のアクションを「2.9 着手」へ繰下げ。設計書 §4.7 に `OsmWay` + `OsmWayParser` の意図・採用設計・判断根拠・検証方法（16/16 テスト、id int64 plain varint + refs delta zigzag + LocationsOnWays スキップ + PrimitiveBlock 不要）を記録（[`phase2_design.md`](phase2_design.md) v0.2.7） | Claude (Opus 4.7) |
 | 0.2.8 (draft) | 2026-05-21 | ステップ 2.9 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.9 完了 / 2.10 未着手」に更新。§10 次のアクションを「2.10 着手」へ繰下げ。設計書 §4.8 に `OsmRelation` + `OsmMemberType` + `OsmRelationMember` + `OsmRelationParser` の意図・採用設計・判断根拠・検証方法（16/16 テスト、3 並列 member 配列 + MemberType 厳密検証、`type=restriction` 形式上解析可）を記録（[`phase2_design.md`](phase2_design.md) v0.2.8） | Claude (Opus 4.7) |
+| 0.3 (draft) | 2026-05-21 | **ステップ 2 全完了反映**。§6 ステップ表のステップ 2 を「完了」に変更（169 テスト、津島市 PBF 1,646,875 ノードを OsmSharp と完全一致確認）。§10 次のアクションを「ステップ 3 着手」へ繰下げ。設計書 §4.9 に `PbfReader` 高レベル API、§4.10 にステップ 2 完了状況サマリを記録（[`phase2_design.md`](phase2_design.md) v0.3） | Claude (Opus 4.7) |
