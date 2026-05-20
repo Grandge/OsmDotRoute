@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using OsmDotRoute.Pbf.Protobuf;
 
@@ -55,11 +54,11 @@ internal static class OsmNodeParser
                     break;
                 case 2: // keys (packed uint32)
                     EnsureWireType(tag, WireType.LengthDelimited, "Node.keys");
-                    keys = ReadPackedUint32(reader.ReadLengthDelimited());
+                    keys = PackedReader.ReadPackedUint32(reader.ReadLengthDelimited());
                     break;
                 case 3: // vals (packed uint32)
                     EnsureWireType(tag, WireType.LengthDelimited, "Node.vals");
-                    vals = ReadPackedUint32(reader.ReadLengthDelimited());
+                    vals = PackedReader.ReadPackedUint32(reader.ReadLengthDelimited());
                     break;
                 case 4: // info (Info) — Phase 2 では未使用
                     EnsureWireType(tag, WireType.LengthDelimited, "Node.info");
@@ -96,20 +95,6 @@ internal static class OsmNodeParser
             Lat: block.ToLat(encodedLat.Value),
             TagKeys: keys,
             TagValues: vals);
-    }
-
-    /// <summary>packed uint32 配列を読む（length-delimited のバイト列内に varint が連続）。</summary>
-    private static int[] ReadPackedUint32(ReadOnlySpan<byte> packedBytes)
-    {
-        if (packedBytes.IsEmpty) return Array.Empty<int>();
-
-        var reader = new ProtoReader(packedBytes);
-        var list = new List<int>();
-        while (reader.HasMore)
-        {
-            list.Add(checked((int)reader.ReadVarint32()));
-        }
-        return list.ToArray();
     }
 
     private static void EnsureWireType(ProtoTag tag, WireType expected, string fieldName)
