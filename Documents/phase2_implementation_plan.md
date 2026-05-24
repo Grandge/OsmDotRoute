@@ -293,7 +293,7 @@ OsmDotRoute.Converter            (RouterDb→.odrg、Itinero 1.5.1 参照)
 |---|---|---|---|
 | 1 | 独自バイナリグラフ形式 `.odrg` 仕様策定（`phase2_graph_format_spec.md` 起こし、Span/Memory ベース API 設計、**STR パック静的 R-tree のビルド/シリアライズアルゴリズム設計**、エッジ AABB（double×4）/ シェイプ連続バッファ / エッジフラグ（1〜2 バイト bitflag、§3.6 候補一覧）の配置確定、MMF レイアウト確定） | REQ-MAP-003 | **完了**（2026-05-21、仕様書 v0.2 確定、設計書 §3 v0.2.1 反映、commit 099969a で骨子・本セッションで残オープン課題 4 件 確定） |
 | 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **完了** — 2.1〜2.10 全完了 (169 テスト pass、津島市 PBF 1,646,875 ノードを OsmSharp と完全一致確認、座標 precision 7 桁一致) |
-| 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | **進行中** — 3.1〜3.3 完了（CLI 雛形 + way フィルタ + 頂点正規化、48 テスト）、3.4〜3.9 未着手 |
+| 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | **進行中** — 3.1〜3.4 完了（CLI 雛形 + way フィルタ + 頂点正規化 + エッジ生成、57 テスト）、3.5〜3.9 未着手 |
 | 4-opt | （末尾オプション）Itinero RouterDb → `.odrg` 変換ツール `OsmDotRoute.Converter`。ステップ 1 完了時点で技術的負担を評価し、軽ければ実装、重ければ Phase 3 以降に延期 | REQ-MAP-004 | 未着手・実施判断保留 |
 | 5 | Phase 2 検証・確定（`OsmDotRoute.Extractor` 出力 `.odrg` の形式正当性検査、Phase 1 RouterDb と同等の頂点数・辺数・経緯度範囲が出ることを確認、設計書 §10 で Phase 3 申し送り整理、v0.2.0 タグ判断） | — | 未着手 |
 
@@ -379,7 +379,8 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 - [x] サブステップ 3.1 完了（2026-05-25、`OsmDotRoute.Extractor` プロジェクト骨格 + `System.CommandLine` v3 preview による `extract` サブコマンド雛形、Bbox 型 + ExtractOptions DTO、15 テスト pass、全体 337 テスト pass）
 - [x] サブステップ 3.2 完了（2026-05-25、`WayFilter.IsRoadWay` 実装、UTF-8 リテラル + `SequenceEqual` でゼロアロケート、`access=no` / `area=yes` で除外、19 テスト pass、全体 356 テスト pass）
 - [x] サブステップ 3.3 完了（2026-05-25、`VertexNormalizer` + `VertexAssignment` 実装、端点 / count≥2 / 自己交差で頂点判定、OSM ID 昇順で連番採番、14 テスト pass、全体 370 テスト pass）
-- [ ] サブステップ 3.4 着手（エッジ生成）
+- [x] サブステップ 3.4 完了（2026-05-25、`EdgeRecord` + `EdgeGenerator.SplitWay` 実装、way を頂点境界で線形分割、oneway はフラグで表現するためエッジ 1 本生成、shape は中間ノード OSM ID 列、9 テスト pass、全体 379 テスト pass）
+- [ ] サブステップ 3.5 着手（エッジ AABB + フラグ bake）
 
 ---
 
