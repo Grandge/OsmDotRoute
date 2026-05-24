@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\OsmDotRoute\OsmDotRoute.csproj" />
     <ProjectReference Include="..\..\src\OsmDotRoute.Itinero\OsmDotRoute.Itinero.csproj" />
     <ProjectReference Include="..\..\src\OsmDotRoute.Pbf\OsmDotRoute.Pbf.csproj" />
+    <ProjectReference Include="..\..\src\OsmDotRoute.Extractor\OsmDotRoute.Extractor.csproj" />
   </ItemGroup>
 
 </Project>
