@@ -17,4 +17,9 @@ namespace OsmDotRoute.Extractor.Pipeline;
 /// あちらはランタイム制約交差判定用、こちらは .odrg I/O 用にレイアウト固定。
 /// </para>
 /// </remarks>
-internal readonly record struct Aabb(double MinLon, double MinLat, double MaxLon, double MaxLat);
+internal readonly record struct Aabb(double MinLon, double MinLat, double MaxLon, double MaxLat)
+{
+    /// <summary>指定座標を本 AABB が内包するかを返す（境界を含む）。</summary>
+    public bool Contains(double lon, double lat) =>
+        lon >= MinLon && lon <= MaxLon && lat >= MinLat && lat <= MaxLat;
+}
