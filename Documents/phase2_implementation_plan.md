@@ -293,7 +293,7 @@ OsmDotRoute.Converter            (RouterDb→.odrg、Itinero 1.5.1 参照)
 |---|---|---|---|
 | 1 | 独自バイナリグラフ形式 `.odrg` 仕様策定（`phase2_graph_format_spec.md` 起こし、Span/Memory ベース API 設計、**STR パック静的 R-tree のビルド/シリアライズアルゴリズム設計**、エッジ AABB（double×4）/ シェイプ連続バッファ / エッジフラグ（1〜2 バイト bitflag、§3.6 候補一覧）の配置確定、MMF レイアウト確定） | REQ-MAP-003 | **完了**（2026-05-21、仕様書 v0.2 確定、設計書 §3 v0.2.1 反映、commit 099969a で骨子・本セッションで残オープン課題 4 件 確定） |
 | 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **完了** — 2.1〜2.10 全完了 (169 テスト pass、津島市 PBF 1,646,875 ノードを OsmSharp と完全一致確認、座標 precision 7 桁一致) |
-| 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | **進行中** — 3.1〜3.7 完了（CLI 雛形 + way フィルタ + 頂点正規化 + エッジ生成 + AABB + フラグ bake + プロファイル bake + STR R-tree、127 テスト）、3.8〜3.9 未着手 |
+| 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | **進行中** — 3.1〜3.8 完了（CLI 雛形 + way フィルタ + 頂点正規化 + エッジ生成 + AABB + フラグ bake + プロファイル bake + STR R-tree + .odrg 書出、145 テスト）、3.9 未着手 |
 | 4-opt | （末尾オプション）Itinero RouterDb → `.odrg` 変換ツール `OsmDotRoute.Converter`。ステップ 1 完了時点で技術的負担を評価し、軽ければ実装、重ければ Phase 3 以降に延期 | REQ-MAP-004 | 未着手・実施判断保留 |
 | 5 | Phase 2 検証・確定（`OsmDotRoute.Extractor` 出力 `.odrg` の形式正当性検査、Phase 1 RouterDb と同等の頂点数・辺数・経緯度範囲が出ることを確認、設計書 §10 で Phase 3 申し送り整理、v0.2.0 タグ判断） | — | 未着手 |
 
@@ -383,7 +383,8 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 - [x] サブステップ 3.5 完了（2026-05-25、`EdgeFlags` enum + `EdgeFlagsBaker` + `Aabb` (4-double) + `EdgeAabbCalculator` 実装、仕様書 §4.4/§4.5 準拠、junction=roundabout 暗黙 oneway、IsSchoolZone は v0.2 予約 0 固定、43 テスト pass、全体 422 テスト pass）
 - [x] サブステップ 3.6 完了（2026-05-25、`BakedProfileEntry` + `BakedProfileTable` + `ProfileBaker` 実装、Phase 1 `ProfileEvaluator` を `VehicleProfile.Evaluator` 経由で流用、`OsmDotRoute.csproj` の InternalsVisibleTo に osmdotroute-extractor 追加、`bakedProfileIndex == edgeId` 確定設計、15 テスト pass、全体 437 テスト pass）
 - [x] サブステップ 3.7 完了（2026-05-25、`RTreeNode` + `StrRTree` + `StrRTreeBuilder` 実装、STR (Sort-Tile-Recursive) パック静的 R-tree、エッジ再採番 permutation 返却、BFS 順 emit で子連続性確保、葉レベル順バグを 1000 エッジストレステストで検出・修正、M=16 デフォルト、12 テスト pass、全体 449 テスト pass）
-- [ ] サブステップ 3.8 着手（.odrg 書出）
+- [x] サブステップ 3.8 完了（2026-05-25、`OdrgFormat` + `OdrgWriteInput` + `OdrgWriter` 実装、仕様書 §1〜§4 の 9 セクションを単一パスで書出、事前サイズ計算 + リトルエンディアン固定、ヘッダー 256B / セクションテーブル 9×24B / Vertex / Edge / Shape Buffer / AABB / Flag / R-tree / Baked Profile / Turn Restriction(0B) / Metadata、18 テスト pass、全体 467 テスト pass）
+- [ ] サブステップ 3.9 着手（津島市 PBF 統合テスト）
 
 ---
 
