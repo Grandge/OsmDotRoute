@@ -156,12 +156,15 @@ export async function clearAllRestrictions(): Promise<void> {
   await ensureOk(await fetch('/api/restrictions', { method: 'DELETE' }));
 }
 
+export type GraphSource = 'routerdb' | 'odrg';
+
 export async function calculateRoute(req: {
   fromLat: number;
   fromLon: number;
   toLat: number;
   toLon: number;
   profile: 'car' | 'pedestrian';
+  graphSource?: GraphSource;
 }): Promise<RouteResponse> {
   return handle<RouteResponse>(
     await fetch('/api/route', {

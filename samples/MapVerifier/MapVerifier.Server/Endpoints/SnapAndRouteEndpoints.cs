@@ -35,6 +35,23 @@ public static class SnapAndRouteEndpoints
             {
                 return Results.BadRequest(new ErrorResponse("missing_body", "リクエストボディが必要です。"));
             }
+            // graphSource 切替: routerdb (default) | odrg (Phase 3 で対応予定)
+            var graphSource = (request.GraphSource ?? "routerdb").Trim().ToLowerInvariant();
+            if (graphSource == "odrg")
+            {
+                return Results.Json(
+                    new ErrorResponse(
+                        "not_implemented",
+                        ".odrg からの経路計算は Phase 3 で対応予定です。現在は RouterDb を選択してください。"),
+                    statusCode: StatusCodes.Status501NotImplemented);
+            }
+            if (graphSource != "routerdb")
+            {
+                return Results.BadRequest(new ErrorResponse(
+                    "invalid_graph_source",
+                    $"graphSource が不正です: {request.GraphSource}。'routerdb' または 'odrg' を指定してください。"));
+            }
+
             var router = state.Router;
             if (router is null)
             {

@@ -12,7 +12,13 @@ public sealed record SnapRequest(double Lat, double Lon, string? Profile, float?
 
 public sealed record SnapResponse(CoordinateDto? Snapped);
 
-public sealed record RouteRequest(double FromLat, double FromLon, double ToLat, double ToLon, string? Profile);
+public sealed record RouteRequest(
+    double FromLat,
+    double FromLon,
+    double ToLat,
+    double ToLon,
+    string? Profile,
+    string? GraphSource);  // "routerdb" (default) | "odrg" (Phase 3 で対応予定)
 
 public sealed record RouteResponse(bool Found, double DistanceM, double DurationSec, GeoJsonLineString? Geometry);
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { calculateRoute, type RouteResponse } from '../api/client';
+import { calculateRoute, type GraphSource, type RouteResponse } from '../api/client';
 import { panelStyle, h2Style, btnStyle, inputStyle, errorStyle } from './styles';
 
 type PickMode = 'idle' | 'pickFrom' | 'pickTo';
@@ -16,6 +16,7 @@ interface Props {
 
 export function RoutePanel({ from, to, pickMode, onSetPickMode, onSetFrom, onSetTo, onRouteCalculated }: Props) {
   const [profile, setProfile] = useState<'car' | 'pedestrian'>('car');
+  const [graphSource, setGraphSource] = useState<GraphSource>('routerdb');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<RouteResponse | null>(null);
@@ -32,6 +33,7 @@ export function RoutePanel({ from, to, pickMode, onSetPickMode, onSetFrom, onSet
         fromLat: from[0], fromLon: from[1],
         toLat: to[0], toLon: to[1],
         profile,
+        graphSource,
       });
       setLastResult(r);
       onRouteCalculated(r);
@@ -91,6 +93,13 @@ export function RoutePanel({ from, to, pickMode, onSetPickMode, onSetFrom, onSet
         <select value={profile} onChange={(e) => setProfile(e.target.value as 'car' | 'pedestrian')} style={inputStyle}>
           <option value="car">car</option>
           <option value="pedestrian">pedestrian</option>
+        </select>
+        <span />
+
+        <label>グラフ</label>
+        <select value={graphSource} onChange={(e) => setGraphSource(e.target.value as GraphSource)} style={inputStyle}>
+          <option value="routerdb">routerdb (Phase 1)</option>
+          <option value="odrg">.odrg (Phase 3 で対応予定)</option>
         </select>
         <span />
       </div>
