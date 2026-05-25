@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3A: ランタイム `.odrg` 読込実装 計画書
 
-**ステータス**: ドラフト v0.1（ユーザーレビュー待ち、2026-05-26）
+**ステータス**: ドラフト v0.2（v0.1 ユーザー承認後、3A.1 着手前の現状確認で発見した訂正を反映、2026-05-26）
 **対応ステップ**: Phase 3 ステップ 3A（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 3 最大リスク要因）
 **対応要件**: REQ-MAP-005（`.odrg` ランタイム読込）、REQ-NFR-003（経路 1 本あたりアロケート削減の土台）
 **関連文書**:
@@ -56,21 +56,29 @@
 - 詳細: [[project_phase3_parent_integration_scan]] メモ
 - 3A では親プロ修正は発生しない（3F 担当）
 
-### 2.4 `.odrg` v0.2 セクション構成（仕様書 §1〜§4 抜粋）
+### 2.4 `.odrg` v1.0 セクション構成（実装確認済、`OdrgFormat` / `OdrgReader` ベース）
 
-| # | セクション | 要素サイズ | 本ステップでの読込型 |
+**ファイル全体構成**：HEADER (256 B 固定) → セクション本体群 → SECTION TABLE (末尾、9 × 24 B)。SECTION TABLE のオフセットは HEADER 内の `sectionTableOffset` で示される。
+
+**HEADER (256 B 固定)**: マジック 8B `"ODRG\0\0\0\0"` / VersionMajor u16=1 / VersionMinor u16=0 / flags u32 / vertexCount u64 / edgeCount u64 / bbox (minLon/minLat/maxLon/maxLat double × 4 = 32 B) / profileCount u32 / edgeFlagBytes u32 / sectionTableOffset u64 / sectionCount u32
+
+**SECTION TABLE エントリ (24 B / エントリ)**: kind u16 + reserved 2 B + flags u32 + offset u64 + length u64
+
+**セクション一覧（9 セクション、kind 0x0001〜0x0009）**：
+
+| kind | セクション | サイズ | 本ステップでの読込型 |
 | --- | --- | --- | --- |
-| 0 | HEADER | 256 B 固定 | `OdrgHeader`（マジック / バージョン / バウンディング） |
-| 1 | SECTION TABLE | 9 × 24 B | `OdrgSectionEntry[]`（offset / length / kind） |
-| 2 | VERTEX | 16 B × N | `ReadOnlySpan<OdrgVertex>`（lat double / lon double） |
-| 3 | EDGE | 24 B × E | `ReadOnlySpan<OdrgEdge>`（from / to / shapeOffset / shapeLen / flags / profileIdx） |
-| 4 | EDGE_SHAPE | 16 B × S | `ReadOnlySpan<GeoCoordinate>` |
-| 5 | EDGE_AABB | 32 B × E | `ReadOnlySpan<EdgeAabb>`（minLat/maxLat/minLon/maxLon double） |
-| 6 | RTREE_NODE | 仕様書 §4.7 | `ReadOnlySpan<RTreeNode>` |
-| 7 | PROFILE_BAKE | 8 B × E × profiles | `ReadOnlySpan<BakedProfile>` |
-| 8 | STRING_POOL | 可変 | `ReadOnlySpan<byte>` |
+| 0x0001 | VERTEX | 16 B × N（lon double + lat double） | `ReadOnlySpan<GeoCoordinate>` |
+| 0x0002 | EDGE | 24 B × E（from u32 + to u32 + shapeOff u64 + shapeLen u32 + bakedIdx u32、**flags は別セクション**） | `ReadOnlySpan<OdrgEdge>` |
+| 0x0003 | EDGE_SHAPE | 16 B × S（連続バッファ、エッジが offset/length で参照） | `ReadOnlySpan<GeoCoordinate>` |
+| 0x0004 | EDGE_AABB | 32 B × E（minLon/minLat/maxLon/maxLat double × 4） | `ReadOnlySpan<Aabb>` |
+| 0x0005 | EDGE_FLAG | 2 B × E（ushort 独立セクション、`EdgeFlagBytes` 定数 = 2） | `ReadOnlySpan<EdgeFlags>` |
+| 0x0006 | SPATIAL_INDEX (R-tree) | ヘッダ 16 B (nodeCount/rootIndex/branching/height u32 × 4) + ノード 56 B × N（bbox 32 B + firstChild u32 + childCount u32 + flags u32 + reserved 12 B） | `OdrgRTreeView`（ヘッダ + `ReadOnlySpan<RTreeNode>`） |
+| 0x0007 | BAKED_PROFILE | ヘッダ 8 B (profileCount u32 + entrySize u32) + name table (8 B × P) + UTF-8 name buf + entries (8 B × P × E、**profile-major** = `entries[profile * edgeCount + edge]`) | プロファイル名 string[] + `ReadOnlySpan<BakedProfileEntry>` |
+| 0x0008 | TURN_RESTRICTION | raw bytes（Phase 4+ 用予約、Phase 2/3 では参照のみ） | `ReadOnlySpan<byte>`（透過） |
+| 0x0009 | METADATA | UTF-8 JSON（仕様書 §4 抽出時メタ情報） | `ReadOnlySpan<byte>` → 文字列化は呼出側責任 |
 
-（正確なオフセット / レイアウトは `phase2_graph_format_spec.md` §1〜§4 を参照。本ステップで Phase 2 と異なる解釈をする箇所はない）
+（正確なオフセット / レイアウトは [`phase2_graph_format_spec.md`](phase2_graph_format_spec.md) §1〜§4 と [`OdrgFormat.cs`](../src/OsmDotRoute.Extractor/Pipeline/OdrgFormat.cs)（3A.1 で Core へ移動予定）/ [`OdrgReader.cs`](../src/OsmDotRoute.Extractor/Pipeline/OdrgReader.cs) を真値とする。本ステップで Phase 2 と異なる解釈をする箇所はない）
 
 ---
 
@@ -78,6 +86,9 @@
 
 ### 3.1 スコープ内
 
+- **前提リファクタ（3A.1 冒頭で実施）**：
+  - `OdrgFormat.cs` を [`src/OsmDotRoute.Extractor/Pipeline/OdrgFormat.cs`](../src/OsmDotRoute.Extractor/Pipeline/OdrgFormat.cs) から `src/OsmDotRoute/Internal/Odrg/OdrgFormat.cs` へ移動（依存方向：Extractor → Core が成立、逆は不可のため Core が定数を保持する必要がある）
+  - 影響範囲: `OdrgReader.cs` / `OdrgWriter.cs` / `OdrgGeoJsonWriter.cs` / `OdrgWriteInput.cs` / `OdrgReadResult.cs` の using 修正のみ（型定義は据置、namespace 変更による副次修正）
 - `OsmDotRoute` コアプロジェクトに以下を追加（新規プロジェクトは作らない、計画書 §5.1 確定）：
   - `OdrgSectionDirectory`（HEADER + SECTION TABLE パース、`internal`）
   - `OdrgMmfHandle`（`MemoryMappedFile` + `SafeMemoryMappedViewHandle` ラッパ、`IDisposable`）
@@ -108,22 +119,29 @@
 
 ## 4. サブステップ詳細
 
-### 4.1 3A.1: セクションテーブルパース基盤
+### 4.1 3A.1: OdrgFormat Core 移動 + セクションテーブルパース基盤
 
-**実装**:
+**ステップ 0（前提リファクタ）**: `OdrgFormat` Core 移動
+
+- `src/OsmDotRoute.Extractor/Pipeline/OdrgFormat.cs` を `src/OsmDotRoute/Internal/Odrg/OdrgFormat.cs` へ移動
+- namespace `OsmDotRoute.Extractor.Pipeline` → `OsmDotRoute.Internal.Odrg`（`internal` のまま、`InternalsVisibleTo` で `OsmDotRoute.Tests` / `osmdotroute-extractor` / `OsmDotRoute.Benchmarks` / `OsmDotRoute.Itinero` から可視）
+- using 修正対象: `OdrgReader.cs` / `OdrgWriter.cs` / `OdrgGeoJsonWriter.cs` / `OdrgWriteInput.cs` / `OdrgReadResult.cs`
+- 既存 156 + 48 = 204 Extractor 系テスト全 pass を維持（リファクタなので機能変更なし）
+
+**ステップ 1（本作業）**: `OdrgSectionDirectory` 実装
 
 - `OdrgSectionDirectory` 型（`internal sealed class`、`src/OsmDotRoute/Internal/Odrg/`）
-- 入力: `SafeMemoryMappedViewHandle`（256 B + 216 B のみアクセス）
-- 出力: `OdrgHeader` 値 + 9 セクションエントリ（offset, length, kind）
-- 検証: マジック `"ODRG"` / バージョン 0x0002 / セクション数 == 9 / 各エントリの offset+length がファイル長以内
-- パース失敗時は `OdrgFormatException`（新規例外型）を投げる
+- 入力: `SafeMemoryMappedViewHandle` + ファイル長
+- 出力: `OdrgHeader` 値（VersionMajor/Minor、vertexCount、edgeCount、bbox、profileCount、sectionTableOffset、sectionCount）+ 9 セクションエントリ（kind, flags, offset, length）+ kind→index 高速引き
+- 検証: マジック `"ODRG\0\0\0\0"` / VersionMajor == 1 / `edgeFlagBytes == 2` / `sectionCount == 9` / `sectionTableOffset + sectionCount*24 <= fileLen` / 各エントリの offset+length がファイル長以内
+- パース失敗時は `OdrgFormatException`（新規例外型、`src/OsmDotRoute/Internal/Odrg/`）を投げる
 
 **Done 基準**:
 
-- 津島市 `.odrg` で `OdrgReader`（Phase 2 検証用）と同じヘッダ情報を取得
-- xUnit テスト 5 件: 正常ケース 1 / マジック不一致 / バージョン不一致 / セクション数不一致 / オフセット越境
+- 津島市 `.odrg` で `OdrgReader.Read`（Phase 2 検証用、現所在 Extractor、3A.1 ステップ 0 後の using 修正済前提）と同じヘッダ + セクションテーブル情報を field-by-field 一致で取得
+- xUnit テスト 5 件: 正常ケース 1 / マジック不一致 / VersionMajor 不一致 / セクション数不一致 / オフセット越境
 
-**テスト参照真値**: `OdrgReader.Open(path)` の結果と field-by-field 比較
+**テスト参照真値**: `OdrgReader.Read(path)` の `OdrgReadResult.Header` / `OdrgReadResult.SectionTable` と完全一致
 
 ---
 
@@ -232,13 +250,13 @@ public ReadOnlySpan<GeoCoordinate> GetEdgeShape(int edgeId)
 
 - `NativeRoadSnapper : IRoadSnapper`（`src/OsmDotRoute/Native/`、`public sealed class`）
 - コンストラクタ: `NativeRoadSnapper(NativeRoadGraph graph)`（graph 経由で MMF ハンドル / R-tree 参照、独自 MMF は持たない）
-- メソッド: `SnapResult Snap(double lat, double lon, IRoadProfile profile, double maxDistanceMeters)`
-  - 1) 緯度経度から検索 bbox を生成（maxDistanceMeters → 度換算）
-  - 2) `NativeRTreeQuery.Query` で候補エッジ ID 集合取得
-  - 3) 各候補エッジのシェイプを `graph.GetEdgeShape(edgeId)` で取得
-  - 4) シェイプ上の各セグメントへの垂線最短距離を計算（Phase 1 既存 `GeoMath.PointToSegmentDistance` 流用）
-  - 5) profile 評価で通行可能なエッジのみフィルタ
-  - 6) 最短のエッジ ID + シェイプ内位置 t 値 + スナップ点座標を `SnapResult` で返却
+- メソッド: `SnapResult Snap(double lat, double lon, IRoadProfile profile, double maxDistanceMeters)`、内部処理は以下の順序：
+    1. 緯度経度から検索 bbox を生成（maxDistanceMeters → 度換算）
+    2. `NativeRTreeQuery.Query` で候補エッジ ID 集合取得
+    3. 各候補エッジのシェイプを `graph.GetEdgeShape(edgeId)` で取得
+    4. シェイプ上の各セグメントへの垂線最短距離を計算（Phase 1 既存 `GeoMath.PointToSegmentDistance` 流用）
+    5. profile 評価で通行可能なエッジのみフィルタ
+    6. 最短のエッジ ID + シェイプ内位置 t 値 + スナップ点座標を `SnapResult` で返却
 
 **Done 基準**:
 
@@ -348,3 +366,4 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 版 | 日付 | 内容 | 担当 |
 | --- | --- | --- | --- |
 | 0.1 (draft) | 2026-05-26 | 初版起草。ユーザー判断 #21 (MMF=ファイナライザ併用) / #22 (Cache=ID 単位) / 3A 計画書置き場所 (新規) / DI 切替 (テスト内直接構築) / 並存テスト規模 (89 ペア × 2 実装 = 178) を反映。サブステップ 3A.1〜3A.6（6 段）、追加テスト 393 件、リスク R1〜R6。Phase 2 ステップ 5 計画書スタイル踏襲 | Claude (Opus 4.7) |
+| 0.2 (draft) | 2026-05-26 | v0.1 ユーザー承認 (commit `b27be51`) 後、3A.1 着手前の現状確認で発見した訂正を反映：(1) §2.4 セクション構成表を実装確認済の 9 セクション (VERTEX / EDGE / EDGE_SHAPE / EDGE_AABB / EDGE_FLAG 独立 / SPATIAL_INDEX / BAKED_PROFILE / TURN_RESTRICTION / METADATA) に訂正、v0.1 の誤記 (PROFILE_BAKE / STRING_POOL、flags が EDGE 内、`バージョン 0x0002`) を訂正。(2) §3.1 スコープ内に「OdrgFormat を Extractor → Core へ移動」を前提リファクタとして追加（依存方向 Core ← Pbf ← Extractor のため）。(3) §4.1 (3A.1) を「ステップ 0: OdrgFormat Core 移動 / ステップ 1: OdrgSectionDirectory 実装」に分割、検証条件を `VersionMajor == 1` / `edgeFlagBytes == 2` / `sectionCount == 9` に具体化、参照真値を `OdrgReader.Read` に統一 | Claude (Opus 4.7) |
