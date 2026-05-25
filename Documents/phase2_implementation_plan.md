@@ -294,8 +294,8 @@ OsmDotRoute.Converter            (RouterDb→.odrg、Itinero 1.5.1 参照)
 | 1 | 独自バイナリグラフ形式 `.odrg` 仕様策定（`phase2_graph_format_spec.md` 起こし、Span/Memory ベース API 設計、**STR パック静的 R-tree のビルド/シリアライズアルゴリズム設計**、エッジ AABB（double×4）/ シェイプ連続バッファ / エッジフラグ（1〜2 バイト bitflag、§3.6 候補一覧）の配置確定、MMF レイアウト確定） | REQ-MAP-003 | **完了**（2026-05-21、仕様書 v0.2 確定、設計書 §3 v0.2.1 反映、commit 099969a で骨子・本セッションで残オープン課題 4 件 確定） |
 | 2 | 独自 OSM PBF パーサー `OsmDotRoute.Pbf` 実装（protobuf ワイヤ形式 / varint / DenseNodes / Way / Relation / stringtable / ZLib 解凍、System.\* 完結） | REQ-MAP-007, REQ-DEP-002 | **完了** — 2.1〜2.10 全完了 (169 テスト pass、津島市 PBF 1,646,875 ノードを OsmSharp と完全一致確認、座標 precision 7 桁一致) |
 | 3 | PBF → `.odrg` 抽出ツール `OsmDotRoute.Extractor` CLI 実装（`System.CommandLine` ベース、PBF 読込 → 道路 way フィルタ → 頂点正規化 → エッジ生成 → AABB 計算 → STR R-tree 構築 → エッジフラグ bake → bake プロファイル → `.odrg` 書出） | REQ-MAP-008 | **完了** — 3.1〜3.9 全完了 (156 テスト、津島市 PBF 13MB → .odrg 3.7MB 抽出 1.7 秒成功) |
-| 4-opt | （末尾オプション）Itinero RouterDb → `.odrg` 変換ツール `OsmDotRoute.Converter`。ステップ 1 完了時点で技術的負担を評価し、軽ければ実装、重ければ Phase 3 以降に延期 | REQ-MAP-004 | 未着手・実施判断保留 |
-| 5 | Phase 2 検証・確定（`OsmDotRoute.Extractor` 出力 `.odrg` の形式正当性検査、Phase 1 RouterDb と同等の頂点数・辺数・経緯度範囲が出ることを確認、設計書 §10 で Phase 3 申し送り整理、v0.2.0 タグ判断） | — | 未着手 |
+| 4-opt | （末尾オプション）Itinero RouterDb → `.odrg` 変換ツール `OsmDotRoute.Converter`。ステップ 1 完了時点で技術的負担を評価し、軽ければ実装、重ければ Phase 3 以降に延期 | REQ-MAP-004 | **実施しない判断確定**（2026-05-25、設計書 §6 で根拠記録）。Phase 3 ステップ 3F でニーズ発生時のみ再評価 |
+| 5 | Phase 2 検証・確定（`OsmDotRoute.Extractor` 出力 `.odrg` の形式正当性検査、Phase 1 RouterDb と同等の頂点数・辺数・経緯度範囲が出ることを確認、設計書 §10 で Phase 3 申し送り整理、v0.2.0 タグ判断） | — | **完了** — 5.1〜5.5 全完了（2026-05-25、48 テスト追加、検証チェックリスト 5 項目全 ✅、津島市実測 頂点数比 0.892 / 辺数比 0.937 / PAR-4 完全一致、MapVerifier smoke test pass、設計書 §6 §7 §8 初版執筆、`samples/Data/tsushima.odrg` 同梱、v0.2.0 タグ判断はユーザー承認待ち） |
 
 **Phase 3 で実施するステップ**（参考、別途 Phase 3 計画書を起こす）：
 
@@ -386,8 +386,10 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 - [x] サブステップ 3.8 完了（2026-05-25、`OdrgFormat` + `OdrgWriteInput` + `OdrgWriter` 実装、仕様書 §1〜§4 の 9 セクションを単一パスで書出、事前サイズ計算 + リトルエンディアン固定、ヘッダー 256B / セクションテーブル 9×24B / Vertex / Edge / Shape Buffer / AABB / Flag / R-tree / Baked Profile / Turn Restriction(0B) / Metadata、18 テスト pass、全体 467 テスト pass）
 - [x] サブステップ 3.9 完了（2026-05-25、`ExtractPipeline` + `ExtractPipelineOptions/Result` + CLI handler 本実装、PBF 3 パス走査（仕様書 §5.3.3 準拠）、津島市 PBF 13MB → .odrg 3.7MB 抽出 1.7 秒、頂点 27,235 / エッジ 38,004 / R-tree 全 bijection / car-pedestrian 双方で通行可能エッジを生成、11 テスト pass、全体 478 テスト pass）
 - [x] **ステップ 3 全完了** — 3.1〜3.9 累計 156 テスト、津島市 PBF end-to-end 成功
-- [ ] ステップ 4-opt 実施判断（Phase 3 以降への延期を推奨、計画書 §3.7「迷ったら作らない方針」）
-- [ ] ステップ 5 着手（Phase 2 検証・確定、MapVerifier 拡張で `.odrg` オーバーレイ検査、Phase 1 RouterDb 突合）
+- [x] **ステップ 4-opt 実施しない判断確定**（2026-05-25、設計書 §6 で根拠記録、計画書 §3.7「迷ったら作らない方針」適用）
+- [x] **ステップ 5 全完了** — 5.1〜5.5 完了（2026-05-25、48 テスト追加、全体 526 件 pass、設計書 §7 §8 初版執筆、`samples/Data/tsushima.odrg` 同梱、MapVerifier `.odrg` オーバーレイ動作確認）
+- [ ] **v0.2.0 タグ判断**（ユーザー承認待ち、本ステップ完了確定で Phase 2 終了）
+- [ ] Phase 3 計画書起草（v0.2.0 確定後、別ファイル `phase3_implementation_plan.md`）
 
 ---
 
@@ -408,3 +410,4 @@ Phase 2 完了時点ではランタイムが `.odrg` を使わないため、性
 | 0.2.7 (draft) | 2026-05-21 | ステップ 2.8 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.8 完了 / 2.9〜2.10 未着手」に更新。§10 次のアクションを「2.9 着手」へ繰下げ。設計書 §4.7 に `OsmWay` + `OsmWayParser` の意図・採用設計・判断根拠・検証方法（16/16 テスト、id int64 plain varint + refs delta zigzag + LocationsOnWays スキップ + PrimitiveBlock 不要）を記録（[`phase2_design.md`](phase2_design.md) v0.2.7） | Claude (Opus 4.7) |
 | 0.2.8 (draft) | 2026-05-21 | ステップ 2.9 完了反映。§6 ステップ表のステップ 2 を「2.1〜2.9 完了 / 2.10 未着手」に更新。§10 次のアクションを「2.10 着手」へ繰下げ。設計書 §4.8 に `OsmRelation` + `OsmMemberType` + `OsmRelationMember` + `OsmRelationParser` の意図・採用設計・判断根拠・検証方法（16/16 テスト、3 並列 member 配列 + MemberType 厳密検証、`type=restriction` 形式上解析可）を記録（[`phase2_design.md`](phase2_design.md) v0.2.8） | Claude (Opus 4.7) |
 | 0.3 (draft) | 2026-05-21 | **ステップ 2 全完了反映**。§6 ステップ表のステップ 2 を「完了」に変更（169 テスト、津島市 PBF 1,646,875 ノードを OsmSharp と完全一致確認）。§10 次のアクションを「ステップ 3 着手」へ繰下げ。設計書 §4.9 に `PbfReader` 高レベル API、§4.10 にステップ 2 完了状況サマリを記録（[`phase2_design.md`](phase2_design.md) v0.3） | Claude (Opus 4.7) |
+| 0.4 (draft) | 2026-05-25 | **Phase 2 全完了反映**。§6 ステップ表のステップ 3 を完了、ステップ 4-opt を「実施しない判断確定」、ステップ 5 を完了に更新。§10 次のアクションをチェック更新（5.1〜5.5 完了マーク + v0.2.0 タグ判断ペンディング + Phase 3 計画書起草を新規追加）。設計書 §6 §7 §8 初版執筆完了との同期（[`phase2_design.md`](phase2_design.md) v0.4） | Claude (Opus 4.7) |
