@@ -126,7 +126,7 @@ public class SnapToRoadTests
             var en = graph.GetEdgeEnumerator(v);
             while (en.MoveNext())
             {
-                var tags = graph.GetEdgeOsmTags(en.EdgeProfileIndex);
+                var tags = graph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
                 if (tags.TryGetValue("highway", out var hwy) && IsCarHighway(hwy))
                 {
                     return graph.GetVertex(v);

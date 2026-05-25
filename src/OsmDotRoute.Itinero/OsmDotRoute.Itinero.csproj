@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OsmDotRoute.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\OsmDotRoute\OsmDotRoute.csproj" />
   </ItemGroup>
 

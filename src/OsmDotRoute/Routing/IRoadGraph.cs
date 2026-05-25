@@ -1,4 +1,5 @@
 using OsmDotRoute.Geometry;
+using OsmDotRoute.Profiles;
 
 namespace OsmDotRoute.Routing;
 
@@ -27,10 +28,21 @@ internal interface IRoadGraph
     IRoadGraphEdgeEnumerator GetEdgeEnumerator(uint vertexId);
 
     /// <summary>
-    /// エッジプロファイル index に対応する OSM タグ集合を取得する（REQ-PRF-001/002 のプロファイル評価で参照）。
+    /// エニュメレータが指す現在エッジを、指定 <see cref="ProfileEvaluator"/> で評価する
+    /// （ホットパス用、Dijkstra 近傍展開で使用）。
+    /// Phase 1 → Phase 3 セマンティック移行 (Phase 3 ステップ 3A.3b)。
     /// </summary>
-    /// <param name="edgeProfileIndex">エッジプロファイルインデックス（<see cref="IRoadGraphEdgeEnumerator.EdgeProfileIndex"/> から取得）</param>
-    IReadOnlyDictionary<string, string> GetEdgeOsmTags(ushort edgeProfileIndex);
+    /// <remarks>
+    /// Itinero 系: 内部で OSM タグを取得し <c>evaluator.Evaluate(tags)</c> を呼ぶ。
+    /// Native 系: <c>evaluator.Name</c> で <c>.odrg</c> の BAKED_PROFILE スロットを解決し、bake 済値を直接返却。
+    /// </remarks>
+    EdgeEvaluation EvaluateEdge(IRoadGraphEdgeEnumerator en, ProfileEvaluator evaluator);
+
+    /// <summary>
+    /// エッジ ID で直接取得した <see cref="RoadEdge"/> を、指定 <see cref="ProfileEvaluator"/> で評価する
+    /// （スナップエッジ評価用、Dijkstra 開始時の sourceEdge/targetEdge 評価で使用）。
+    /// </summary>
+    EdgeEvaluation EvaluateEdge(RoadEdge edge, ProfileEvaluator evaluator);
 
     /// <summary>
     /// 指定エッジ ID のエッジ情報（端点・距離・プロファイル index・シェイプ）を取得する。

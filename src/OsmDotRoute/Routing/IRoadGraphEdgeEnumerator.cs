@@ -18,7 +18,10 @@ internal interface IRoadGraphEdgeEnumerator
     /// <summary>現在のエッジの終点頂点 ID</summary>
     uint To { get; }
 
-    /// <summary>現在のエッジの OSM タグ集合に対応するインデックス（<see cref="IRoadGraph.GetEdgeOsmTags"/> で展開）</summary>
+    /// <summary>
+    /// 現在のエッジのプロファイルインデックス。Itinero 系では内部で OSM タグ集合解決に使用、
+    /// Native 系では未使用（互換性のため保持、3C で廃止検討）。
+    /// </summary>
     ushort EdgeProfileIndex { get; }
 
     /// <summary>現在のエッジの距離（メートル）</summary>

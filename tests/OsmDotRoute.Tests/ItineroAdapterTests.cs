@@ -64,7 +64,7 @@ public class ItineroAdapterTests
     }
 
     [Fact]
-    public void GetEdgeOsmTags_ParentDefault_ContainsHighwayKey()
+    public void GetEdgeOsmTagsForTest_ParentDefault_ContainsHighwayKey()
     {
         EnsureTestData();
         var routerDb = ItineroRouterDbLoader.LoadFromFile(TestPaths.ParentDefaultRouterDb);
@@ -73,7 +73,7 @@ public class ItineroAdapterTests
         var enumerator = FindEnumeratorWithAtLeastOneEdge(graph, maxVerticesToScan: 1000);
         Assert.NotNull(enumerator);
 
-        var tags = graph.GetEdgeOsmTags(enumerator!.EdgeProfileIndex);
+        var tags = graph.GetEdgeOsmTagsForTest(enumerator!.EdgeProfileIndex);
         Assert.NotEmpty(tags);
         // OSM 道路エッジには必ず highway タグが付く
         Assert.Contains("highway", tags.Keys);

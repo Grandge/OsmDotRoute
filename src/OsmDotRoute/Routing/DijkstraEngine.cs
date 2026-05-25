@@ -39,11 +39,11 @@ internal sealed class DijkstraEngine
     public DijkstraResult? Run(SnapResult sourceSnap, SnapResult targetSnap)
     {
         var sourceEdge = _graph.GetEdge(sourceSnap.EdgeId);
-        var sourceEval = _calculator.Evaluate(sourceEdge.EdgeProfileIndex);
+        var sourceEval = _calculator.Evaluate(sourceEdge);
         if (!sourceEval.CanPass) return null;
 
         var targetEdge = _graph.GetEdge(targetSnap.EdgeId);
-        var targetEval = _calculator.Evaluate(targetEdge.EdgeProfileIndex);
+        var targetEval = _calculator.Evaluate(targetEdge);
         if (!targetEval.CanPass) return null;
 
         // スナップ点 → エッジ端点の方向性

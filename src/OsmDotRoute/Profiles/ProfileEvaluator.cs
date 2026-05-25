@@ -40,6 +40,14 @@ internal sealed class ProfileEvaluator
     }
 
     /// <summary>
+    /// プロファイル JSON の <c>name</c> フィールド。<c>NativeRoadGraph</c> が
+    /// <c>.odrg</c> の BAKED_PROFILE スロット解決に使う（Phase 3 ステップ 3A.3b）。
+    /// </summary>
+    public string Name => _def.Name
+        ?? throw new InvalidOperationException(
+            "ProfileEvaluator: JSON プロファイルに name フィールドがありません。");
+
+    /// <summary>
     /// OSM タグ集合からエッジ評価を導出する。
     /// 評価順: highway 別ルール（access/speed 基本値） → アクセスタグ上書き → maxspeed タグ → 速度クランプ → oneway。
     /// </summary>

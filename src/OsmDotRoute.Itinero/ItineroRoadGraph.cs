@@ -1,4 +1,5 @@
 using OsmDotRoute.Geometry;
+using OsmDotRoute.Profiles;
 using OsmDotRoute.Routing;
 using ItineroDb = global::Itinero.RouterDb;
 
@@ -37,7 +38,37 @@ internal sealed class ItineroRoadGraph : IRoadGraph
         => new ItineroEdgeEnumeratorAdapter(_routerDb.Network.GetEdgeEnumerator(vertexId));
 
     /// <inheritdoc/>
-    public IReadOnlyDictionary<string, string> GetEdgeOsmTags(ushort edgeProfileIndex)
+    public EdgeEvaluation EvaluateEdge(IRoadGraphEdgeEnumerator en, ProfileEvaluator evaluator)
+    {
+        ArgumentNullException.ThrowIfNull(en);
+        ArgumentNullException.ThrowIfNull(evaluator);
+        return EvaluateByProfileIndex(en.EdgeProfileIndex, evaluator);
+    }
+
+    /// <inheritdoc/>
+    public EdgeEvaluation EvaluateEdge(RoadEdge edge, ProfileEvaluator evaluator)
+    {
+        ArgumentNullException.ThrowIfNull(edge);
+        ArgumentNullException.ThrowIfNull(evaluator);
+        return EvaluateByProfileIndex(edge.EdgeProfileIndex, evaluator);
+    }
+
+    /// <summary>
+    /// プロファイル index から OSM タグ集合を取り出し <see cref="ProfileEvaluator"/> で評価する内部ヘルパ。
+    /// 2 つの <c>EvaluateEdge</c> オーバーロードがこのメソッドに集約する。
+    /// </summary>
+    private EdgeEvaluation EvaluateByProfileIndex(ushort edgeProfileIndex, ProfileEvaluator evaluator)
+    {
+        var tags = GetTagsByProfileIndex(edgeProfileIndex);
+        return evaluator.Evaluate(tags);
+    }
+
+    /// <summary>
+    /// プロファイル index に対応する OSM タグ集合を取得する。
+    /// 本番ホットパスは <see cref="EvaluateByProfileIndex"/> 経由でのみ使用、
+    /// テストでは <c>ItineroRoadGraphTestExtensions.GetEdgeOsmTagsForTest</c> 経由で利用する。
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> GetTagsByProfileIndex(ushort edgeProfileIndex)
     {
         var attrs = _routerDb.EdgeProfiles.Get(edgeProfileIndex);
         if (attrs == null)

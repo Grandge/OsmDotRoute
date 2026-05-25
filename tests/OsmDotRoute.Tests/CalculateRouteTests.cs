@@ -192,7 +192,7 @@ public class CalculateRouteTests
             var en = graph.GetEdgeEnumerator(v);
             while (en.MoveNext())
             {
-                var tags = graph.GetEdgeOsmTags(en.EdgeProfileIndex);
+                var tags = graph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
                 if (tags.TryGetValue("highway", out var hwy) && IsCarHighway(hwy))
                 {
                     return graph.GetVertex(v);
@@ -222,7 +222,7 @@ public class CalculateRouteTests
             bool isCar = false;
             while (en.MoveNext())
             {
-                var tags = graph.GetEdgeOsmTags(en.EdgeProfileIndex);
+                var tags = graph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
                 if (tags.TryGetValue("highway", out var hwy) && IsCarHighway(hwy))
                 {
                     isCar = true;

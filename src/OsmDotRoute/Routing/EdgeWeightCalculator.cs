@@ -33,12 +33,13 @@ internal sealed class EdgeWeightCalculator
         _restrictions = restrictions;
     }
 
-    /// <summary>エッジプロファイル index から評価結果（通行可否・速度・方向制限）を取得する。</summary>
-    public EdgeEvaluation Evaluate(ushort edgeProfileIndex)
-    {
-        var tags = _graph.GetEdgeOsmTags(edgeProfileIndex);
-        return _evaluator.Evaluate(tags);
-    }
+    /// <summary>エニュメレータが指す現在エッジの評価結果（通行可否・速度・方向制限）を取得する（ホットパス用）。</summary>
+    public EdgeEvaluation Evaluate(IRoadGraphEdgeEnumerator en)
+        => _graph.EvaluateEdge(en, _evaluator);
+
+    /// <summary>エッジ ID で取得した <see cref="RoadEdge"/> の評価結果を取得する（スナップエッジ評価用）。</summary>
+    public EdgeEvaluation Evaluate(RoadEdge edge)
+        => _graph.EvaluateEdge(edge, _evaluator);
 
     /// <summary>距離 (m) と速度 (km/h) から所要時間 (秒) を算出する。速度が 0 以下なら <see cref="double.PositiveInfinity"/>。</summary>
     public static double DurationSec(double distanceM, float speedKmh)
@@ -72,7 +73,7 @@ internal sealed class EdgeWeightCalculator
     /// </summary>
     public double EvaluateEdgeDurationSec(IRoadGraphEdgeEnumerator en)
     {
-        var eval = Evaluate(en.EdgeProfileIndex);
+        var eval = Evaluate(en);
         if (!CanTraverseInEnumeratorDirection(eval, en.DataInverted)) return double.PositiveInfinity;
 
         var baseDuration = DurationSec(en.DistanceM, eval.SpeedKmh);

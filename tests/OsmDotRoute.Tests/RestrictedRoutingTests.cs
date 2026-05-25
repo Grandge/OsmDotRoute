@@ -273,7 +273,7 @@ public class RestrictedRoutingTests
             var isCar = false;
             while (en.MoveNext())
             {
-                var tags = graph.GetEdgeOsmTags(en.EdgeProfileIndex);
+                var tags = graph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
                 if (tags.TryGetValue("highway", out var hwy) && IsCarHighway(hwy))
                 {
                     isCar = true;
