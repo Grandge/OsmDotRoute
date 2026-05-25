@@ -211,3 +211,26 @@ export async function importGmlFile(req: GmlImportRequest): Promise<GmlImportRes
     }),
   );
 }
+
+export interface OdrgStatsResponse {
+  vertexCount: number;
+  edgeCount: number;
+  southWest: CoordinateDto;
+  northEast: CoordinateDto;
+  profileNames: string[];
+}
+
+export const loadOdrg = async (odrgPath: string) =>
+  handle<OdrgStatsResponse>(
+    await fetch('/api/load-odrg', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ odrgPath }),
+    }),
+  );
+
+export async function fetchOdrgRoadNetwork(): Promise<GeoJSON.FeatureCollection> {
+  const res = await fetch('/api/road-network-odrg');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as GeoJSON.FeatureCollection;
+}

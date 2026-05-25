@@ -29,6 +29,7 @@ builder.Services.AddResponseCompression(o =>
 
 builder.Services.AddSingleton<RouterState>();
 builder.Services.AddSingleton<RestrictedAreaService>();
+builder.Services.AddSingleton<OdrgState>();
 
 var app = builder.Build();
 
@@ -42,5 +43,6 @@ app.MapSnapAndRouteEndpoints();
 app.MapMeshEndpoints();
 app.MapRestrictionEndpoints();
 app.MapBrowseEndpoints();
+app.MapOdrgEndpoints();
 
 app.Run();

@@ -49,4 +49,13 @@ public sealed record GmlImportRequest(
 
 public sealed record GmlImportResponse(Guid[] Ids, int AcceptedCount);
 
+public sealed record LoadOdrgRequest(string? OdrgPath);
+
+public sealed record OdrgStatsResponse(
+    int VertexCount,
+    int EdgeCount,
+    CoordinateDto SouthWest,
+    CoordinateDto NorthEast,
+    string[] ProfileNames);
+
 

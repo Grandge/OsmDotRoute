@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 export interface MapViewHandle {
   fitBounds(bounds: LngLatBoundsLike, padding?: number): void;
   setRoadNetwork(geojson: GeoJSON.FeatureCollection | null): void;
+  setOdrgRoadNetwork(geojson: GeoJSON.FeatureCollection | null): void;
   setMeshGrid(geojson: GeoJSON.FeatureCollection | null): void;
   setRestrictions(geojson: GeoJSON.FeatureCollection | null): void;
   setRoute(line: GeoJSON.LineString | null): void;
@@ -22,6 +23,8 @@ interface Props {
 
 const ROAD_SOURCE = 'road-network';
 const ROAD_LAYER = 'road-network-line';
+const ODRG_ROAD_SOURCE = 'odrg-road-network';
+const ODRG_ROAD_LAYER = 'odrg-road-network-line';
 const MESH_SOURCE = 'mesh-grid';
 const MESH_LAYER_FILL = 'mesh-grid-fill';
 const MESH_LAYER_LINE = 'mesh-grid-line';
@@ -100,6 +103,22 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
           paint: { 'line-color': '#1e6fff', 'line-width': 1.2, 'line-opacity': 0.55 },
         });
       }, [ROAD_LAYER]));
+    },
+    setOdrgRoadNetwork(geojson) {
+      runWhenStyleReady((m) => updateGeoJsonSource(m, ODRG_ROAD_SOURCE, geojson, () => {
+        // RouterDb (青) と区別するため赤系、僅かに太く + dash で重ね表示時に視認性確保
+        m.addLayer({
+          id: ODRG_ROAD_LAYER,
+          type: 'line',
+          source: ODRG_ROAD_SOURCE,
+          paint: {
+            'line-color': '#dc2626',
+            'line-width': 1.4,
+            'line-opacity': 0.6,
+            'line-dasharray': [3, 2],
+          },
+        });
+      }, [ODRG_ROAD_LAYER]));
     },
     setMeshGrid(geojson) {
       runWhenStyleReady((m) => updateGeoJsonSource(m, MESH_SOURCE, geojson, () => {

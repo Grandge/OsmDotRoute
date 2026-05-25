@@ -3,6 +3,7 @@ import type { LngLatBoundsLike, MapGeoJSONFeature } from 'maplibre-gl';
 import { MapView, type MapViewHandle } from './components/MapView';
 import { VersionBanner } from './components/VersionBanner';
 import { LoadPanel } from './components/LoadPanel';
+import { LoadOdrgPanel } from './components/LoadOdrgPanel';
 import { MapBoundsPanel } from './components/MapBoundsPanel';
 import { MeshGridPanel } from './components/MeshGridPanel';
 import { PolygonEditorPanel } from './components/PolygonEditorPanel';
@@ -45,6 +46,11 @@ export function App() {
 
   const handleRoadNetwork = useCallback((geojson: GeoJSON.FeatureCollection) => {
     mapRef.current?.setRoadNetwork(geojson.features.length === 0 ? null : geojson);
+  }, []);
+
+  // .odrg 読込: RouterDb と独立 (fit はしない、RouterDb と重ね表示前提)
+  const handleOdrgRoadNetwork = useCallback((geojson: GeoJSON.FeatureCollection) => {
+    mapRef.current?.setOdrgRoadNetwork(geojson.features.length === 0 ? null : geojson);
   }, []);
 
   const handleApplyBounds = useCallback((sw: [number, number], ne: [number, number]) => {
@@ -121,6 +127,7 @@ export function App() {
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <aside style={asideStyle}>
           <LoadPanel onLoaded={handleLoaded} onRoadNetworkFetched={handleRoadNetwork} />
+          <LoadOdrgPanel onLoaded={() => { /* fit はしない */ }} onRoadNetworkFetched={handleOdrgRoadNetwork} />
           <MapBoundsPanel currentBounds={bounds} onApply={handleApplyBounds} />
           <RoutePanel
             from={from}
