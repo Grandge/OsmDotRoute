@@ -19,4 +19,15 @@ internal static class TestPaths
     /// </summary>
     public const string TsushimaExtractPbf =
         @"d:\workspace\災害廃棄物処理シミュレーション\App\DisasterWasteSim.Server\Data\tsushima_extract.osm.pbf";
+
+    /// <summary>
+    /// リポジトリ同梱の津島市 <c>.odrg</c>（約 3.55 MB、commit <c>4a5a90a</c>）。
+    /// Phase 3 ステップ 3A の `.odrg` ランタイム読込テストで参照真値として利用。
+    /// </summary>
+    /// <remarks>
+    /// テスト実行時のカレントは <c>tests/OsmDotRoute.Tests/bin/{Config}/{TFM}/</c>。
+    /// 5 階層上がリポジトリルート。
+    /// </remarks>
+    public static string TsushimaOdrg => Path.GetFullPath(
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "samples", "Data", "tsushima.odrg"));
 }
