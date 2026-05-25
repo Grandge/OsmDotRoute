@@ -5,6 +5,8 @@
     <RootNamespace>OsmDotRoute</RootNamespace>
     <AssemblyName>OsmDotRoute</AssemblyName>
     <Description>.NET native OSM routing library with dynamic restriction support.</Description>
+    <!-- Phase 3 ステップ 3A.2: OdrgMmfHandle で MMF ビューを byte* で直接読むため必要 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
