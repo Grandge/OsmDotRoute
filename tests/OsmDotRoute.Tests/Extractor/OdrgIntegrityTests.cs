@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using OsmDotRoute;
 using OsmDotRoute.Extractor.Pipeline;
+using OsmDotRoute.Internal.Odrg;
 using OsmDotRoute.Pbf.Osm;
 using OsmDotRoute.Tests.TestData;
 

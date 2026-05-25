@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using OsmDotRoute;
 using OsmDotRoute.Extractor.Pipeline;
+using OsmDotRoute.Internal.Odrg;
 using OsmDotRoute.Pbf.Osm;
 
 namespace OsmDotRoute.Tests.Extractor;

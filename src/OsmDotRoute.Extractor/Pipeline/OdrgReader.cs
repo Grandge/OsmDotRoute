@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.IO;
 using System.Text;
 using OsmDotRoute;
+using OsmDotRoute.Internal.Odrg;
 
 namespace OsmDotRoute.Extractor.Pipeline;
 

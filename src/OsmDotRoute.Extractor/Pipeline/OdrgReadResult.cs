@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using OsmDotRoute;
+using OsmDotRoute.Internal.Odrg;
 
 namespace OsmDotRoute.Extractor.Pipeline;
 

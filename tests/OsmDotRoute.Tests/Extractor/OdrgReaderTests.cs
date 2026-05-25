@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using OsmDotRoute;
 using OsmDotRoute.Extractor.Pipeline;
+using OsmDotRoute.Internal.Odrg;
 using OsmDotRoute.Pbf.Osm;
 using OsmDotRoute.Tests.TestData;
 

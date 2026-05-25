@@ -1,4 +1,4 @@
-namespace OsmDotRoute.Extractor.Pipeline;
+namespace OsmDotRoute.Internal.Odrg;
 
 /// <summary>
 /// .odrg ファイル形式の定数。仕様書 §1〜§4 と対応。
