@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3A: ランタイム `.odrg` 読込実装 計画書
 
-**ステータス**: ドラフト v0.4（v0.3 ユーザー承認 commit `eb1431c` 後、§3A.3-API ユーザー判断 (a) 確定を反映 + 3A.3a 着手時の現状確認結果（`IRoadProfile` 不在 / `ProfileEvaluator.Name` 未公開）を反映、2026-05-26）
+**ステータス**: ドラフト v0.5（v0.4 ユーザー承認 commit `cd661d0` 後、3A.3b 着手前事前調査で v0.4 §2.6.1 と現状コードのギャップ（DijkstraEngine.cs:42,46 の `RoadEdge` 経由評価呼出 / テスト 5 ファイルの `IsCarHighway(tags["highway"])` パターン）を発見、ユーザー判断 3 件で対応方針確定、2026-05-26）
 **対応ステップ**: Phase 3 ステップ 3A（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 3 最大リスク要因）
 **対応要件**: REQ-MAP-005（`.odrg` ランタイム読込）、REQ-NFR-003（経路 1 本あたりアロケート削減の土台）
 **関連文書**:
@@ -103,7 +103,7 @@ DijkstraEngine
 
 **ユーザー判断確定 2026-05-26（計画書 v0.3 承認時、commit `eb1431c`）**: **(a) 採用**。
 
-#### 2.6.1 (a) 案 確定後の詳細シグネチャ（3A.3a で確定、v0.4 で追記）
+#### 2.6.1 (a) 案 確定後の詳細シグネチャ（3A.3a で確定、v0.4 で追記 / v0.5 で訂正）
 
 **3A.3a 着手時の現状確認**:
 
@@ -113,7 +113,13 @@ DijkstraEngine
 - `JsonProfileDefinition.Name: string?` は存在（プロファイル JSON の `name` フィールド）
 - `EdgeWeightCalculator` のコンストラクタが `ProfileEvaluator evaluator` を受け取る既存構造
 
-**確定シグネチャ**:
+**v0.5 で発見した v0.4 のギャップ**:
+
+`DijkstraEngine.cs:42, 46` は `_calculator.Evaluate(sourceEdge.EdgeProfileIndex)` の形で **`RoadEdge` 経由**に評価を呼んでおり、`IRoadGraphEdgeEnumerator en` が手元にない。v0.4 §2.6.1 の単一シグネチャ `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` だけでは Dijkstra スナップエッジ評価 2 箇所が**そのままでは呼べない**。
+
+**ユーザー判断確定 2026-05-26 (v0.5 起草時)**: **RoadEdge オーバーロードを追加**し、API は 2 本にする。
+
+**確定シグネチャ (v0.5)**:
 
 ```csharp
 internal interface IRoadGraph
@@ -121,8 +127,7 @@ internal interface IRoadGraph
     // 削除: IReadOnlyDictionary<string, string> GetEdgeOsmTags(ushort edgeProfileIndex);
 
     /// <summary>
-    /// 現在エニュメレータが指すエッジを、指定 ProfileEvaluator で評価する。
-    /// Phase 1 → Phase 3 セマンティック移行 (Phase 3 ステップ 3A.3b で導入)。
+    /// エニュメレータが指す現在エッジを、指定 ProfileEvaluator で評価する（ホットパス用、Dijkstra 近傍展開で使用）。
     /// </summary>
     /// <param name="en">エッジエニュメレータ（現在位置を保持）</param>
     /// <param name="evaluator">
@@ -131,8 +136,18 @@ internal interface IRoadGraph
     /// </param>
     /// <returns>エッジ評価結果（通行可否 / 速度 / 方向制限）</returns>
     EdgeEvaluation EvaluateEdge(IRoadGraphEdgeEnumerator en, ProfileEvaluator evaluator);
+
+    /// <summary>
+    /// エッジ ID で直接取得した <see cref="RoadEdge"/> を、指定 ProfileEvaluator で評価する
+    /// （スナップエッジ評価用、Dijkstra 開始時の sourceEdge/targetEdge 評価で使用）。
+    /// </summary>
+    /// <param name="edge">エッジ ID 直接取得結果</param>
+    /// <param name="evaluator">プロファイル評価器（en 版と同じ意味）</param>
+    EdgeEvaluation EvaluateEdge(RoadEdge edge, ProfileEvaluator evaluator);
 }
 ```
+
+両オーバーロードは Itinero 側で薄いラッパとして実装される（共通の `EvaluateByProfileIndex(ushort)` 内部メソッドに集約）。Native 側でも同様、edge.EdgeId / en.EdgeId で BAKED_PROFILE スロットを解決する内部ヘルパに集約する想定（Native 系は 3A.3e で実装）。
 
 **`ProfileEvaluator` への追加**（3A.3b 内で実装）:
 
@@ -147,7 +162,7 @@ internal sealed class ProfileEvaluator
 }
 ```
 
-**`EdgeWeightCalculator` 改修**（3A.3c 内で実装）:
+**`EdgeWeightCalculator` 改修**（3A.3b 内で実装 / v0.4 では 3A.3c だったが v0.5 で 3A.3b に統合）:
 
 ```csharp
 // 旧:
@@ -157,31 +172,81 @@ public EdgeEvaluation Evaluate(ushort edgeProfileIndex)
     return _evaluator.Evaluate(tags);
 }
 
-// 新:
+// 新 (2 オーバーロード):
 public EdgeEvaluation Evaluate(IRoadGraphEdgeEnumerator en)
     => _graph.EvaluateEdge(en, _evaluator);
+
+public EdgeEvaluation Evaluate(RoadEdge edge)
+    => _graph.EvaluateEdge(edge, _evaluator);
 ```
 
-呼出元 `EvaluateEdgeDurationSec(en)` は `Evaluate(en.EdgeProfileIndex)` → `Evaluate(en)` に変更。`DijkstraEngine.cs:42, 46` の sourceEdge / targetEdge 評価呼出も同様（`en` 相当を渡す）。
+呼出元改修:
+
+- `EvaluateEdgeDurationSec(en)` 内 `Evaluate(en.EdgeProfileIndex)` → `Evaluate(en)`
+- `DijkstraEngine.cs:42`: `_calculator.Evaluate(sourceEdge.EdgeProfileIndex)` → `_calculator.Evaluate(sourceEdge)`
+- `DijkstraEngine.cs:46`: `_calculator.Evaluate(targetEdge.EdgeProfileIndex)` → `_calculator.Evaluate(targetEdge)`
 
 **`IRoadGraphEdgeEnumerator.EdgeProfileIndex`**: 保持（Itinero 系内部で必要、Native 系では未使用だが破壊しない）。3C で廃止検討。
 
 **性能影響**: ホットパス内のメソッドコールは「`GetEdgeOsmTags` + `evaluator.Evaluate(tags)` の 2 段」→「`EvaluateEdge(en, evaluator)` の 1 段」に**短縮**。`ProfileEvaluator` 引数 1 個追加コストは無視可能。3E ベンチで実測。
 
-#### 2.6.2 既存テスト 5 ファイル改修方針（3A.3a grep 結果）
+#### 2.6.2 既存テスト 5 ファイル改修方針（3A.3a grep 結果 / v0.5 で訂正）
 
 `grep -rn "GetEdgeOsmTags"` ヒット箇所と改修方針：
 
 | ファイル | 行 | 用途 | 改修方針 |
 | --- | --- | --- | --- |
-| `src/OsmDotRoute/Routing/EdgeWeightCalculator.cs` | 39 | 本番ホットパス | 新 `_graph.EvaluateEdge(en, _evaluator)` に置換（3A.3c） |
-| `src/OsmDotRoute.Itinero/ItineroRoadGraph.cs` | 40-55 | Itinero 実装本体 | `EvaluateEdge` 実装に置換（内部で旧 `GetEdgeOsmTags` ロジック + `evaluator.Evaluate(tags)` を呼ぶ）（3A.3b） |
-| `tests/OsmDotRoute.Tests/ItineroAdapterTests.cs` | 67, 76 | タグ取得アダプタテスト | テストの意図が「Itinero タグが正しく取れる」なので、新 API では `EvaluateEdge` 結果が ProfileEvaluator + Itinero タグ評価と一致することを assert する形にリネーム + 書き換え（3A.3b） |
-| `tests/OsmDotRoute.Tests/CalculateRouteTests.cs` | 195, 225 | テスト内ヘルパで `tags` を取得 | 当該ヘルパ部分を新 API 経由に置換（3A.3b 或いは 3A.3d で取りこぼし回収） |
-| `tests/OsmDotRoute.Tests/SnapToRoadTests.cs` | 129 | 同上 | 同上 |
-| `tests/OsmDotRoute.Tests/RestrictedRoutingTests.cs` | 276 | 同上 | 同上 |
+| `src/OsmDotRoute/Routing/EdgeWeightCalculator.cs` | 39 | 本番ホットパス | 新 `_graph.EvaluateEdge(en, _evaluator)` に置換（3A.3b、v0.4 では 3A.3c） |
+| `src/OsmDotRoute.Itinero/ItineroRoadGraph.cs` | 40-55 | Itinero 実装本体 | `EvaluateEdge` 2 オーバーロード実装に置換（内部で旧 `GetEdgeOsmTags` ロジック + `evaluator.Evaluate(tags)` を呼ぶ）（3A.3b） |
+| `tests/OsmDotRoute.Tests/ItineroAdapterTests.cs` | 67, 76 | タグ取得アダプタテスト | **下記§2.6.3 の Itinero テスト用 extension** で `GetEdgeOsmTagsForTest` を呼ぶ形に書き換え（テスト名はそのまま、振る舞いは同等を維持）（3A.3b） |
+| `tests/OsmDotRoute.Tests/CalculateRouteTests.cs` | 195, 225 | テスト内 `FindCarAccessibleVertex` / `CollectCarAccessibleVertexPairs` ヘルパ | 同 extension 経由で `tags["highway"]` を取得し、既存 `IsCarHighway` 判定を**そのまま維持**（3A.3b） |
+| `tests/OsmDotRoute.Tests/SnapToRoadTests.cs` | 129 | 同上ヘルパ | 同上 |
+| `tests/OsmDotRoute.Tests/RestrictedRoutingTests.cs` | 276 | 同上ヘルパ | 同上 |
 
-**3A.3a 完了条件 (Done)**: 上記シグネチャ + 改修方針が計画書 v0.4 として commit され、ユーザー承認を得る。実コード変更ゼロ、539 件 pass 維持。
+#### 2.6.3 Itinero テスト用 extension 新設 (v0.5 起草時確定)
+
+**背景**: 上記 4 テストファイルは「`tags["highway"]` の文字列で `IsCarHighway(motorway/trunk/primary/...)` を分類」というロジックを使っており、`ProfileEvaluator.Evaluate(tags).CanPass` だけでは粒度が再現できない（pedestrian も car も motorway 以外で `CanPass=true` になりうる）。
+
+**ユーザー判断確定 2026-05-26 (v0.5 起草時)**: **Itinero テスト用 extension を新設**し、テストヘルパは現状の `IsCarHighway` 判定をそのまま維持する。`IRoadGraph` 抽象から `GetEdgeOsmTags` を削除する Done 基準は維持されつつ、テスト振る舞いの変更リスクは回避される。
+
+**新設ファイル**: `src/OsmDotRoute.Itinero/ItineroRoadGraphTestExtensions.cs`
+
+```csharp
+namespace OsmDotRoute.Itinero;
+
+/// <summary>
+/// Itinero 系テスト専用の internal extension。本番ホットパスからは呼ばない。
+/// `IRoadGraph` 抽象に OSM タグ生データ取得 API を含めない (Phase 3 §2.5 設計) ため、
+/// テストの「車道判定」用途のみ Itinero 実装から直接タグを取り出すヘルパとして提供する。
+/// </summary>
+internal static class ItineroRoadGraphTestExtensions
+{
+    public static IReadOnlyDictionary<string, string> GetEdgeOsmTagsForTest(
+        this ItineroRoadGraph graph,
+        ushort edgeProfileIndex)
+    {
+        // 旧 IRoadGraph.GetEdgeOsmTags のロジックをそのまま移植
+        // （ItineroRoadGraph 内部の _routerDb.EdgeProfiles.Get(edgeProfileIndex) を呼ぶ）
+    }
+}
+```
+
+**`InternalsVisibleTo`**: `OsmDotRoute.Itinero.csproj` に `OsmDotRoute.Tests` が既に登録されているか確認、無ければ追加（3A.3b 着手時に確認）。
+
+**テスト側書換パターン**:
+
+```csharp
+// 旧:
+var tags = graph.GetEdgeOsmTags(en.EdgeProfileIndex);
+
+// 新 (graph 変数が IRoadGraph の場合):
+var itineroGraph = (ItineroRoadGraph)graph;  // テストは Itinero 系のみ走るため安全
+var tags = itineroGraph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
+```
+
+`graph` 変数の型を最初から `ItineroRoadGraph` にしておく方が cast 不要で素直なため、テスト 5 ファイルでは可能な限り型を絞る方向で書き換える。
+
+**3A.3a 完了条件 (Done)**: 上記シグネチャ + 改修方針が計画書 v0.5 として commit され、ユーザー承認を得る。実コード変更ゼロ、539 件 pass 維持。
 
 ### 2.4 `.odrg` v1.0 セクション構成（実装確認済、`OdrgFormat` / `OdrgReader` ベース）
 
@@ -330,59 +395,50 @@ public EdgeEvaluation Evaluate(IRoadGraphEdgeEnumerator en)
 
 ---
 
-#### 4.3.2 3A.3b: `ItineroRoadGraph` を新 API に追従改修
+#### 4.3.2 3A.3b: `IRoadGraph` 評価 API 改修 + `ItineroRoadGraph` + `EdgeWeightCalculator` + `DijkstraEngine` + テスト 5 ファイル一括追従 (v0.5 で旧 3A.3b/3A.3c/3A.3d を統合)
+
+**統合理由 (v0.5)**:
+
+v0.4 §4.3.2 では「3A.3b は IF + ItineroRoadGraph + テスト追従のみ、`EdgeWeightCalculator.Evaluate(ushort)` は暫定 fall back 維持」を案 α として提示していたが、3A.3b 着手前事前調査で **`GetEdgeOsmTags(ushort)` 削除後は `Evaluate(ushort)` 内部から新 API を呼ぶ術がない**（`ushort` 単体からは `en` も `RoadEdge` も復元不可）ことが判明。案 α は技術的に不成立、案 β（IF + Itinero + EdgeWeightCalculator + Dijkstra を 1 commit で完結）が必須となった。
 
 **作業**:
 
-- `src/OsmDotRoute.Itinero/ItineroRoadGraph.cs` の新 API 実装（既存 `GetEdgeOsmTags` ロジック + ProfileEvaluator を内部で呼び bake-equivalent な値を返す）
-- `IRoadGraph` インターフェース改修（`GetEdgeOsmTags` 削除 / 新 API 追加）
-- `IRoadGraphEdgeEnumerator` の `EdgeProfileIndex` の扱い確定
-- `tests/OsmDotRoute.Tests/ItineroAdapterTests.cs` の `GetEdgeOsmTags_ParentDefault_ContainsHighwayKey` 含む直呼び 5 ファイルの追従修正
+1. **`src/OsmDotRoute/Routing/IRoadGraph.cs`**: `GetEdgeOsmTags(ushort)` 削除 / 新 `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` + `EvaluateEdge(RoadEdge, ProfileEvaluator)` 2 オーバーロード追加 (§2.6.1)
+2. **`src/OsmDotRoute/Profiles/ProfileEvaluator.cs`**: `public string Name => _def.Name ?? throw ...` 追加
+3. **`src/OsmDotRoute.Itinero/ItineroRoadGraph.cs`**:
+   - 旧 `GetEdgeOsmTags(ushort)` の `_routerDb.EdgeProfiles.Get(...)` ロジックを **`private IReadOnlyDictionary<string, string> GetTagsByProfileIndex(ushort)`** として温存（テスト用 extension が利用）
+   - 新 `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` + `EvaluateEdge(RoadEdge, ProfileEvaluator)` 実装、共通の `private EdgeEvaluation EvaluateByProfileIndex(ushort, ProfileEvaluator)` に集約
+4. **`src/OsmDotRoute.Itinero/ItineroRoadGraphTestExtensions.cs`** (新規): §2.6.3 の `GetEdgeOsmTagsForTest(ItineroRoadGraph, ushort)` extension。`ItineroRoadGraph` 内部の `GetTagsByProfileIndex` を呼ぶ ([[InternalsVisibleTo]]: `OsmDotRoute.Tests` を csproj 確認 + 必要なら追加)
+5. **`src/OsmDotRoute/Routing/EdgeWeightCalculator.cs`**:
+   - 旧 `public EdgeEvaluation Evaluate(ushort edgeProfileIndex)` 削除
+   - 新 `public EdgeEvaluation Evaluate(IRoadGraphEdgeEnumerator en) => _graph.EvaluateEdge(en, _evaluator)` 追加
+   - 新 `public EdgeEvaluation Evaluate(RoadEdge edge) => _graph.EvaluateEdge(edge, _evaluator)` 追加
+   - `EvaluateEdgeDurationSec(en)` 内 `Evaluate(en.EdgeProfileIndex)` → `Evaluate(en)`
+6. **`src/OsmDotRoute/Routing/DijkstraEngine.cs:42, 46`**:
+   - `_calculator.Evaluate(sourceEdge.EdgeProfileIndex)` → `_calculator.Evaluate(sourceEdge)`
+   - `_calculator.Evaluate(targetEdge.EdgeProfileIndex)` → `_calculator.Evaluate(targetEdge)`
+7. **テスト 5 ファイル追従**: `tests/OsmDotRoute.Tests/{ItineroAdapterTests, CalculateRouteTests, SnapToRoadTests, RestrictedRoutingTests}.cs` の `graph.GetEdgeOsmTags(...)` 直呼び 6 箇所を §2.6.3 の `ItineroRoadGraphTestExtensions.GetEdgeOsmTagsForTest(...)` 経由に書き換え。`graph` 変数型を可能なら `ItineroRoadGraph` 直接で受ける形にして cast 不要にする
+8. `IRoadGraphEdgeEnumerator.EdgeProfileIndex` XML doc から「`IRoadGraph.GetEdgeOsmTags` で展開」記述を削除（API 自体が消えるため）。プロパティ自体は保持（Itinero 内部の `Data.Profile` 用、3C で廃止検討）
 
 **Done 基準**:
 
-- `dotnet test` 全 pass（539 件維持、`ItineroRoadGraph` 経由のテストが新 API で動く）
-- `ItineroRoadGraph.GetEdgeOsmTags` が削除されている（compile error が出ないこと）
+- `dotnet test` 全 pass（**539 件維持**、`ItineroRoadGraph` 経由のテストが新 API で動く）
+- `IRoadGraph` から `GetEdgeOsmTags` が削除されている (compile 通過)
+- `grep -rn "GetEdgeOsmTags"` で**本番コードのヒット 0 件**（Phase 3 設計書 / 計画書のドキュメント上のヒットは許容）
+  - テストの `GetEdgeOsmTagsForTest` ヒットは extension 利用なので OK（命名で区別可能）
 - 経路探索エンジン（`DijkstraEngine` / `EdgeWeightCalculator`）の動作が Phase 1 と完全一致（既存 89 ペア経路テスト全 pass）
+- `ProfileEvaluator.Evaluate(IDictionary)` 経路は **Itinero 側でのみ呼ばれる**（`ItineroRoadGraph.EvaluateByProfileIndex` 内部）形に隔離されている
+- 警告 0（廃止参照 / 未使用 using 等の警告がない）
 
-**commit メッセージ案**: `refactor: Phase 3 ステップ 3A.3b IRoadGraph 評価 API 改修 + ItineroRoadGraph 追従`
+**commit メッセージ案**: `refactor: Phase 3 ステップ 3A.3b IRoadGraph 評価 API 改修 (RoadEdge オーバーロード + Itinero テスト extension 新設、3A.3b/c/d 統合)`
 
----
+**v0.4 サブステップとの対応**:
 
-#### 4.3.3 3A.3c: `EdgeWeightCalculator.Evaluate` 内部置換
-
-**作業**:
-
-- `src/OsmDotRoute/Routing/EdgeWeightCalculator.cs:37-41` の `Evaluate(ushort edgeProfileIndex)` を新 API ベースに書き換え
-- `EvaluateEdgeDurationSec(IRoadGraphEdgeEnumerator en)` 内の `Evaluate(en.EdgeProfileIndex)` 呼出を新 API シグネチャに合わせて更新
-- `DijkstraEngine.cs:42, 46` の sourceEdge / targetEdge 評価呼出も整合
-
-**Done 基準**:
-
-- `dotnet test` 全 pass（539 件維持）
-- Dijkstra ホットパスが新 API 経由で動く
-- `ProfileEvaluator.Evaluate(IDictionary)` 経路は **Itinero 側でのみ呼ばれる**（`ItineroRoadGraph` 内部）形に隔離
-
-**commit メッセージ案**: `refactor: Phase 3 ステップ 3A.3c EdgeWeightCalculator.Evaluate を新 IRoadGraph 評価 API 経由に置換`
-
----
-
-#### 4.3.4 3A.3d: 既存テスト 5 ファイル追従最終確認
-
-**作業**:
-
-- 3A.3b で大半は対応済の想定。本サブステップでは取りこぼし回収
-- `tests/OsmDotRoute.Tests/{CalculateRouteTests, SnapToRoadTests, RestrictedRoutingTests, ItineroAdapterTests, ...}.cs` のテストヘルパや fixture が新 API を前提とした記述になっているか最終確認
-- 削除された `GetEdgeOsmTags` を参照するテストが残っていれば修正
-- 廃止された XML doc（`IRoadGraphEdgeEnumerator.EdgeProfileIndex` の説明文等）の整理
-
-**Done 基準**:
-
-- `dotnet test` 全 pass（539 件維持）
-- 警告 0（CS0618 廃止参照等の警告がない）
-- `grep -rn "GetEdgeOsmTags"` でヒット 0 件
-
-**commit メッセージ案**: `chore: Phase 3 ステップ 3A.3d 旧 IRoadGraph 評価 API 参照の最終クリーンアップ`
+- v0.4 3A.3b (IF + ItineroRoadGraph + テスト 5 ファイル) → v0.5 3A.3b に統合
+- v0.4 3A.3c (EdgeWeightCalculator 内部置換) → v0.5 3A.3b に統合
+- v0.4 3A.3d (テスト 5 ファイル最終確認) → v0.5 3A.3b に統合 (上記項目 7 で同時実施)
+- v0.4 3A.3e (NativeRoadGraph 新規) → v0.5 3A.3e (番号維持)
+- v0.4 3A.3f (NativeRoadGraph テスト 12 件) → v0.5 3A.3f (番号維持)
 
 ---
 
@@ -555,10 +611,10 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | --- | --- | --- | --- |
 | 3A.1 | 5 | セクションテーブルパース正常 / 異常 | ✅ 5 件 (commit `fb6cd45`) |
 | 3A.2 | 7→8 | Span 切出 / Dispose 後アクセス | ✅ 8 件 (commit `279a6ec`) |
-| 3A.3a | 0 | API 改修案ドラフト（コード変更なし） | 計画書 v0.3 |
-| 3A.3b | 0 | `ItineroRoadGraph` 改修 + 既存テスト追従 (件数増減なし、539 維持) | 計画書 v0.3 |
-| 3A.3c | 0 | `EdgeWeightCalculator.Evaluate` 内部置換 (件数増減なし) | 計画書 v0.3 |
-| 3A.3d | 0 | 既存テスト追従最終確認 (件数増減なし) | 計画書 v0.3 |
+| 3A.3a | 0 | API 改修案ドラフト（コード変更なし） | ✅ 計画書 v0.3 / v0.4 / v0.5 |
+| 3A.3b | 0 | IF + ItineroRoadGraph + EdgeWeightCalculator + Dijkstra + テスト 5 ファイル + Itinero テスト extension 一括改修 (v0.5 で旧 3A.3b/c/d 統合、件数増減なし、539 維持) | 計画書 v0.5 |
+| ~~3A.3c~~ | ~~0~~ | ~~`EdgeWeightCalculator.Evaluate` 内部置換~~ | v0.5 で 3A.3b に統合 |
+| ~~3A.3d~~ | ~~0~~ | ~~既存テスト追従最終確認~~ | v0.5 で 3A.3b に統合 |
 | 3A.3e | 0 | `NativeRoadGraph` 新規実装 (テストは 3A.3f) | 計画書 v0.3 |
 | 3A.3f | 12 | `NativeRoadGraph` 頂点 / エッジ / シェイプ / 新評価 API + Dispose | 計画書 v0.3 |
 | 3A.4 | 8 | R-tree クエリ正確性 / ブルートフォース突合 | |
@@ -586,7 +642,12 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 - [x] **§3A.3-API (a) 確定**（commit `eb1431c` 計画書 v0.3 承認時）
 - [x] **本ステップ計画書 v0.3 ユーザー承認** (commit `eb1431c`)
 - [x] 3A.3a 着手 → §2.6.1 / §2.6.2 確定で計画書 v0.4
-- [ ] 本ステップ計画書 v0.4 ユーザーレビュー → 承認
+- [x] **本ステップ計画書 v0.4 ユーザー承認** (commit `cd661d0`)
+- [x] 3A.3b 着手前事前調査 → §2.6.1 / §2.6.2 ギャップ発見、ユーザー判断 3 件確定 (2026-05-26):
+  - API 形状 = **RoadEdge オーバーロード追加**
+  - 車道判定 = **Itinero テスト用 extension 新設**
+  - スコープ = **案 β (3A.3b / 3A.3c / 3A.3d 統合)、案 α は技術的不成立**
+- [ ] 本ステップ計画書 v0.5 ユーザーレビュー → 承認
 - [ ] 3A.3b 着手
 
 ---
@@ -599,3 +660,4 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 0.2 (draft) | 2026-05-26 | v0.1 ユーザー承認 (commit `b27be51`) 後、3A.1 着手前の現状確認で発見した訂正を反映：(1) §2.4 セクション構成表を実装確認済の 9 セクション (VERTEX / EDGE / EDGE_SHAPE / EDGE_AABB / EDGE_FLAG 独立 / SPATIAL_INDEX / BAKED_PROFILE / TURN_RESTRICTION / METADATA) に訂正、v0.1 の誤記 (PROFILE_BAKE / STRING_POOL、flags が EDGE 内、`バージョン 0x0002`) を訂正。(2) §3.1 スコープ内に「OdrgFormat を Extractor → Core へ移動」を前提リファクタとして追加（依存方向 Core ← Pbf ← Extractor のため）。(3) §4.1 (3A.1) を「ステップ 0: OdrgFormat Core 移動 / ステップ 1: OdrgSectionDirectory 実装」に分割、検証条件を `VersionMajor == 1` / `edgeFlagBytes == 2` / `sectionCount == 9` に具体化、参照真値を `OdrgReader.Read` に統一 | Claude (Opus 4.7) |
 | 0.3 (draft) | 2026-05-26 | 3A.1 完了 (commit `fb6cd45`) / 3A.2 完了 (commit `279a6ec`) 後、3A.3 着手前の `IRoadGraph` 依存連鎖調査で発見した重大な設計問題を反映：(1) §2.5 追加 = `.odrg` には OSM タグ生データなし → `NativeRoadGraph.GetEdgeOsmTags` 実装不可、`IRoadGraph` 改修必須。ユーザー判断 B 案 (3A.3 で `IRoadGraph` 改修込み) 確定。(2) §2.6 追加 = 着手前ペンディング判断 §3A.3-API 起票 (新評価 API シグネチャ a/b/c)、推奨 (a) `EdgeEvaluation EvaluateEdge`。(3) §4.3 を B 案サブステップ詳細 3A.3a〜3A.3f に全面書き直し（API 改修案ドラフト / `ItineroRoadGraph` 追従 / `EdgeWeightCalculator` 内部置換 / 既存テスト追従 / `NativeRoadGraph` 新規 / テスト 12 件）。各サブステップで `dotnet test` 全 pass 維持。(4) §5 リスク表に 3A-R7 (改修で既存テスト破壊) / 3A-R8 (新 API がホットパス不適合) 追加。(5) §6 テスト件数表に 3A.3 サブステップ分割反映 + 3A.1/3A.2 実績反映 (5+8、累計 539)。(6) §7 着手前確認事項を v0.3 用に更新。3A.1〜3A.2 完了済をチェック、§3A.3-API 確定 + v0.3 承認をペンディング | Claude (Opus 4.7) |
 | 0.4 (draft) | 2026-05-26 | v0.3 ユーザー承認 (commit `eb1431c`) + §3A.3-API (a) ユーザー判断確定後、3A.3a 成果物を反映：(1) §2.6 確定マーク追記。(2) §2.6.1 追加 = (a) 案 確定後の詳細シグネチャ。3A.3a 着手時の現状確認で `IRoadProfile` 不在（v0.3 §2.6 の架空型）/ `ProfileEvaluator.Name` 未公開を発見、確定シグネチャを `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` に補正。`ProfileEvaluator.Name` プロパティ追加方針 + `EdgeWeightCalculator` 改修コード骨格 + `IRoadGraphEdgeEnumerator.EdgeProfileIndex` の扱い (保持、3C で廃止検討) も決定。(3) §2.6.2 追加 = 既存テスト 5 ファイル `GetEdgeOsmTags` 直呼び 6 箇所 (本番 2 + テスト 4) の grep 結果 + 改修方針表。(4) §7 着手前確認事項を v0.4 用に更新、3A.3a 完了済をチェック、v0.4 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
+| 0.5 (draft) | 2026-05-26 | v0.4 ユーザー承認 (commit `cd661d0`) 後、3A.3b 着手前事前調査で v0.4 §2.6.1 と現状コードのギャップを 3 件発見：(1) `DijkstraEngine.cs:42,46` は `RoadEdge.EdgeProfileIndex` 経由の評価呼出で `en` を持たない (v0.4 単一シグネチャ `EvaluateEdge(en, evaluator)` だけでは呼べない)。(2) `GetEdgeOsmTags(ushort)` 削除後は `EdgeWeightCalculator.Evaluate(ushort)` 内部から新 API を呼ぶ術がなく、v0.4 §4.3.2 で示唆した「案 α (3A.3b で暫定 fall back)」は**技術的に不成立**。(3) テスト 5 ファイル `IsCarHighway(tags["highway"])` ヘルパは `ProfileEvaluator.Evaluate(tags).CanPass` では粒度再現不可。ユーザー判断 3 件確定 (2026-05-26): (a) **RoadEdge オーバーロード追加** = `IRoadGraph.EvaluateEdge` を `(en, evaluator)` + `(RoadEdge, evaluator)` の 2 本に。(b) **Itinero テスト用 extension 新設** = `src/OsmDotRoute.Itinero/ItineroRoadGraphTestExtensions.cs` で `GetEdgeOsmTagsForTest` を提供、テストヘルパは `IsCarHighway` 判定を維持。(c) **案 β (3A.3b/3A.3c/3A.3d 統合) 採用、案 α 不採用**。反映: (1) §2.6.1 確定シグネチャを 2 オーバーロードに訂正、ギャップ発見記述追加。(2) §2.6.2 改修方針表を Itinero extension 経由に訂正、テスト改修パターン明示。(3) §2.6.3 新設 = Itinero テスト用 extension の設計 + InternalsVisibleTo 確認手順 + テスト書換パターン。(4) §4.3.2 を v0.4 3A.3b/c/d 統合版に全面書き直し、作業項目 8 段 + Done 基準 6 段 + v0.4 サブステップ対応表追加。(5) §4.3.3 / §4.3.4 を削除し v0.5 で 3A.3b に統合した旨を明示。(6) §6 テスト件数表で 3A.3c/3A.3d を取り消し線 (3A.3b に統合)、3A.3b の説明を統合版に書き換え、3A.3a 実績マーク。(7) §7 着手前確認事項を v0.5 用に更新、v0.4 承認済 + ユーザー判断 3 件確定をチェック、v0.5 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
