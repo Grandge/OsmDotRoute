@@ -38,7 +38,15 @@ internal sealed class NativeRoadGraph : IRoadGraph
     private readonly long _vertexOffset;
     private readonly long _edgeOffset;
     private readonly long _shapeOffset;
+    private readonly long _edgeAabbOffset;
     private readonly long _bakedEntriesOffset;
+
+    // SPATIAL_INDEX (R-tree) セクション
+    private readonly long _rtreeNodesOffset;
+    private readonly uint _rtreeNodeCount;
+    private readonly uint _rtreeRootIndex;
+    private readonly uint _rtreeBranchingFactor;
+    private readonly uint _rtreeHeight;
 
     // HEADER 値
     private readonly uint _vertexCount;
@@ -78,8 +86,16 @@ internal sealed class NativeRoadGraph : IRoadGraph
             _vertexOffset = checked((long)_directory.FindSection(OdrgFormat.SectionVertexTable).Offset);
             _edgeOffset = checked((long)_directory.FindSection(OdrgFormat.SectionEdgeTable).Offset);
             _shapeOffset = checked((long)_directory.FindSection(OdrgFormat.SectionEdgeShapeBuffer).Offset);
+            _edgeAabbOffset = checked((long)_directory.FindSection(OdrgFormat.SectionEdgeAabbTable).Offset);
 
             ParseBakedProfileTable(out _profileSlotByName, out _bakedEntriesOffset);
+
+            ParseRTreeHeader(
+                out _rtreeNodesOffset,
+                out _rtreeNodeCount,
+                out _rtreeRootIndex,
+                out _rtreeBranchingFactor,
+                out _rtreeHeight);
 
             BuildCsrIndex(out _firstOutEdge, out _outEntries);
 
@@ -201,6 +217,56 @@ internal sealed class NativeRoadGraph : IRoadGraph
         if (_disposed) return;
         _disposed = true;
         _mmf.Dispose();
+    }
+
+    /// <summary>
+    /// SPATIAL_INDEX セクションの R-tree ノード列を Span として取得する（Phase 3 ステップ 3A.4）。
+    /// </summary>
+    /// <remarks>
+    /// ゼロコピー（<c>MemoryMarshal.Cast&lt;byte, OdrgRTreeNode&gt;</c> 経由）。
+    /// Span ライフタイムは本インスタンスの <see cref="Dispose"/> まで。
+    /// </remarks>
+    internal ReadOnlySpan<OdrgRTreeNode> GetRTreeNodes()
+    {
+        ThrowIfDisposed();
+        return _mmf.GetSpan<OdrgRTreeNode>(_rtreeNodesOffset, (int)_rtreeNodeCount);
+    }
+
+    /// <summary>R-tree ルートノードのインデックス（<see cref="GetRTreeNodes"/> の添字）。</summary>
+    internal uint RTreeRootIndex
+    {
+        get { ThrowIfDisposed(); return _rtreeRootIndex; }
+    }
+
+    /// <summary>R-tree 分岐数 M（STR pack、v0.2 初期値 = 16）。</summary>
+    internal uint RTreeBranchingFactor
+    {
+        get { ThrowIfDisposed(); return _rtreeBranchingFactor; }
+    }
+
+    /// <summary>R-tree ツリー高（ルート含む段数）。</summary>
+    internal uint RTreeHeight
+    {
+        get { ThrowIfDisposed(); return _rtreeHeight; }
+    }
+
+    /// <summary>R-tree ノード総数。</summary>
+    internal uint RTreeNodeCount
+    {
+        get { ThrowIfDisposed(); return _rtreeNodeCount; }
+    }
+
+    /// <summary>
+    /// EDGE_AABB セクション全体（エッジ ID 添字、<c>OdrgBbox</c> 32 byte × <c>EdgeCount</c>）の Span を返す。
+    /// </summary>
+    /// <remarks>
+    /// ゼロコピー。3A.4 NativeRTreeQuery.Nearest と Brute-force 突合テストで利用。
+    /// Span ライフタイムは本インスタンスの <see cref="Dispose"/> まで。
+    /// </remarks>
+    internal ReadOnlySpan<OdrgBbox> GetEdgeAabbs()
+    {
+        ThrowIfDisposed();
+        return _mmf.GetSpan<OdrgBbox>(_edgeAabbOffset, _edgeCount);
     }
 
     internal OdrgEdge ReadEdge(uint edgeId)
@@ -340,6 +406,37 @@ internal sealed class NativeRoadGraph : IRoadGraph
 
         nameMap = names;
         entriesOffset = nameBufOff + totalNameLen;
+    }
+
+    private void ParseRTreeHeader(
+        out long nodesOffset,
+        out uint nodeCount,
+        out uint rootIndex,
+        out uint branchingFactor,
+        out uint height)
+    {
+        var section = _directory.FindSection(OdrgFormat.SectionEdgeSpatialIndex);
+        long baseOff = checked((long)section.Offset);
+
+        var headerSpan = _mmf.GetRawSpan(baseOff, OdrgFormat.RTreeHeaderSize);
+        nodeCount = BinaryPrimitives.ReadUInt32LittleEndian(headerSpan[..4]);
+        rootIndex = BinaryPrimitives.ReadUInt32LittleEndian(headerSpan.Slice(4, 4));
+        branchingFactor = BinaryPrimitives.ReadUInt32LittleEndian(headerSpan.Slice(8, 4));
+        height = BinaryPrimitives.ReadUInt32LittleEndian(headerSpan.Slice(12, 4));
+
+        long expectedLen = OdrgFormat.RTreeHeaderSize + (long)nodeCount * OdrgFormat.RTreeNodeSize;
+        if ((long)section.Length != expectedLen)
+        {
+            throw new OdrgFormatException(
+                $"R-tree section length mismatch: expected {expectedLen}, got {section.Length} (nodeCount={nodeCount}).");
+        }
+        if (nodeCount > 0 && rootIndex >= nodeCount)
+        {
+            throw new OdrgFormatException(
+                $"R-tree rootIndex out of range: rootIndex={rootIndex}, nodeCount={nodeCount}.");
+        }
+
+        nodesOffset = baseOff + OdrgFormat.RTreeHeaderSize;
     }
 
     private void BuildCsrIndex(out uint[] firstOutEdge, out OutEdgeEntry[] outEntries)
