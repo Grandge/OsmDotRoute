@@ -18,6 +18,7 @@ internal sealed class ProfileEvaluator
     private readonly string _maxspeedTagKey;
     private readonly bool _maxspeedDefaultMph;
     private readonly double _speedMultiplier;
+    private readonly JsonVehicleLimits? _vehicleLimits;
 
     /// <summary>
     /// プロファイル定義から評価器を構築する。検証は <see cref="ValidateAndCompile"/> で行う。
@@ -37,6 +38,7 @@ internal sealed class ProfileEvaluator
         _maxspeedTagKey = def.MaxspeedTagKey ?? "maxspeed";
         _maxspeedDefaultMph = string.Equals(def.MaxspeedUnitDefault, "mph", StringComparison.OrdinalIgnoreCase);
         _speedMultiplier = def.SpeedMultiplier ?? 1.0;
+        _vehicleLimits = def.VehicleLimits;
     }
 
     /// <summary>
@@ -99,6 +101,14 @@ internal sealed class ProfileEvaluator
             }
         }
 
+        // 2.5. vehicleLimits 評価（Phase 3 ステップ 3D.2、Truck 用 maxweight/maxheight/maxwidth）。
+        // accessTagKeys 後に評価することで「access=destination → 許可」を物理制限で再度ブロックできる
+        // ＝物理制限は法令タグ上書きより優先（hard-deny 等価セマンティクス）。
+        if (accessAllow && _vehicleLimits is not null && ExceedsVehicleLimit(osmTags))
+        {
+            accessAllow = false;
+        }
+
         // 3. 通行不可なら早期 return
         if (!accessAllow)
         {
@@ -159,6 +169,81 @@ internal sealed class ProfileEvaluator
             "-1" or "reverse" => OnewayDirection.Backward,
             _ => OnewayDirection.Bidirectional,
         };
+    }
+
+    /// <summary>
+    /// vehicleLimits 評価。OSM タグ maxweight (t) / maxheight (m) / maxwidth (m) のいずれかが
+    /// プロファイル制限を下回るなら true（=このエッジは通行不可）。
+    /// 未対応単位（kg, ft, in 等）のタグ値は安全側として制限発火させない（=false）。
+    /// </summary>
+    private bool ExceedsVehicleLimit(IReadOnlyDictionary<string, string> osmTags)
+    {
+        if (_vehicleLimits!.MaxWeightTon is { } weightLimit
+            && osmTags.TryGetValue("maxweight", out var weightRaw)
+            && TryParseLimitValue(weightRaw, "t", out var weight)
+            && weight < weightLimit)
+        {
+            return true;
+        }
+
+        if (_vehicleLimits.MaxHeightMeter is { } heightLimit
+            && osmTags.TryGetValue("maxheight", out var heightRaw)
+            && TryParseLimitValue(heightRaw, "m", out var height)
+            && height < heightLimit)
+        {
+            return true;
+        }
+
+        if (_vehicleLimits.MaxWidthMeter is { } widthLimit
+            && osmTags.TryGetValue("maxwidth", out var widthRaw)
+            && TryParseLimitValue(widthRaw, "m", out var width)
+            && width < widthLimit)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// OSM タグの数値制限値をパース。例: "8" / "8 t" / "3.5 m" / "8t" → 数値部のみ返す。
+    /// 単位サフィックスが既定値（"t" or "m"）と一致する場合のみ受け入れ、不一致（"kg" / "ft" 等）は
+    /// 安全側として false を返す（=制限発火しない）。
+    /// </summary>
+    private static bool TryParseLimitValue(string raw, string defaultUnit, out double value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+
+        // 空白で数値部と単位部を分離（"8 t" / "3.5 m"）。空白なし（"8t" / "3.5m" / "8"）はループで判定。
+        ReadOnlySpan<char> span = raw.AsSpan().Trim();
+        int numLen = 0;
+        while (numLen < span.Length && (char.IsDigit(span[numLen]) || span[numLen] == '.'))
+        {
+            numLen++;
+        }
+        if (numLen == 0) return false;
+
+        if (!double.TryParse(span[..numLen], NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+        {
+            return false;
+        }
+
+        // 残り部分が単位サフィックス。空白除去してから比較。
+        var unitPart = span[numLen..].Trim();
+        if (unitPart.IsEmpty)
+        {
+            return true; // 単位省略 = 既定単位
+        }
+
+        if (unitPart.Equals(defaultUnit, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // 想定外単位（kg / ft / in / lb 等）は未対応として制限発火させない
+        value = 0;
+        return false;
     }
 
     private static bool TryParseMaxspeed(string raw, bool defaultMph, out double speedKmh)
@@ -255,6 +340,25 @@ internal sealed class ProfileEvaluator
                     throw new InvalidProfileException(
                         $"プロファイル '{def.Name}' の 'difficulty[{key}].speedFactor' は 0.0〜1.0 の範囲が必要です（実値: {rule.SpeedFactor}）。");
                 }
+            }
+        }
+
+        if (def.VehicleLimits is { } limits)
+        {
+            if (limits.MaxWeightTon is < 0)
+            {
+                throw new InvalidProfileException(
+                    $"プロファイル '{def.Name}' の 'vehicleLimits.maxWeightTon' は 0 以上が必要です（実値: {limits.MaxWeightTon}）。");
+            }
+            if (limits.MaxHeightMeter is < 0)
+            {
+                throw new InvalidProfileException(
+                    $"プロファイル '{def.Name}' の 'vehicleLimits.maxHeightMeter' は 0 以上が必要です（実値: {limits.MaxHeightMeter}）。");
+            }
+            if (limits.MaxWidthMeter is < 0)
+            {
+                throw new InvalidProfileException(
+                    $"プロファイル '{def.Name}' の 'vehicleLimits.maxWidthMeter' は 0 以上が必要です（実値: {limits.MaxWidthMeter}）。");
             }
         }
     }

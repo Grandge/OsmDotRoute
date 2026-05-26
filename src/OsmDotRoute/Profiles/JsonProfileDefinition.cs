@@ -66,6 +66,14 @@ internal sealed class JsonProfileDefinition
     /// </summary>
     [JsonPropertyName("speedMultiplier")]
     public double? SpeedMultiplier { get; set; }
+
+    /// <summary>
+    /// 車両物理制限（Phase 3 ステップ 3D.2、REQ-PRF-004 Truck 用）。
+    /// OSM タグ <c>maxweight</c> / <c>maxheight</c> / <c>maxwidth</c> の数値と比較し、
+    /// 制限を超過するエッジを通行不可（hard-deny）とする。null の場合は評価しない。
+    /// </summary>
+    [JsonPropertyName("vehicleLimits")]
+    public JsonVehicleLimits? VehicleLimits { get; set; }
 }
 
 /// <summary>highway 別ルール</summary>
@@ -107,4 +115,24 @@ internal sealed class JsonDifficultyRule
 
     [JsonPropertyName("canPass")]
     public bool CanPass { get; set; }
+}
+
+/// <summary>
+/// 車両物理制限（Phase 3 ステップ 3D.2）。全て optional、未指定の制限は評価しない。
+/// OSM 既定単位: maxWeight=t / maxHeight=m / maxWidth=m。
+/// 未対応単位（kg, ft, in 等）の OSM タグ値は制限を発火させない（安全側＝通行可、計画書 T1 リスク）。
+/// </summary>
+internal sealed class JsonVehicleLimits
+{
+    /// <summary>車両総重量上限（トン）。例: 20.0 = 20t トラック。</summary>
+    [JsonPropertyName("maxWeightTon")]
+    public double? MaxWeightTon { get; set; }
+
+    /// <summary>車両高さ上限（メートル）。例: 3.8 = 全高 3.8m。</summary>
+    [JsonPropertyName("maxHeightMeter")]
+    public double? MaxHeightMeter { get; set; }
+
+    /// <summary>車両幅上限（メートル）。例: 2.5 = 全幅 2.5m。</summary>
+    [JsonPropertyName("maxWidthMeter")]
+    public double? MaxWidthMeter { get; set; }
 }
