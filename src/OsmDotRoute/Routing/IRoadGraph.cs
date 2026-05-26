@@ -7,7 +7,11 @@ namespace OsmDotRoute.Routing;
 /// 経路計算エンジンが依存する道路グラフ抽象。
 /// Phase 1: <c>ItineroRoadGraph</c>（Itinero RouterDb ラップ）、Phase 2 以降: 独自バイナリグラフ実装に差し替え可能。
 /// </summary>
-internal interface IRoadGraph
+/// <remarks>
+/// <see cref="IDisposable"/> 継承（Phase 3 ステップ 3A.3e）: <c>NativeRoadGraph</c> が MMF / SafeBuffer を保持するため
+/// 明示的解放が必要。<c>ItineroRoadGraph</c> 側は no-op <c>Dispose</c> 実装。
+/// </remarks>
+internal interface IRoadGraph : IDisposable
 {
     /// <summary>頂点数</summary>
     uint VertexCount { get; }
@@ -50,4 +54,21 @@ internal interface IRoadGraph
     /// 経路復元（<see cref="RouteBuilder"/>）でシェイプを取り出すために使用する。
     /// </summary>
     RoadEdge GetEdge(uint edgeId);
+
+    /// <summary>
+    /// 指定エッジ ID の中間シェイプ点（端点を含まない）を <see cref="ReadOnlySpan{T}"/> で取得する
+    /// （Phase 3 ステップ 3A.3e、Phase 1 §18.4 経路 1 本あたり 77 MB アロケート削減の土台）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 返却 Span のライフタイムは <see cref="IRoadGraph"/> インスタンスの <see cref="IDisposable.Dispose"/> 呼出までと
+    /// する（XML doc 契約）。<c>NativeRoadGraph</c> はゼロコピーで内部キャッシュ Span を返す。
+    /// </para>
+    /// <para>
+    /// <c>ItineroRoadGraph</c> 側は per-call で <see cref="GeoCoordinate"/> 配列を確保し <see cref="System.MemoryExtensions.AsSpan{T}(T[])"/>
+    /// で返却する（3C で <c>ItineroRoadGraph</c> 撤去時に消滅）。コピーが発生するためホットパス用途には適さない
+    /// （現状の経路復元は <see cref="GetEdge"/>.<see cref="RoadEdge.Shape"/> 経由で <see cref="System.Collections.Generic.IReadOnlyList{T}"/> を使う）。
+    /// </para>
+    /// </remarks>
+    ReadOnlySpan<GeoCoordinate> GetEdgeShape(uint edgeId);
 }

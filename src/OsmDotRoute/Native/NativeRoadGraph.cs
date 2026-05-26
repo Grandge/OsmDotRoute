@@ -1,0 +1,421 @@
+using System.Buffers.Binary;
+using System.Text;
+using OsmDotRoute.Geometry;
+using OsmDotRoute.Internal.Odrg;
+using OsmDotRoute.Profiles;
+using OsmDotRoute.Routing;
+
+namespace OsmDotRoute.Native;
+
+/// <summary>
+/// <c>.odrg</c> を <see cref="System.IO.MemoryMappedFiles.MemoryMappedFile"/> + <see cref="ReadOnlySpan{T}"/>
+/// でゼロコピー読込する <see cref="IRoadGraph"/> 実装（Phase 3 ステップ 3A.3e）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 起動時に CSR インデックス（<c>firstOutEdge</c> + <c>outEntries</c>）を構築し、
+/// ランタイムは <see cref="GetEdgeEnumerator"/> から O(1) で頂点別エッジ列挙を提供する。
+/// </para>
+/// <para>
+/// シェイプは初回 <see cref="GetEdgeShape"/> 呼出時に <see cref="GeoCoordinate"/> 配列へ詰替えてキャッシュし、
+/// 以降はゼロコピーで <see cref="ReadOnlySpan{T}"/> を返す。詰替えが必要な理由は <c>.odrg</c> 内 <c>OdrgVertex(Lon, Lat)</c>
+/// と既存 <see cref="GeoCoordinate"/>(Lat, Lon) のフィールド順が逆で <c>MemoryMarshal.Cast</c> 不可のため
+/// （Phase 3 ステップ 3A.3e §2.7 F4）。
+/// </para>
+/// <para>
+/// エッジ距離（<see cref="OsmDotRoute.Routing.RoadEdge.DistanceM"/>）は <c>.odrg</c> に直接保持されないため、
+/// 端点 + 中間シェイプ点列の Haversine 距離合算で初回算出し、エッジごとにキャッシュする。
+/// </para>
+/// </remarks>
+internal sealed class NativeRoadGraph : IRoadGraph
+{
+    private const double EarthRadiusMeters = 6371008.8;  // WGS84 平均半径
+
+    private readonly OdrgMmfHandle _mmf;
+    private readonly OdrgSectionDirectory _directory;
+
+    // セクションオフセット (HEADER + SECTION TABLE から抽出)
+    private readonly long _vertexOffset;
+    private readonly long _edgeOffset;
+    private readonly long _shapeOffset;
+    private readonly long _bakedEntriesOffset;
+
+    // HEADER 値
+    private readonly uint _vertexCount;
+    private readonly int _edgeCount;
+    private readonly GeoBounds _bounds;
+
+    // BAKED_PROFILE name → slot index
+    private readonly Dictionary<string, int> _profileSlotByName;
+
+    // CSR インデックス
+    private readonly uint[] _firstOutEdge;
+    private readonly OutEdgeEntry[] _outEntries;
+
+    // キャッシュ（lazy 初期化、エッジ ID 添字）
+    private readonly GeoCoordinate[]?[] _shapeCache;
+    private readonly float[] _distanceCache;
+    private readonly bool[] _distanceCached;
+
+    private bool _disposed;
+
+    /// <summary>
+    /// 指定パスの <c>.odrg</c> ファイルをロードして道路グラフを構築する。
+    /// </summary>
+    /// <exception cref="OdrgFormatException"><c>.odrg</c> 形式不正。</exception>
+    public NativeRoadGraph(string odrgPath)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(odrgPath);
+        _mmf = OdrgMmfHandle.Open(odrgPath);
+        try
+        {
+            _directory = OdrgSectionDirectory.Read(_mmf.ViewHandle, _mmf.ViewLength);
+
+            var header = _directory.Header;
+            _vertexCount = checked((uint)header.VertexCount);
+            _edgeCount = checked((int)header.EdgeCount);
+
+            _vertexOffset = checked((long)_directory.FindSection(OdrgFormat.SectionVertexTable).Offset);
+            _edgeOffset = checked((long)_directory.FindSection(OdrgFormat.SectionEdgeTable).Offset);
+            _shapeOffset = checked((long)_directory.FindSection(OdrgFormat.SectionEdgeShapeBuffer).Offset);
+
+            ParseBakedProfileTable(out _profileSlotByName, out _bakedEntriesOffset);
+
+            BuildCsrIndex(out _firstOutEdge, out _outEntries);
+
+            _shapeCache = new GeoCoordinate[_edgeCount][];
+            _distanceCache = new float[_edgeCount];
+            _distanceCached = new bool[_edgeCount];
+
+            var bbox = header.Bbox;
+            _bounds = new GeoBounds(
+                new GeoCoordinate(bbox.MinLat, bbox.MinLon),
+                new GeoCoordinate(bbox.MaxLat, bbox.MaxLon));
+        }
+        catch
+        {
+            _mmf.Dispose();
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public uint VertexCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return _vertexCount;
+        }
+    }
+
+    /// <inheritdoc/>
+    public long EdgeCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return _edgeCount;
+        }
+    }
+
+    /// <inheritdoc/>
+    public GeoBounds GetBounds()
+    {
+        ThrowIfDisposed();
+        return _bounds;
+    }
+
+    /// <inheritdoc/>
+    public GeoCoordinate GetVertex(uint vertexId)
+    {
+        ThrowIfDisposed();
+        if (vertexId >= _vertexCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(vertexId), vertexId,
+                $"vertexId out of range (0..{_vertexCount - 1}).");
+        }
+        var span = _mmf.GetSpan<OdrgVertex>(
+            _vertexOffset + (long)vertexId * OdrgFormat.VertexSize, 1);
+        var v = span[0];
+        return new GeoCoordinate(v.Lat, v.Lon);
+    }
+
+    /// <inheritdoc/>
+    public IRoadGraphEdgeEnumerator GetEdgeEnumerator(uint vertexId)
+    {
+        ThrowIfDisposed();
+        if (vertexId >= _vertexCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(vertexId), vertexId,
+                $"vertexId out of range (0..{_vertexCount - 1}).");
+        }
+        return new NativeEdgeEnumerator(this, vertexId);
+    }
+
+    /// <inheritdoc/>
+    public RoadEdge GetEdge(uint edgeId)
+    {
+        ThrowIfDisposed();
+        var edge = ReadEdge(edgeId);
+        var shape = GetOrBuildShape(edgeId);
+        var distance = GetOrComputeDistance(edgeId, edge, shape);
+        return new RoadEdge(
+            edgeId,
+            edge.FromVertexId,
+            edge.ToVertexId,
+            edgeProfileIndex: 0,  // Native 系では未使用 (§2.6.1)
+            distance,
+            dataInverted: false,
+            shape);
+    }
+
+    /// <inheritdoc/>
+    public ReadOnlySpan<GeoCoordinate> GetEdgeShape(uint edgeId)
+    {
+        ThrowIfDisposed();
+        return GetOrBuildShape(edgeId);
+    }
+
+    /// <inheritdoc/>
+    public EdgeEvaluation EvaluateEdge(IRoadGraphEdgeEnumerator en, ProfileEvaluator evaluator)
+    {
+        ArgumentNullException.ThrowIfNull(en);
+        ArgumentNullException.ThrowIfNull(evaluator);
+        ThrowIfDisposed();
+        return EvaluateByEdgeId(en.EdgeId, evaluator);
+    }
+
+    /// <inheritdoc/>
+    public EdgeEvaluation EvaluateEdge(RoadEdge edge, ProfileEvaluator evaluator)
+    {
+        ArgumentNullException.ThrowIfNull(edge);
+        ArgumentNullException.ThrowIfNull(evaluator);
+        ThrowIfDisposed();
+        return EvaluateByEdgeId(edge.EdgeId, evaluator);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _mmf.Dispose();
+    }
+
+    internal OdrgEdge ReadEdge(uint edgeId)
+    {
+        if (edgeId >= _edgeCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(edgeId), edgeId,
+                $"edgeId out of range (0..{_edgeCount - 1}).");
+        }
+        var span = _mmf.GetSpan<OdrgEdge>(
+            _edgeOffset + (long)edgeId * OdrgFormat.EdgeSize, 1);
+        return span[0];
+    }
+
+    internal uint GetFirstOutEntry(uint vertexId) => _firstOutEdge[vertexId];
+
+    internal uint GetOutEntryEnd(uint vertexId) => _firstOutEdge[vertexId + 1];
+
+    internal OutEdgeEntry GetOutEntry(uint entryIndex) => _outEntries[entryIndex];
+
+    internal GeoCoordinate[] GetOrBuildShape(uint edgeId)
+    {
+        var cached = _shapeCache[edgeId];
+        if (cached is not null) return cached;
+
+        var edge = ReadEdge(edgeId);
+        var arr = BuildShape(edge);
+        _shapeCache[edgeId] = arr;
+        return arr;
+    }
+
+    private GeoCoordinate[] BuildShape(OdrgEdge edge)
+    {
+        int count = checked((int)edge.ShapePointCount);
+        if (count == 0) return Array.Empty<GeoCoordinate>();
+
+        long byteOffset = _shapeOffset + (long)edge.ShapeOffset;
+        var src = _mmf.GetSpan<OdrgVertex>(byteOffset, count);
+        var dst = new GeoCoordinate[count];
+        for (int i = 0; i < count; i++)
+        {
+            dst[i] = new GeoCoordinate(src[i].Lat, src[i].Lon);
+        }
+        return dst;
+    }
+
+    internal float GetOrComputeDistance(uint edgeId, OdrgEdge edge, GeoCoordinate[] shape)
+    {
+        if (_distanceCached[edgeId]) return _distanceCache[edgeId];
+
+        var from = GetVertex(edge.FromVertexId);
+        var to = GetVertex(edge.ToVertexId);
+
+        double total = 0.0;
+        var prev = from;
+        for (int i = 0; i < shape.Length; i++)
+        {
+            total += HaversineMeters(prev, shape[i]);
+            prev = shape[i];
+        }
+        total += HaversineMeters(prev, to);
+
+        var distance = (float)total;
+        _distanceCache[edgeId] = distance;
+        _distanceCached[edgeId] = true;
+        return distance;
+    }
+
+    private EdgeEvaluation EvaluateByEdgeId(uint edgeId, ProfileEvaluator evaluator)
+    {
+        if (edgeId >= _edgeCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(edgeId), edgeId,
+                $"edgeId out of range (0..{_edgeCount - 1}).");
+        }
+        if (!_profileSlotByName.TryGetValue(evaluator.Name, out var slot))
+        {
+            throw new InvalidOperationException(
+                $"プロファイル '{evaluator.Name}' は .odrg の BAKED_PROFILE に存在しません。");
+        }
+
+        long entryOffset = _bakedEntriesOffset
+            + ((long)slot * _edgeCount + edgeId) * OdrgFormat.BakedProfileEntrySize;
+        var entrySpan = _mmf.GetSpan<OdrgBakedProfileEntry>(entryOffset, 1);
+        var entry = entrySpan[0];
+
+        bool canPass = (entry.Flags & 0x01) != 0;
+        bool forward = (entry.Flags & 0x02) != 0;
+        bool backward = (entry.Flags & 0x04) != 0;
+
+        if (!canPass)
+        {
+            return new EdgeEvaluation(false, 0f, OnewayDirection.Bidirectional);
+        }
+
+        OnewayDirection oneway = (forward, backward) switch
+        {
+            (true, true) => OnewayDirection.Bidirectional,
+            (true, false) => OnewayDirection.Forward,
+            (false, true) => OnewayDirection.Backward,
+            _ => OnewayDirection.Bidirectional,  // forward/backward 両方 0 は通行不可と論理的に矛盾するが、bake 上稀ケース
+        };
+
+        return new EdgeEvaluation(true, entry.SpeedKmh, oneway);
+    }
+
+    private void ParseBakedProfileTable(out Dictionary<string, int> nameMap, out long entriesOffset)
+    {
+        var section = _directory.FindSection(OdrgFormat.SectionBakedProfileTable);
+        long baseOff = checked((long)section.Offset);
+
+        var headerSpan = _mmf.GetRawSpan(baseOff, OdrgFormat.BakedProfileTableHeaderSize);
+        uint profileCount = BinaryPrimitives.ReadUInt32LittleEndian(headerSpan[..4]);
+        uint entrySize = BinaryPrimitives.ReadUInt32LittleEndian(headerSpan.Slice(4, 4));
+        if (entrySize != OdrgFormat.BakedProfileEntrySize)
+        {
+            throw new OdrgFormatException(
+                $"Unsupported BAKED_PROFILE entrySize: {entrySize}, expected {OdrgFormat.BakedProfileEntrySize}.");
+        }
+
+        long nameTableOff = baseOff + OdrgFormat.BakedProfileTableHeaderSize;
+        long nameBufOff = nameTableOff + (long)profileCount * OdrgFormat.BakedProfileNameTableEntrySize;
+        var nameTableSpan = _mmf.GetRawSpan(
+            nameTableOff, (int)profileCount * OdrgFormat.BakedProfileNameTableEntrySize);
+
+        var names = new Dictionary<string, int>((int)profileCount, StringComparer.Ordinal);
+        uint totalNameLen = 0;
+        for (int p = 0; p < profileCount; p++)
+        {
+            int o = p * OdrgFormat.BakedProfileNameTableEntrySize;
+            uint nameOff = BinaryPrimitives.ReadUInt32LittleEndian(nameTableSpan.Slice(o, 4));
+            uint nameLen = BinaryPrimitives.ReadUInt32LittleEndian(nameTableSpan.Slice(o + 4, 4));
+            var nameSpan = _mmf.GetRawSpan(nameBufOff + nameOff, (int)nameLen);
+            names[Encoding.UTF8.GetString(nameSpan)] = p;
+            totalNameLen += nameLen;
+        }
+
+        nameMap = names;
+        entriesOffset = nameBufOff + totalNameLen;
+    }
+
+    private void BuildCsrIndex(out uint[] firstOutEdge, out OutEdgeEntry[] outEntries)
+    {
+        var edgeSpan = _mmf.GetSpan<OdrgEdge>(_edgeOffset, _edgeCount);
+
+        // 各頂点の出辺数を数える (from / to の両方に 1 ずつ)
+        var counts = new uint[_vertexCount + 1];
+        for (int e = 0; e < _edgeCount; e++)
+        {
+            counts[edgeSpan[e].FromVertexId + 1]++;
+            counts[edgeSpan[e].ToVertexId + 1]++;
+        }
+        // 累積和で firstOutEdge を構築
+        firstOutEdge = new uint[_vertexCount + 1];
+        for (int i = 1; i <= _vertexCount; i++)
+        {
+            firstOutEdge[i] = firstOutEdge[i - 1] + counts[i];
+        }
+
+        outEntries = new OutEdgeEntry[2 * _edgeCount];
+        var cursor = new uint[_vertexCount];
+        for (int e = 0; e < _edgeCount; e++)
+        {
+            var edge = edgeSpan[e];
+            uint from = edge.FromVertexId;
+            uint to = edge.ToVertexId;
+
+            uint fromSlot = firstOutEdge[from] + cursor[from]++;
+            outEntries[fromSlot] = new OutEdgeEntry((uint)e, IsReversed: false);
+
+            if (to != from)  // 自己ループは from 側 1 エントリのみ
+            {
+                uint toSlot = firstOutEdge[to] + cursor[to]++;
+                outEntries[toSlot] = new OutEdgeEntry((uint)e, IsReversed: true);
+            }
+        }
+
+        // 自己ループにより 2 倍未満になる場合は firstOutEdge を補正
+        // （cursor[v] が想定より少なくなるため、firstOutEdge 末尾を実エントリ数に合わせる必要がある）
+        uint actualCount = 0;
+        for (int v = 0; v < _vertexCount; v++) actualCount += cursor[v];
+        if (actualCount != outEntries.Length)
+        {
+            // 想定通り 2*E になっていない場合は trim
+            var trimmed = new OutEdgeEntry[actualCount];
+            var newFirst = new uint[_vertexCount + 1];
+            uint dstCursor = 0;
+            for (uint v = 0; v < _vertexCount; v++)
+            {
+                newFirst[v] = dstCursor;
+                uint srcStart = firstOutEdge[v];
+                uint srcEnd = srcStart + cursor[v];
+                for (uint k = srcStart; k < srcEnd; k++)
+                {
+                    trimmed[dstCursor++] = outEntries[k];
+                }
+            }
+            newFirst[_vertexCount] = dstCursor;
+            firstOutEdge = newFirst;
+            outEntries = trimmed;
+        }
+    }
+
+    private static double HaversineMeters(GeoCoordinate a, GeoCoordinate b)
+    {
+        double lat1 = a.Latitude * Math.PI / 180.0;
+        double lat2 = b.Latitude * Math.PI / 180.0;
+        double dLat = (b.Latitude - a.Latitude) * Math.PI / 180.0;
+        double dLon = (b.Longitude - a.Longitude) * Math.PI / 180.0;
+        double sinDLat = Math.Sin(dLat * 0.5);
+        double sinDLon = Math.Sin(dLon * 0.5);
+        double h = sinDLat * sinDLat + Math.Cos(lat1) * Math.Cos(lat2) * sinDLon * sinDLon;
+        double c = 2.0 * Math.Atan2(Math.Sqrt(h), Math.Sqrt(1.0 - h));
+        return EarthRadiusMeters * c;
+    }
+
+    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+}

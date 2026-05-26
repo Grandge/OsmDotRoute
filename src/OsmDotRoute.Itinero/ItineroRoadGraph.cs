@@ -86,6 +86,33 @@ internal sealed class ItineroRoadGraph : IRoadGraph
     }
 
     /// <inheritdoc/>
+    public ReadOnlySpan<GeoCoordinate> GetEdgeShape(uint edgeId)
+    {
+        var en = _routerDb.Network.GetEdgeEnumerator();
+        en.MoveToEdge(edgeId);
+        var shapeBase = en.Shape;
+        if (shapeBase == null || shapeBase.Count == 0)
+        {
+            return ReadOnlySpan<GeoCoordinate>.Empty;
+        }
+
+        var arr = new GeoCoordinate[shapeBase.Count];
+        for (int i = 0; i < shapeBase.Count; i++)
+        {
+            var c = shapeBase[i];
+            arr[i] = new GeoCoordinate(c.Latitude, c.Longitude);
+        }
+        return arr;
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        // Itinero RouterDb のライフタイムは外部所有 (ItineroRouterDbLoader / DI 経由)。
+        // 本実装は no-op (Phase 3 ステップ 3A.3e、IRoadGraph : IDisposable 化対応)。
+    }
+
+    /// <inheritdoc/>
     public RoadEdge GetEdge(uint edgeId)
     {
         var en = _routerDb.Network.GetEdgeEnumerator();
