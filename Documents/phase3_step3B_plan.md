@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3B: 動的制約ホットパス高速化 計画書
 
-**ステータス**: ドラフト v0.2（v0.1 + 3B 効果測定方針 Q5〜Q7 確定、2026-05-27）
+**ステータス**: ドラフト v0.3（v0.2 + 3B.1 着手前事前調査 + ユーザー判断 T1〜T3 確定、2026-05-27）
 **対応ステップ**: Phase 3 ステップ 3B（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 1 §18.3 解消）
 **対応要件**: REQ-NFR-002（制約 100 件下でも経路計算 ≤ 100ms 維持）、REQ-NFR-003（経路 1 本あたりアロケート削減）
 **関連文書**:
@@ -210,24 +210,60 @@ private double EvaluateConstraintFactor(uint from, uint to, IReadOnlyList<GeoCoo
 
 ### 4.1 3B.1: `RestrictedAreaEdgeCache` 新設 + 単体テスト
 
-**Done 基準**:
+#### 4.1.1 着手前事前調査結果（2026-05-27、ユーザー判断 T1〜T3 確定）
 
-- `src/OsmDotRoute/Restrictions/RestrictedAreaEdgeCache.cs` 新規（`internal sealed class`、frontmatter §3.1 設計）
-- 単体テスト（仮 5〜8 件、着手前に最終確定）:
-  - 空状態で `IsBlocked` が false / `GetCombinedDifficultyFactor` が 1.0
-  - `AddBlocked` 後の `IsBlocked` が true
-  - 複数 Difficulty の積算結果が正しい
-  - `RemoveArea` 後の `IsBlocked` / 係数解除
-  - `Clear` で全エントリ消える
-- 累計テスト 595 + 5〜8 = 600〜603 件 pass、Phase 1 既存 526 件 + Phase 3 3A 累計テスト維持
+**T1 = (A) 都度評価**: Difficulty 制約の `SpeedFactor` 積算は**ホットパスで `evaluator.EvaluateDifficulty(area.DifficultyType)` を都度呼ぶ**方式。Phase 1 動作と完全同一セマンティクス、プロファイル動的追加 OK、3B の本命（AABB 走査 + List 毎回 new 削除）は達成。
+
+**T2 = (A) OtherContains 走査**: 同一エッジが複数 Block 制約に該当した場合、`RemoveArea` 時は `_blockedByArea` 逆引きを全走査して「他の Block 制約に該当するエッジは `_blockedEdges` から外さない」判定。削除 O(K × M)、メモリ増なし、シンプル。制約 100 × エッジ 100 で約 10,000 比較 ≈ 数 ms 程度、削除はホットパスではないため許容。
+
+**T3 = (A) List から RemoveAll**: 同一エッジが複数 Difficulty 制約に該当した場合、`_difficultyAreasByEdge: Dictionary<uint, List<DifficultyArea>>` の List から該当 `areaId` を `RemoveAll`、空になったらエントリ削除。T1 (A) との整合性。
+
+**追加の重要発見** (事前調査で確定):
+- `RestrictedAreaId = readonly record struct(Guid Value)` (value semantics、HashSet/Dictionary キー OK)
+- `DifficultyEvaluation = internal readonly record struct(float SpeedFactor, bool CanPass)` (internal 型、Cache 内部で使う場合 OK)
+- 既存 `EvaluateConstraints` は Block 短絡 `PositiveInfinity` → Difficulty `!CanPass` 短絡 `PositiveInfinity` → `combined *= SpeedFactor` → `combined <= 0.0` で `PositiveInfinity` の評価順序、キャッシュ参照ホットパスでも同順序を維持
+
+#### 4.1.2 採用設計
+
+```csharp
+internal sealed class RestrictedAreaEdgeCache
+{
+    // Block: プロファイル非依存、HashSet 1 発で短絡
+    private readonly Dictionary<RestrictedAreaId, HashSet<uint>> _blockedByArea = new();
+    private readonly HashSet<uint> _blockedEdges = new();
+
+    // Difficulty: プロファイル依存のため、エッジ → 該当 DifficultyArea のリスト
+    private readonly Dictionary<RestrictedAreaId, HashSet<uint>> _difficultyByArea = new();
+    private readonly Dictionary<uint, List<DifficultyArea>> _difficultyAreasByEdge = new();
+
+    public bool IsBlocked(uint edgeId) => _blockedEdges.Contains(edgeId);
+
+    /// <summary>エッジに該当する Difficulty 制約のリストを返す（該当なしは Array.Empty）。</summary>
+    public IReadOnlyList<DifficultyArea> GetDifficultyAreas(uint edgeId);
+
+    public void AddBlocked(RestrictedAreaId areaId, uint edgeId);
+    public void AddDifficulty(RestrictedAreaId areaId, DifficultyArea area, uint edgeId);
+    public void RemoveArea(RestrictedAreaId areaId);   // 内部で OtherBlockContains 走査 + Difficulty list RemoveAll
+    public void Clear();
+}
+```
+
+#### 4.1.3 Done 基準
+
+- `src/OsmDotRoute/Restrictions/RestrictedAreaEdgeCache.cs` 新規（`internal sealed class`、上記設計）
+- 単体テスト 7 件（着手前事前調査 T1〜T3 確定により内訳確定）:
+  1. `Empty_IsBlocked_ReturnsFalse_GetDifficultyAreas_Empty` — 空状態の挙動
+  2. `AddBlocked_ThenIsBlocked_ReturnsTrue` — Block 追加と判定
+  3. `AddDifficulty_ThenGetDifficultyAreas_ContainsArea` — Difficulty 追加と取得
+  4. `MultipleDifficultyAreas_SameEdge_AllReturned` — T3 重複 Difficulty 列挙
+  5. `RemoveArea_BlockedNotInOtherArea_RemovedFromBlockedEdges` — T2 OtherContains: 単独 Block 削除で外れる
+  6. `RemoveArea_BlockedAlsoInOtherArea_KeptInBlockedEdges` — T2 OtherContains: 他 Block にも該当する場合は外れない
+  7. `RemoveArea_DifficultyArea_RemovedFromList` — T3 RemoveAll: List から該当 areaId のみ削除、List が空になれば Dictionary エントリも削除
+- 累計テスト 595 + 7 = **602 件 pass**、Phase 1 既存 526 件 + Phase 3 3A 累計テスト維持
 - ビルド 0 Warning / 0 Error
+- `Clear` テストは省略（既存パターン: ClearAll の挙動は Phase 1 `RestrictedAreaServiceTests` 等で間接的に検証、Cache 単体では `RemoveArea` で十分）
 
-**着手前事前調査の論点候補** (3B.1 着手時に確認):
-- T1. Difficulty 速度低下係数の積算規約: 現状 `EvaluateConstraints` は `combined *= ev.SpeedFactor` で積算。キャッシュ側は同じ規約でよいか
-- T2. 同一 edgeId が複数 Block 制約に該当する場合の格納方法: `_blockedEdges` HashSet では重複しないが、`_blockedByArea` 逆引きで全制約 ID を保持する必要があるか
-- T3. 削除パフォーマンス: `RemoveArea` で `_blockedEdges.ExceptWith(_blockedByArea[id])` するため、当該エッジが他の Block 制約にも該当している場合の整合性
-
-**commit メッセージ案**: `feat: Phase 3 ステップ 3B.1 RestrictedAreaEdgeCache 新設 (単体 N 件、累計 NNN 件 pass)`
+**commit メッセージ案**: `feat: Phase 3 ステップ 3B.1 RestrictedAreaEdgeCache 新設 (単体 7 件、602 件 pass)`
 
 ### 4.2 3B.2: `IRoadGraph.QueryEdgesByAabb` API 追加 + Native/Itinero 実装
 
@@ -413,7 +449,12 @@ private double EvaluateConstraintFactor(uint from, uint to, IReadOnlyList<GeoCoo
   - Q5 = (A) Phase 1 既存 `RouteWithConstraintsBenchmark` 改修 (BenchmarkDotNet)
   - Q6 = (A) 時間 + アロケート量 (MemoryDiagnoser)
   - Q7 = (A) graph 未注入モード (Native-Detached) を「導入前」ベースライン
-- [ ] **本ステップ計画書 v0.2 ユーザー承認**（次の確認ポイント）
+- [x] **本ステップ計画書 v0.2 ユーザー承認 (commit `ce7ef00`)**
+- [x] **3B.1 着手前事前調査 + ユーザー判断 T1〜T3 確定（2026-05-27）**:
+  - T1 = (A) 都度評価 (ホットパスで evaluator.EvaluateDifficulty を呼ぶ、Phase 1 セマンティクス維持)
+  - T2 = (A) Block 重複は OtherContains 走査で削除整合性 (O(K×M)、シンプル、メモリ増なし)
+  - T3 = (A) Difficulty 重複は List から RemoveAll で削除整合性
+- [ ] **本ステップ計画書 v0.3 ユーザー承認**（次の確認ポイント）
 - [ ] 3B.1 着手前事前調査 → ユーザー判断（必要なら T1〜T3 等）→ 計画書 v0.2
 - [ ] 3B.1 完了 → ユーザー確認 → commit
 - [ ] 3B.2 着手前事前調査 → ユーザー判断（必要なら T4〜T5）→ 計画書 v0.3
@@ -433,3 +474,4 @@ private double EvaluateConstraintFactor(uint from, uint to, IReadOnlyList<GeoCoo
 | --- | --- | --- |
 | v0.1 | 2026-05-27 | 初版起草（着手前事前調査 + ユーザー判断 Q1〜Q4 確定、3A 全体完了直後） |
 | v0.2 | 2026-05-27 | 3B 効果測定方針 Q5〜Q7 確定追記。§1 Done 判定 9 追加、§2.4 Q5〜Q7 追記、§4.5 を A/B/C 3 サブパート構成に拡張（A 統合テスト / B `RouteWithConstraintsBenchmark` 3 モード改修 + ベンチ実測 / C 設計書 §4 反映）、§5 リスク 3B-R8 / 3B-R9 追加、§6 テスト件数表更新、§7 着手前確認に Q5〜Q7 確定追加 |
+| v0.3 | 2026-05-27 | 3B.1 着手前事前調査 + ユーザー判断 T1〜T3 確定追記。§4.1 を 4.1.1 事前調査結果 / 4.1.2 採用設計 / 4.1.3 Done 基準 に分割、Cache クラスの最終 API を確定、単体テスト 7 件の内訳確定（602 件 pass 目標）、§7 着手前確認に T1〜T3 確定追加 |
