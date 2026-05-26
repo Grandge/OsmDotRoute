@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3A: ランタイム `.odrg` 読込実装 計画書
 
-**ステータス**: ドラフト v0.8（v0.7 commit `f573c08` + 3A.3 全体完了後、3A.4 着手前事前調査で `ItineroSnapper.EdgeIndex.SearchClosestEdges` が存在しない事実（Router.Resolve 一本のみ）+ AABB 型が 3 系統 + NativeRoadGraph に R-tree アクセサー未実装 を発見、ユーザー判断 6 件 (Q1-Q6) で対応方針確定、2026-05-26）
+**ステータス**: ドラフト v0.9（v0.8 commit `7ee84e4` + 3A.4 完了 commit `78d4581` (559 件 pass) 後、3A.5 着手前事前調査で計画書 §4.5 と現状コードのギャップ 6 件を発見 (GeoMath 不在 / IRoadProfile 架空 / Itinero 突合不可能 / スコープ大 等)、ユーザー判断 8 件 (Q1-Q8) で対応方針確定、2026-05-26）
 **対応ステップ**: Phase 3 ステップ 3A（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 3 最大リスク要因）
 **対応要件**: REQ-MAP-005（`.odrg` ランタイム読込）、REQ-NFR-003（経路 1 本あたりアロケート削減の土台）
 **関連文書**:
@@ -297,6 +297,32 @@ var tags = itineroGraph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
 | **Q6: テスト 8 件内訳** | **(1) R-tree アクセサー sanity / (2) Query 全包含 / (3) Query 範囲外 / (4) Query × 50 ランダム Brute-force 突合 / (5) Query overrun / (6) Nearest k=1 Brute-force 一致 / (7) Nearest k=10 Brute-force 集合一致 / (8) ノード構造 sanity (リーフフラグ + 子参照規約)** | (B) Nearest k=1/5/10 (9 件に拡張、計画書 §4.4 の 8 件枠超過)、(C) Query 中心 6 件 + Nearest 軽量 2 件 (Nearest 検証薄め、却下) |
 
 **距離単位の補足 (Q5)**: 点-AABB 最小距離は「経緯度の 2D euclidean 距離 (度単位)」を採用する。理由は (1) R-tree 枝刈りロジック自体が経緯度平面上の比較で動くため決定的一致が取りやすい、(2) k 候補絞り込み目的のため真値（Haversine メートル）は不要、(3) 3A.5 NativeRoadSnapper でメートル単位のシェイプ距離計算を行うため二重計算回避。
+
+### 2.11 3A.5 着手前の事前調査結果（2026-05-26、v0.9 起草時）
+
+3A.4 完了 (commit `78d4581`、559 件 pass) 後、3A.5 (NativeRoadSnapper 実装) 着手前に既存 IRoadSnapper / Router / GeoMath 関連を実地調査し、計画書 v0.8 §4.5 と現状コードのギャップ 6 件を特定。
+
+| # | 発見 | 影響 |
+| --- | --- | --- |
+| S1 | **`GeoMath` ヘルパは存在しない** (`src/OsmDotRoute/Geometry/` を Glob しても 0 件、`PointToSegment` / `ClosestPoint` を Grep しても 0 件) | 計画書 §4.5「Phase 1 既存 `GeoMath.PointToSegmentDistance` 流用」は架空の前提。距離計算 / 点-線分最短距離 / 投影 t 値計算をすべて新規実装が必要 |
+| S2 | **`IRoadProfile` インターフェース不在** (3A.3a で同じ問題、`ProfileEvaluator` に確定済): 計画書 §4.5「`Snap(double lat, double lon, IRoadProfile profile, double maxDistanceMeters)`」シグネチャは架空 | 現 [`IRoadSnapper.cs:8-20`](../src/OsmDotRoute/Routing/IRoadSnapper.cs#L8-L20) の `Snap(string profileName, GeoCoordinate point, float searchDistanceM)` シグネチャを Native も維持する必要 |
+| S3 | **profileName → プロファイル評価の仲介パスは Native では二択**: Native は [`NativeRoadGraph.cs:272-308`](../src/OsmDotRoute/Native/NativeRoadGraph.cs#L272-L308) の `EvaluateByEdgeId` で `BakedProfileEntry.Flags` から直接 CanPass 判定可能 | ProfileEvaluator 経由 vs NativeRoadGraph 直アクセスの選択肢 (Q2 で確定) |
+| S4 | **計画書 §4.5 Done 基準「Itinero とエッジ ID 完全一致 + 座標 ±1e-7 度 + t 値 ±1e-6」は技術的に不可能**: 3A.4 Q2 と同根の問題、`.odrg` と Itinero RouterDb はエッジ ID 独立採番 (3A.3f P1 で既出)。さらに [`ItineroSnapper.cs:42`](../src/OsmDotRoute.Itinero/ItineroSnapper.cs#L42) `Router.Resolve` は Itinero 内部の補間ロジックで座標を返すため、Native と Itinero でエッジ分割位置が異なれば座標一致も false negative リスク | Done 基準の代替方式が必要 (Q4 で確定) |
+| S5 | **3A.5 はスコープが非常に大きい**: GeoMath 新設 + NativeRoadSnapper 本体 + プロファイル仲介 + maxDistance 度換算 + Offset セマンティクス + 計画書旧記述 183 件テスト | サブステップ分割を検討すべき (Q1 で確定) |
+| S6 | **`Router.SnapToRoad` は [`Router.cs:42, 45, 68`](../src/OsmDotRoute/Router.cs) で `_routerDb.Snapper.Snap(profile.Name, point, searchDistanceM)` を呼出**: 統合 API は `string profileName` 一本 | `NativeRoadSnapper` もこの契約に従い、Phase 1 Router を未改造で再利用可能にする |
+
+### 2.12 3A.5 着手前ペンディング判断（2026-05-26、v0.9 起草時に確定）
+
+| 論点 | 確定案 | 不採用案 |
+| --- | --- | --- |
+| **Q1: 3A.5 サブステップ分割** | **分割**: 3A.5a (`GeoMath` 新設 + 単体テスト) → 3A.5b (`NativeRoadSnapper` + 基本テスト + Brute-force 突合)。各段で `dotnet test` 全 pass 維持、ロールバック容易 | (B) 1 段で進める (3A.4 と同じパターンだが GeoMath 追加で規模超過、却下) |
+| **Q2: profileName → プロファイル評価の仲介** | **(B) NativeRoadGraph 経由で profileName → BAKED_PROFILE スロット直読**。`NativeRoadGraph` に `internal bool CanPass(uint edgeId, string profileName)` を追加 (内部実装は `EvaluateByEdgeId` 流用、`BakedProfileEntry.Flags & 0x01` の判定のみ取出)。ProfileEvaluator 不要、ホットパス最適 | (A) NativeRoadSnapper コンストラクタで `Dictionary<string, ProfileEvaluator>` 受ける (Native では使わない型を経由、却下)、(C) Snap 時に毎回 ProfileEvaluator 渡す (IRoadSnapper 破壊変更、却下) |
+| **Q3: GeoMath ヘルパ配置** | **(A) `src/OsmDotRoute/Geometry/GeoMath.cs` 新設** (`internal static class`)。3C で Itinero 側も同ヘルパを使う可能性あり (リスク R5 対応)。既存 [`NativeRoadGraph.cs:407-418`](../src/OsmDotRoute/Native/NativeRoadGraph.cs#L407-L418) `HaversineMeters` も `GeoMath` に移動し重複排除 | (B) `Native/NativeGeoMath.cs` (Native 専用、将来 Geometry へリレイヤリング必要、却下)、(C) NativeRoadSnapper 内 private (単体テスト不可、却下) |
+| **Q4: Done 基準** | **Brute-force 突合に変更** (3A.4 Q2 と同パターン): Native = R-tree 候補 + GeoMath 詳細計算、Brute-force = 全エッジに対する点-線分最短距離計算 → 同じエッジ ID と t 値を返す。Itinero 突合は 3A.6 で経路結果一致として担保 | (B) Native 自己整合のみ (R-tree と GeoMath の正確性を上位コンポーネントテストに委ねる、却下)、(C) Itinero スナップ点と座標 ±N 度の緩い一致 (Itinero 内部分割位置差で false negative リスク、却下) |
+| **Q5: maxDistance (m) → 検索 bbox 度換算式** | **緯度依存近似**: `dLat = m / 111320`、`dLon = m / (111320 × cos(lat))`。津島市 (lat ≈ 35) で `dLon = m / 91200` 程度。WGS84 平均半径ベースの近似で実装軽量、`ItineroSnapper.Snap` の `searchDistanceM` と実効同等 | (B) WGS84 楕円体厳密 (Bowring 式、過剰、却下)、(C) 固定 `m / 111000` 緯度補正なし (高緯度でスナップ漏れリスク、却下) |
+| **Q6: SnapResult.Offset (ushort 0..65535) の意味** | **エッジ全長に対する累積距離比 × 65535** (Itinero 互換、`IRoadSnapper.cs:28` XML doc の「0=From、65535=To」と一致): `Offset = (ushort)Math.Round(累積距離メートル / エッジ全長メートル × 65535)` | (B) シェイプ点間 t × 65535 (シェイプ点分布が不均一なとき距離比とずれる、却下) |
+| **Q7: GeoMath の点-線分最短距離 平面化手法** | **緯度補正コサイン (局所メートル平面)**: `x = (lon - lon0) × cos(lat0) × R`、`y = (lat - lat0) × R` (R = 6371008.8m WGS84 平均半径)。エッジ単位 (最大 30m 程度) で誤差サブ cm。シェイプ 1 本ごとに `cos(lat0)` を 1 回計算してセグメント間で使い回し | (B) Haversine だけ (点-線分の球面公式は複雑でバグ生みやすい、却下)、(C) 生経緯度を x/y として 2D euclidean (lat=35° で経度方向 18%超 不足、却下) |
+| **Q8: テスト 8+12=20 件構成 (累計 559 → 579)** | **(A) 提案 A**: 3A.5a (GeoMath) 8 件 = Haversine 2 / 点-線分距離 3 (端点/線分内/外側) / 投影 t 3 (0/0.5/1)。3A.5b (NativeRoadSnapper) 12 件 = コンストラクタ 1 / 頂点上 1 / エッジ中央 1 / 通行不可除外 1 / 検索半径超過 null 1 / 範囲外 null 1 / bbox 拡張 1 / Brute-force ×50 ランダム 1 / Offset 単調性 1 / From/To 端点 2 / Dispose 後例外 1 | (B) 30 件 (重複多い)、(C) 14 件 (回帰検知力低い) |
 
 ---
 
@@ -712,30 +738,127 @@ Q6 確定の 8 件:
 
 ---
 
-### 4.5 3A.5: `NativeRoadSnapper` 実装（`IRoadSnapper` 実装）
+### 4.5 3A.5: `NativeRoadSnapper` 実装（`IRoadSnapper` 実装、v0.9 で 3A.5a / 3A.5b に分割）
 
-**実装**:
+**前提**: §2.11 / §2.12 ユーザー判断 8 件確定済 (Q1 分割 / Q2 NativeRoadGraph 直アクセス / Q3 Geometry/GeoMath.cs 新設 / Q4 Brute-force 突合 / Q5 緯度依存近似 / Q6 距離比 × 65535 / Q7 緯度補正コサイン / Q8 8+12=20 件)。
 
-- `NativeRoadSnapper : IRoadSnapper`（`src/OsmDotRoute/Native/`、`public sealed class`）
-- コンストラクタ: `NativeRoadSnapper(NativeRoadGraph graph)`（graph 経由で MMF ハンドル / R-tree 参照、独自 MMF は持たない）
-- メソッド: `SnapResult Snap(double lat, double lon, IRoadProfile profile, double maxDistanceMeters)`、内部処理は以下の順序：
-    1. 緯度経度から検索 bbox を生成（maxDistanceMeters → 度換算）
-    2. `NativeRTreeQuery.Query` で候補エッジ ID 集合取得
-    3. 各候補エッジのシェイプを `graph.GetEdgeShape(edgeId)` で取得
-    4. シェイプ上の各セグメントへの垂線最短距離を計算（Phase 1 既存 `GeoMath.PointToSegmentDistance` 流用）
-    5. profile 評価で通行可能なエッジのみフィルタ
-    6. 最短のエッジ ID + シェイプ内位置 t 値 + スナップ点座標を `SnapResult` で返却
+---
 
-**Done 基準**:
+#### 4.5.1 3A.5a: `GeoMath` ヘルパ新設 + 単体テスト 8 件
 
-- 津島市 89 ペア × 2 端点 = 178 スナップで、`ItineroSnapper` と
-  - エッジ ID 完全一致
-  - スナップ点座標 ±1e-7 度（≒1cm）以内
-  - シェイプ内 t 値 ±1e-6 以内
-- 解決失敗ケース（maxDistance 内に車道なし）でも `ItineroSnapper` と同じ判定
-- xUnit テスト 178 + 解決失敗 5 = 183 件
+**作業**:
 
-**リスク**: `ItineroSnapper` 内部の距離計算が二乗近似 / 球面近似で `NativeRoadSnapper` の正確計算と微差が出る可能性。対処として **`ItineroSnapper` の距離計算ロジックを Phase 1 と同じ式で `NativeRoadSnapper` に移植**（コピーではなく、`GeoMath` ヘルパを共有）。
+- 新規 `src/OsmDotRoute/Geometry/GeoMath.cs` (`internal static class`):
+
+  ```csharp
+  internal static class GeoMath
+  {
+      /// <summary>WGS84 平均半径 (m)。</summary>
+      public const double EarthRadiusMeters = 6371008.8;
+
+      /// <summary>2 点間の Haversine 大圏距離 (m)。</summary>
+      public static double HaversineMeters(GeoCoordinate a, GeoCoordinate b);
+
+      /// <summary>maxDistance (m) → 緯度依存 bbox 度幅 (dLat, dLon)。Q5 確定式。</summary>
+      public static (double DLat, double DLon) MetersToBboxDegrees(double meters, double lat);
+
+      /// <summary>
+      /// クエリ点と線分 (a-b) の最短距離 (m) + 線分上の投影点 + 線分上での t 値 [0..1] を返す。
+      /// 平面化は緯度補正コサイン (Q7 確定式)。線分長 0 のときは a 自身に投影 (t=0)。
+      /// </summary>
+      public static (double DistanceM, GeoCoordinate Projected, double T)
+          PointToSegment(GeoCoordinate query, GeoCoordinate a, GeoCoordinate b);
+  }
+  ```
+
+- 既存 [`NativeRoadGraph.cs:407-418`](../src/OsmDotRoute/Native/NativeRoadGraph.cs#L407-L418) `HaversineMeters` (private static) を `GeoMath.HaversineMeters` に置換。`NativeRoadGraph.GetOrComputeDistance` 内呼出を 1 行追従
+
+**Done 基準 (3A.5a 完了時)**:
+
+- 8 件全 pass、累計 559 + 8 = **567 件 pass**
+- ビルド 0 Warning / 0 Error
+- `NativeRoadGraph` の `HaversineMeters` 内部メソッドが消えており、`GeoMath.HaversineMeters` を呼んでいる
+
+**追加テスト 8 件 (`tests/OsmDotRoute.Tests/Geometry/GeoMathTests.cs`、新規)**:
+
+1. `HaversineMeters_SamePoint_ReturnsZero`: 同一座標で 0
+2. `HaversineMeters_KnownPair_MatchesReferenceValue`: 東京駅 (35.681236, 139.767125) ↔ 大阪駅 (34.702485, 135.495951) で約 403km ± 1km (参考値突合、緩い精度で OK)
+3. `PointToSegment_QueryOnEndpointA_ReturnsZeroDistanceAndT0`: query == a で distance=0, t=0
+4. `PointToSegment_QueryOnEndpointB_ReturnsZeroDistanceAndT1`: query == b で distance=0, t=1
+5. `PointToSegment_QueryOnSegmentMidpoint_ReturnsZeroDistanceAndT05`: query が線分中央で distance=0, t=0.5
+6. `PointToSegment_QueryOutsideSegmentBeforeA_ClampsToA`: 線分前方延長線上の点で t=0 (a に投影)
+7. `PointToSegment_QueryPerpendicularToMidpoint_ReturnsPerpendicularDistance`: 線分中央から垂直方向に既知距離移動、distance が一致
+8. `PointToSegment_DegenerateSegment_ZeroLength_ReturnsDistanceToA`: a == b のときは a までの Haversine 距離、t=0
+
+**commit メッセージ案**: `feat: Phase 3 ステップ 3A.5a GeoMath ヘルパ新設 (Haversine + MetersToBboxDegrees + PointToSegment、567 件 pass)`
+
+---
+
+#### 4.5.2 3A.5b: `NativeRoadSnapper` 実装 + 基本テスト + Brute-force 突合 12 件
+
+**事前作業 (3A.5b-0): `NativeRoadGraph` に CanPass API 追加**
+
+- [`src/OsmDotRoute/Native/NativeRoadGraph.cs`](../src/OsmDotRoute/Native/NativeRoadGraph.cs): 追加
+
+  ```csharp
+  /// <summary>
+  /// 指定プロファイルでエッジが通行可能か判定する (Phase 3 ステップ 3A.5b、Q2 確定)。
+  /// BAKED_PROFILE Flags ビット 0 直読、ProfileEvaluator 経由なし。
+  /// </summary>
+  internal bool CanPass(uint edgeId, string profileName);
+  ```
+
+  内部実装は `EvaluateByEdgeId` の `CanPass` 部分のみ抽出 (Forward/Backward は通行可否判定では不問、方向制限は経路探索層で処理)。
+
+**実装 (3A.5b-1): `NativeRoadSnapper`**
+
+- 配置: `src/OsmDotRoute/Native/NativeRoadSnapper.cs`（新規、`internal sealed class : IRoadSnapper`）
+- フィールド: `NativeRoadGraph _graph`、`uint[] _buffer = new uint[1024]` (Query 結果一時バッファ、Snap 呼出のたびに再利用、必要に応じて拡張)
+- コンストラクタ `NativeRoadSnapper(NativeRoadGraph graph)`: graph を保持、Dispose 不要 (graph のライフタイムに従属)
+- メソッド `SnapResult? Snap(string profileName, GeoCoordinate point, float searchDistanceM)`:
+  1. `searchDistanceM <= 0` または `string.IsNullOrWhiteSpace(profileName)` → `null`
+  2. `_graph._profileSlotByName.ContainsKey(profileName)` 検証、未登録なら `null`
+  3. `var (dLat, dLon) = GeoMath.MetersToBboxDegrees(searchDistanceM, point.Latitude)`
+  4. `var qbox = new OdrgBbox(point.Longitude - dLon, point.Latitude - dLat, point.Longitude + dLon, point.Latitude + dLat)`
+  5. `int hits = NativeRTreeQuery.Query(_graph.GetRTreeNodes(), _graph.RTreeRootIndex, _graph.GetEdgeAabbs(), qbox, _buffer)`、overrun (hits > buffer.Length) なら buffer を 2 倍化して再クエリ
+  6. 候補エッジ各々について:
+     - `if (!_graph.CanPass(edgeId, profileName)) continue;` (通行不可除外)
+     - エッジの完全シェイプ (From 頂点 + 中間シェイプ + To 頂点) を取得
+     - 各セグメントに対し `GeoMath.PointToSegment` で最短距離 + 投影点 + t 値を計算
+     - 各セグメントの最短結果のうち最小距離のもの (グローバル最短) を保持: `bestEdgeId`, `bestSegmentIndex`, `bestT`, `bestDist`, `bestProjected`
+  7. 全候補について `bestDist > searchDistanceM` なら `null` (検索半径外)
+  8. `bestEdgeId` のエッジ全長と `bestSegmentIndex/bestT` から累積距離を計算し、`Offset = (ushort)Math.Round(累積距離 / エッジ全長 × 65535)` (Q6)
+  9. `return new SnapResult(bestProjected, bestEdgeId, Offset);`
+
+**完全シェイプ取得**: シェイプ点 0 件のエッジ (From-To 直結) も From / To 頂点だけで 1 セグメントとして扱う。`graph.GetVertex(edge.FromVertexId)` + `graph.GetEdgeShape(edgeId)` (中間点) + `graph.GetVertex(edge.ToVertexId)` を順に並べた `GeoCoordinate[]` を内部スタックで構築 (新規 `GeoCoordinate[]` 確保は per-Snap 1 本のみ、3E ベンチで Pool 化検討)。
+
+**Done 基準 (3A.5b 完了時)**:
+
+- 12 件全 pass、累計 567 + 12 = **579 件 pass**
+- ビルド 0 Warning / 0 Error
+- Brute-force 突合テスト (Native = R-tree+GeoMath、Brute-force = 全エッジ点-線分最短) で 50 ランダム点 × エッジ ID + Offset (誤差許容 ±1) 一致
+
+**追加テスト 12 件 (`tests/OsmDotRoute.Tests/Native/NativeRoadSnapperTests.cs`、新規)**:
+
+1. `Constructor_AcceptsGraph_DoesNotThrow`: コンストラクタ単体
+2. `Snap_VertexCoordinate_ReturnsNearbyEdge`: 頂点座標を入力、SnapResult != null + Location が頂点近傍 (< 10m)
+3. `Snap_EdgeMidpoint_ReturnsThatEdge`: あるエッジの中央点を入力、bestEdgeId がそのエッジ
+4. `Snap_PedestrianOnlyEdge_WithCarProfile_FiltersOut`: 歩行者専用エッジ近傍を Car プロファイルで Snap、別のエッジ (車道) が選ばれるか null
+5. `Snap_SearchDistanceTooSmall_ReturnsNull`: 道路から十分離れた点、searchDistanceM=1m → null
+6. `Snap_PointFarOutsideBounds_ReturnsNull`: 範囲外 (北緯 89 度) → null
+7. `Snap_NearBoundary_BboxExpansionFindsEdge`: 道路から半径ぎりぎりの距離 (searchDistance × 0.9) で見つかる
+8. `Snap_FiftyRandomPoints_MatchesBruteForceEdgeIdAndOffset` (Done 基準本体): 固定シード 50 点、Native と Brute-force (全エッジ点-線分最短) で `bestEdgeId` 一致 + `Offset` ±1 (丸め誤差許容)
+9. `Snap_TwoCloseQueries_OffsetMonotonicAlongEdge`: 同じエッジ上で位置を少しずらした 2 点を Snap、Offset が単調増加 (エッジ方向に沿った進行)
+10. `Snap_QueryAtFromVertex_OffsetIsNearZero`: From 頂点座標で Snap → Offset ≈ 0
+11. `Snap_QueryAtToVertex_OffsetIsNearMax`: To 頂点座標で Snap → Offset ≈ 65535
+12. `Snap_DisposedGraph_ThrowsObjectDisposedException`: graph を Dispose 後に Snap 呼出 → `ObjectDisposedException`
+
+**commit メッセージ案**: `feat: Phase 3 ステップ 3A.5b NativeRoadSnapper 実装 (R-tree候補 + GeoMath 詳細計算 + Brute-force 突合、579 件 pass)`
+
+**リスク (3A.5b)**:
+
+- Snap 結果のオフセット計算で `Math.Round` 丸め誤差で Brute-force と ±1 ずれる可能性 → テスト 8 で `Offset` 比較は ±1 許容
+- 同距離タイのエッジが複数存在する場合、選ばれるエッジが Brute-force と異なる可能性 → テスト 8 では「最小距離値が一致 + bestEdgeId が候補のいずれかに含まれる」緩和も検討、まずは固定シードで重複なしを目指す
 
 ---
 
@@ -812,8 +935,9 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | ~~3A.3d~~ | ~~0~~ | ~~既存テスト追従最終確認~~ | v0.5 で 3A.3b に統合 |
 | 3A.3e | 3 | NativeRoadGraph 構築 / 頂点読出 / Dispose の sanity check | ✅ 3 件 (commit `4549633`、542 件 pass) |
 | 3A.3f | 9 | OdrgReader 真値突合: 頂点 100 / エッジ 100 / Shape 50 / GetEdgeShape 50 / キャッシュ 1 / 評価 API 50×2 × 2 / エラー 2 (v0.7 で Itinero 突合不可能と判明、OdrgReader 突合に絞り再定義) | ✅ 9 件 (551 件 pass) |
-| 3A.4 | 8 | (v0.8 で内訳確定 Q6) R-tree アクセサー sanity / Query 全包含 / Query 範囲外 / Query × 50 ランダム Brute-force 突合 / Query overrun / Nearest k=1 / Nearest k=10 / ノード構造 sanity | |
-| 3A.5 | 183 | `NativeRoadSnapper` 178 + 解決失敗 5 | |
+| 3A.4 | 8 | (v0.8 で内訳確定 Q6) R-tree アクセサー sanity / Query 全包含 / Query 範囲外 / Query × 50 ランダム Brute-force 突合 / Query overrun / Nearest k=1 / Nearest k=10 / ノード構造 sanity | ✅ 8 件 (commit `78d4581`、559 件 pass) |
+| 3A.5a | 8 | (v0.9 で分割 Q1/Q8) GeoMath 単体: Haversine 2 / 点-線分距離 3 / 投影 t 3 | |
+| 3A.5b | 12 | (v0.9 で分割 Q8) NativeRoadSnapper: コンストラクタ 1 / 頂点上 1 / エッジ中央 1 / 通行不可除外 1 / 検索半径超過 null 1 / 範囲外 null 1 / bbox 拡張 1 / Brute-force ×50 ランダム 1 / Offset 単調性 1 / From/To 端点 2 / Dispose 後例外 1 | |
 | 3A.6 | 178 | 89 ペア × 2 実装 経路パリティ | |
 | **合計** | **394** | （Phase 2 累計 526 → Phase 3 3A 完了時 920） | 累計 539 → 920 想定 |
 
@@ -864,8 +988,19 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
   - Q4 = **ヒット総数を返し buffer.Length まで書込** (overrun は呼出側検出)
   - Q5 = **点-AABB 最小距離** (経緯度 2D euclidean、度単位、R-tree 枝刈り規約と一致)
   - Q6 = **テスト 8 件内訳確定** (R-tree アクセサー sanity / Query 全包含 / Query 範囲外 / Query × 50 Brute-force / Query overrun / Nearest k=1 / Nearest k=10 / ノード構造)
-- [ ] 本ステップ計画書 v0.8 ユーザーレビュー → 承認
-- [ ] 3A.4 (STR R-tree クエリ) 着手
+- [x] **本ステップ計画書 v0.8 ユーザー承認** (commit `7ee84e4`)
+- [x] **3A.4 完了** (commit `78d4581`、559 件 pass、計画書 v0.8 §4.4-B からの軽微な逸脱: Query にも edgeAabbs を渡してリーフ展開時に true-positive filter を実施)
+- [x] 3A.5 着手前事前調査 → §2.11 / §2.12 整理、ユーザー判断 8 件確定 (2026-05-26):
+  - Q1 = **3A.5a / 3A.5b に分割** (GeoMath 単体 + NativeRoadSnapper)
+  - Q2 = **NativeRoadGraph 経由で profileName → BAKED_PROFILE スロット直読** (ProfileEvaluator 経由しない)
+  - Q3 = **`src/OsmDotRoute/Geometry/GeoMath.cs` 新設** (`internal static class`、Haversine + MetersToBboxDegrees + PointToSegment)
+  - Q4 = **Brute-force 突合に変更** (3A.4 Q2 と同パターン、Itinero 突合は 3A.6 担当)
+  - Q5 = **緯度依存近似** (dLat = m/111320、dLon = m/(111320 × cos(lat)))
+  - Q6 = **Offset = 距離比 × 65535** (Itinero 互換)
+  - Q7 = **緯度補正コサイン** (局所メートル平面、x = (lon-lon0) × cos(lat0) × R)
+  - Q8 = **テスト 8+12=20 件** (累計 559 → 579)
+- [ ] 本ステップ計画書 v0.9 ユーザーレビュー → 承認
+- [ ] 3A.5a (GeoMath ヘルパ新設) 着手
 
 ---
 
@@ -877,6 +1012,7 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 0.2 (draft) | 2026-05-26 | v0.1 ユーザー承認 (commit `b27be51`) 後、3A.1 着手前の現状確認で発見した訂正を反映：(1) §2.4 セクション構成表を実装確認済の 9 セクション (VERTEX / EDGE / EDGE_SHAPE / EDGE_AABB / EDGE_FLAG 独立 / SPATIAL_INDEX / BAKED_PROFILE / TURN_RESTRICTION / METADATA) に訂正、v0.1 の誤記 (PROFILE_BAKE / STRING_POOL、flags が EDGE 内、`バージョン 0x0002`) を訂正。(2) §3.1 スコープ内に「OdrgFormat を Extractor → Core へ移動」を前提リファクタとして追加（依存方向 Core ← Pbf ← Extractor のため）。(3) §4.1 (3A.1) を「ステップ 0: OdrgFormat Core 移動 / ステップ 1: OdrgSectionDirectory 実装」に分割、検証条件を `VersionMajor == 1` / `edgeFlagBytes == 2` / `sectionCount == 9` に具体化、参照真値を `OdrgReader.Read` に統一 | Claude (Opus 4.7) |
 | 0.3 (draft) | 2026-05-26 | 3A.1 完了 (commit `fb6cd45`) / 3A.2 完了 (commit `279a6ec`) 後、3A.3 着手前の `IRoadGraph` 依存連鎖調査で発見した重大な設計問題を反映：(1) §2.5 追加 = `.odrg` には OSM タグ生データなし → `NativeRoadGraph.GetEdgeOsmTags` 実装不可、`IRoadGraph` 改修必須。ユーザー判断 B 案 (3A.3 で `IRoadGraph` 改修込み) 確定。(2) §2.6 追加 = 着手前ペンディング判断 §3A.3-API 起票 (新評価 API シグネチャ a/b/c)、推奨 (a) `EdgeEvaluation EvaluateEdge`。(3) §4.3 を B 案サブステップ詳細 3A.3a〜3A.3f に全面書き直し（API 改修案ドラフト / `ItineroRoadGraph` 追従 / `EdgeWeightCalculator` 内部置換 / 既存テスト追従 / `NativeRoadGraph` 新規 / テスト 12 件）。各サブステップで `dotnet test` 全 pass 維持。(4) §5 リスク表に 3A-R7 (改修で既存テスト破壊) / 3A-R8 (新 API がホットパス不適合) 追加。(5) §6 テスト件数表に 3A.3 サブステップ分割反映 + 3A.1/3A.2 実績反映 (5+8、累計 539)。(6) §7 着手前確認事項を v0.3 用に更新。3A.1〜3A.2 完了済をチェック、§3A.3-API 確定 + v0.3 承認をペンディング | Claude (Opus 4.7) |
 | 0.4 (draft) | 2026-05-26 | v0.3 ユーザー承認 (commit `eb1431c`) + §3A.3-API (a) ユーザー判断確定後、3A.3a 成果物を反映：(1) §2.6 確定マーク追記。(2) §2.6.1 追加 = (a) 案 確定後の詳細シグネチャ。3A.3a 着手時の現状確認で `IRoadProfile` 不在（v0.3 §2.6 の架空型）/ `ProfileEvaluator.Name` 未公開を発見、確定シグネチャを `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` に補正。`ProfileEvaluator.Name` プロパティ追加方針 + `EdgeWeightCalculator` 改修コード骨格 + `IRoadGraphEdgeEnumerator.EdgeProfileIndex` の扱い (保持、3C で廃止検討) も決定。(3) §2.6.2 追加 = 既存テスト 5 ファイル `GetEdgeOsmTags` 直呼び 6 箇所 (本番 2 + テスト 4) の grep 結果 + 改修方針表。(4) §7 着手前確認事項を v0.4 用に更新、3A.3a 完了済をチェック、v0.4 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
+| 0.9 (draft) | 2026-05-26 | v0.8 commit `7ee84e4` + 3A.4 完了 commit `78d4581` (559 件 pass) 後、3A.5 着手前事前調査で計画書 v0.8 §4.5 と現状コードのギャップ 6 件を発見 (§2.11 新設): S1 `GeoMath` ヘルパ完全不在 (計画書「Phase 1 既存流用」は架空) / S2 `IRoadProfile` 不在 (3A.3a 同様、現 IRoadSnapper 維持必要) / S3 profileName → ProfileEvaluator 仲介は二択 (経由 or NativeRoadGraph 直アクセス) / S4 Itinero との ID 一致 + 座標一致 Done 基準は技術的不可能 (3A.4 Q2 と同根) / S5 3A.5 スコープが GeoMath 新設で 3A.3 並み / S6 `Router.SnapToRoad` は profileName 一本で統合済。これに対するペンディング判断 8 件 (§2.12) をユーザー判断確定 (2026-05-26): Q1 サブステップ分割 = **3A.5a (GeoMath) / 3A.5b (NativeRoadSnapper) 分割** / Q2 profile 仲介 = **NativeRoadGraph 経由直アクセス** (ProfileEvaluator 不要) / Q3 GeoMath 配置 = **`src/OsmDotRoute/Geometry/GeoMath.cs` 新設** / Q4 Done 基準 = **Brute-force 突合に変更** (Itinero 突合は 3A.6 担当) / Q5 度換算 = **緯度依存近似** (dLat = m/111320、dLon = m/(111320 × cos(lat))) / Q6 Offset = **距離比 × 65535** (Itinero 互換) / Q7 平面化 = **緯度補正コサイン** / Q8 テスト = **3A.5a 8件 + 3A.5b 12件 = 20件** (累計 559 → 579)。§4.5 を v0.9 で 3A.5a / 3A.5b に分割詳細化: 4.5.1 GeoMath 新設 + 既存 NativeRoadGraph.HaversineMeters 統合 + テスト 8 件 / 4.5.2 NativeRoadGraph.CanPass 追加 + NativeRoadSnapper 本体 + Snap 6 ステップ + テスト 12 件 (Brute-force 突合本体含む)。§6 テスト件数表で 3A.5 を 3A.5a/3A.5b に分割 + 3A.4 実績マーク ✅。§7 着手前確認事項を v0.9 用に更新、3A.4 完了 + ユーザー判断 8 件確定をチェック、v0.9 承認 + 3A.5a 着手をペンディング | Claude (Opus 4.7) |
 | 0.8 (draft) | 2026-05-26 | v0.7 commit `f573c08` (3A.3f 完了、551 件 pass、3A.3 全体完了) 後、3A.4 着手前事前調査で計画書 v0.7 §4.4 と現状コードのギャップ 5 件を発見 (§2.9 新設): G1 R-tree 書出/読出/Core struct 完全対称 (`MemoryMarshal.Cast` 可) / G2 AABB 型 3 系統 (Geometry.Aabb / Extractor.Aabb / OdrgBbox) / G3 `ItineroSnapper.EdgeIndex.SearchClosestEdges` 不在 (Router.Resolve 一本のみ、ID 独立採番と 2 重で突合不可) / G4 `NativeRoadGraph` に R-tree アクセサー未実装 / G5 計画書 8 件テストの内訳未確定。これに対するペンディング判断 6 件 (§2.10) をユーザー判断確定 (2026-05-26): Q1 入力 bbox 型 = **OdrgBbox** (Lon-Lat、wire format 一致) / Q2 Nearest Done 基準 = **Brute-force 突合に変更** (Itinero 突合は 3A.5/3A.6 で経路結果一致として担保) / Q3 R-tree API 配置 = **NativeRoadGraph に internal API 追加** / Q4 overrun = **ヒット総数返し buffer.Length まで書込** / Q5 Nearest 距離 = **点-AABB 最小距離** (経緯度 2D euclidean 度単位) / Q6 テスト 8 件内訳確定 (R-tree アクセサー sanity / Query 全包含 / 範囲外 / × 50 Brute-force / overrun / Nearest k=1 / k=10 / ノード構造)。§4.4 を v0.8 詳細化: 4.4-A 事前作業 (NativeRoadGraph R-tree アクセサー追加) + 4.4-B 実装 (NativeRTreeQuery static class、Query / Nearest シグネチャ、明示スタック DFS + best-first Nearest + 点-AABB 最小距離計算式) + 4.4-C テスト 8 件詳細。§6 テスト件数表で 3A.4 行に内訳追記。§7 着手前確認事項を v0.8 用に更新、3A.3 全体完了 + ユーザー判断 6 件確定をチェック、v0.8 承認 + 3A.4 着手をペンディング | Claude (Opus 4.7) |
 | 0.7 (draft) | 2026-05-26 | v0.6 ユーザー承認 (commit `a952efc`) + 3A.3e 完了 (commit `4549633`、542 件 pass) 後、3A.3f 着手前調査で **.odrg と Itinero RouterDb の頂点 ID / エッジ ID が独立採番**で Itinero との ID ベース突合は不可能と判明、ユーザー判断 4 件 (2026-05-26) で対応方針確定: P1 突合対象 = OdrgReader 真値のみ (Itinero 突合は 3A.6 で経路結果一致として担保) / P2 評価 API = BakedProfileEntry と一致 (Itinero タグ評価は Phase 2 で証明済み) / P3 エラー = 未開封 path + マジック改竄 2 件 / P4 サンプル = 頂点 100 / エッジ 100 / Shape 50 / 評価 50×2 profile。§4.3.6 を OdrgReader 真値突合 9 件版に再定義: GetVertex / GetEdgeEnumerator 反転 / GetEdge Shape / GetEdgeShape Span / キャッシュ動作 (Assert.Same) / EvaluateEdge en × Car/Pedestrian / EvaluateEdge RoadEdge × Car/Pedestrian / 未開封 path / マジック改竄。§6 テスト件数表で 3A.3e/3A.3f 実績マーク + ✅。§7 着手前確認事項を v0.7 用に更新、v0.6 承認 + 3A.3e 完了 + ユーザー判断 4 件確定 + 3A.3f 完了をチェック、v0.7 承認 + 3A.4 着手をペンディング | Claude (Opus 4.7) |
 | 0.6 (draft) | 2026-05-26 | v0.5 ユーザー承認 (commit `10a2038`) + 3A.3b 完了 (commit `c46a2ca`、539 件 pass 維持) 後、3A.3e 着手前事前調査で `.odrg` / Itinero / 各実装の発見 5 件を整理 (§2.7 新設): F1 EDGE は頂点グループ化されていない → CSR インデックス必要 / F2 edgeCount は無向辺数 (仕様書 §1 表記の誤り、Itinero と数値一致) / F3 EDGE_SHAPE は中間点のみ (Itinero と一致) / F4 GeoCoordinate(Lat,Lon) と OdrgVertex(Lon,Lat) のフィールド順が逆 (直 Span 化不可) / F5 tsushima.odrg = 3.55 MB 確認。これに対するペンディング判断 4 件を §2.8 で起票 + ユーザー判断確定: L1 CSR (`firstOutEdge: uint[V+1]` + `OutEdgeEntry[2E]`) 採用 / L5 IRoadGraph に `GetEdgeShape(uint) -> ReadOnlySpan<GeoCoordinate>` 追加 + IRoadGraph : IDisposable 化 / L6 NativeEdgeEnumerator は class 毎回 new (Itinero と同じ) / L8 3A.3e で sanity 3 件 + 3A.3f で 9 件 (累計 12 件)。L2 EdgeCount セマンティクス / L3 Shape 端点扱い / L4 GeoCoordinate レイアウト / L7 Dispose 後アクセスは推奨案通り。§4.3.5 3A.3e を v0.6 詳細化: 事前作業 (IRoadGraph.GetEdgeShape 追加 + IRoadGraph : IDisposable 化 + Itinero 追従) + 実装 (NativeRoadGraph 全フィールド + コンストラクタ + IRoadGraph 全メソッド) + NativeEdgeEnumerator 詳細 + DistanceM 計算 (Haversine + キャッシュ) + sanity test 3 件。§4.3.6 3A.3f を 9 件版に再配分。§6 テスト件数表で 3A.3e の 0→3 件、3A.3f の 12→9 件に補正 + 累計 542/551 に補正。§7 着手前確認事項を v0.6 用に更新、v0.5 承認 + 3A.3b 完了 + ユーザー判断 4 件確定をチェック、v0.6 承認 + 3A.3e 着手をペンディング | Claude (Opus 4.7) |
