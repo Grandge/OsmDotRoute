@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3A: ランタイム `.odrg` 読込実装 計画書
 
-**ステータス**: ドラフト v0.7（v0.6 ユーザー承認 commit `a952efc` + 3A.3e 完了 commit `4549633` 後、3A.3f 着手前調査で `.odrg` と Itinero RouterDb の頂点 ID / エッジ ID 体系不一致を発見、Itinero 突合は ID ベースで不可能と判明、ユーザー判断 4 件 (P1-P4) で OdrgReader 真値突合に絞り 9 件のテストを再定義、3A.3f 完了、2026-05-26）
+**ステータス**: ドラフト v0.8（v0.7 commit `f573c08` + 3A.3 全体完了後、3A.4 着手前事前調査で `ItineroSnapper.EdgeIndex.SearchClosestEdges` が存在しない事実（Router.Resolve 一本のみ）+ AABB 型が 3 系統 + NativeRoadGraph に R-tree アクセサー未実装 を発見、ユーザー判断 6 件 (Q1-Q6) で対応方針確定、2026-05-26）
 **対応ステップ**: Phase 3 ステップ 3A（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 3 最大リスク要因）
 **対応要件**: REQ-MAP-005（`.odrg` ランタイム読込）、REQ-NFR-003（経路 1 本あたりアロケート削減の土台）
 **関連文書**:
@@ -272,6 +272,31 @@ var tags = itineroGraph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
 | **L6: NativeEdgeEnumerator 型** | **class、毎回 new** (Itinero と同じ実装パターン)。Phase 1 §18.4 の 77 MB アロケート主因は `Route.Shape` の List コピーで、Enumerator alloc は微々たるもの。Pool 化は 3E ベンチで必要性が見えたら 3C で検討 | (B) class + Pool (実装複雑化、効果限定的)、(C) struct で boxing 許容 (結局 alloc 発生、意味薄い) |
 | **L7: Dispose 後アクセス** | **`ObjectDisposedException`** (既存 `OdrgMmfHandle.ThrowIfDisposed()` パターン踏襲) | - |
 | **L8: 3A.3e / 3A.3f テスト分割** | **3A.3e で sanity 3 件 (構築 / 頂点読出 / Dispose) + 3A.3f で残り 9 件 (エッジ列挙 / Shape / 評価 API / エラーケース、計画書 v0.5 §6 の 12 件から再配分)**。3A.3e 完了時に途中達成を sanity check で検証 | (B) 3A.3e は 0 件、3A.3f で 12 件一括 (途中状態のテスト未到達、計画書 v0.5 §6 通りだが品質保証が後ろ倒し) |
+
+### 2.9 3A.4 着手前の事前調査結果（2026-05-26、v0.8 起草時）
+
+3A.3 全体完了 (commit `f573c08`、551 件 pass) 後、3A.4 (STR R-tree クエリ実装) 着手前に R-tree 関連コードを実地調査し、計画書 v0.7 §4.4 と現状コードのギャップ 5 件を特定。
+
+| # | 発見 | 影響 |
+| --- | --- | --- |
+| G1 | **R-tree レイアウト書出 / 読出 / Core struct が完全に対称**: [`OdrgWriter.cs:145-162`](../src/OsmDotRoute.Extractor/Pipeline/OdrgWriter.cs#L145-L162) (ヘッダ 16 byte + ノード 56 byte) ↔ [`OdrgReader.cs:270-303`](../src/OsmDotRoute.Extractor/Pipeline/OdrgReader.cs#L270-L303) ↔ [`OdrgSections.cs:38-45`](../src/OsmDotRoute/Internal/Odrg/OdrgSections.cs#L38-L45) `OdrgRTreeNode` (56 byte、`OdrgBbox` 32B + FirstChildIndex u32 + ChildCount u32 + Flags u32 + Reserved 12B) | `MemoryMarshal.Cast<byte, OdrgRTreeNode>` で直 Span 化が可能。書出側 `RTreeNode.LeafFlagBit = 1u << 0` 規約と完全一致 |
+| G2 | **AABB 型が 3 系統存在**: `OsmDotRoute.Geometry.Aabb` (`GeoCoordinate` × 2、Lat-Lon 順、`Intersects` / `Contains` / `Union` 等のメソッド付き)、`OsmDotRoute.Extractor.Pipeline.Aabb` (double × 4、Lon-Lat 順、Extractor アセンブリ専用)、`OsmDotRoute.Internal.Odrg.OdrgBbox` (double × 4、Lon-Lat 順、Core 内 wire format 互換) | Core (OsmDotRoute) で `NativeRTreeQuery` の入力 bbox 型をどれにするかの設計判断が必要 (`Extractor.Pipeline.Aabb` は依存方向上 Core から参照不可) |
+| G3 | **`ItineroSnapper.EdgeIndex.SearchClosestEdges` は存在しない**: [`ItineroSnapper.cs:42`](../src/OsmDotRoute.Itinero/ItineroSnapper.cs#L42) は `_router.Resolve(profile, lat, lon, searchDistanceM)` 一本のみで、Itinero 内部の `EdgeIndex` 直接呼出は未使用。加えて 3A.3f P1 と同様に `.odrg` と Itinero RouterDb のエッジ ID は独立採番のため、ID ベース集合一致は二重の意味で不可能 | 計画書 v0.7 §4.4 Done 基準「最近傍 k=10 が `ItineroSnapper.EdgeIndex.SearchClosestEdges` と集合一致」は技術的不成立。突合方式を再定義する必要 |
+| G4 | **`NativeRoadGraph` に R-tree アクセサー未実装**: [`NativeRoadGraph.cs:34-58`](../src/OsmDotRoute/Native/NativeRoadGraph.cs#L34-L58) は VERTEX / EDGE / EDGE_SHAPE / BAKED_PROFILE のセクションオフセットしか抽出していない。SPATIAL_INDEX セクション (kind 0x0006) は未参照、ヘッダ 16 byte (NodeCount/RootIndex/Branching/Height) もパースされていない | 3A.4 で `NativeRoadGraph` への R-tree アクセサー追加が必要。`NativeRTreeQuery` (static) はこれを通じて R-tree ノード列にアクセス |
+| G5 | **計画書 v0.7 §4.4「xUnit テスト 8 件」の内訳が未確定**: Done 基準として「ブルートフォース AABB 線形走査と完全一致 (38,004 エッジ × 50 ランダム bbox)」「最近傍 k=10 が Itinero と集合一致」の 2 件のみ明示、残り 6 件は未定 | テスト 8 件の内訳を v0.8 で確定し実装方針と一致させる必要 |
+
+### 2.10 3A.4 着手前ペンディング判断（2026-05-26、v0.8 起草時に確定）
+
+| 論点 | 確定案 | 不採用案 |
+| --- | --- | --- |
+| **Q1: NativeRTreeQuery 入力 bbox 型** | **`OdrgBbox` (Lon-Lat 順、Internal.Odrg 既存型)**。Wire format と完全一致、`MemoryMarshal.Cast` でゼロコピー、API 一貫性高い | (B) `Geometry.Aabb` (Lat-Lon、ライブラリ標準型だが Lon-Lat 詰替が毎回発生)、(C) double 4 引数 (型なし、シグネチャわかりにくい) |
+| **Q2: Nearest API の Done 基準** | **Brute-force 突合に変更** (3A.3f P1 と同じパターン)。Nearest k=10 を `EDGE_AABB` 全走査による点-AABB 最小距離 Brute-force k=10 と集合一致で検証。Itinero 突合 (スナップ点座標一致) は 3A.5 NativeRoadSnapper / 3A.6 89 ペア経路パリティで担保 | (B) Nearest を 3A.4 では実装せず 3A.5 内に統合 (R-tree クエリ機能の単体テスト不可となる、却下)、(C) Itinero Router.Resolve 単一結果との k=1 座標一致 (.odrg と RouterDb のエッジ分割位置差で false negative リスク、却下) |
+| **Q3: R-tree セクション読出 API 配置** | **`NativeRoadGraph` に internal API 追加**: `internal ReadOnlySpan<OdrgRTreeNode> GetRTreeNodes()` + `internal uint RTreeRootIndex` + `internal uint RTreeBranchingFactor` + `internal uint RTreeHeight`。コンストラクタで SPATIAL_INDEX セクションのオフセット抽出 + ヘッダ 16 byte パースを追加 | (B) `OdrgRTreeView` 型新設 (型を増やさずに対応可能、却下)、(C) `NativeRTreeQuery` を instance class 化して MMF ハンドルを保持 (計画書 §4.4 の `internal static class` 規約から逸脱、却下) |
+| **Q4: バッファあふれ挙動** | **ヒット総数を返し、`buffer.Length` まで書いて超過分は棄てる**。呼出側は戻り値 > `buffer.Length` で overrun 検出 + バッファ拡大 + 再クエリ。NativeRoadSnapper は maxDistance に応じた初期サイズ見積もりが可能 | (B) 書いた件数だけ返し overrun 不検出 (シンプルだが呼出側が overrun に気付けない、却下)、(C) overrun 時に例外 (ホットパスで例外コストが乗る、却下) |
+| **Q5: Nearest の「距離」定義** | **点-AABB 最小距離 (=点が AABB 内なら 0、外なら矩形境界への euclidean 距離)**。R-tree の枝刈り (点-ノード AABB 最小距離) と一致するため Brute-force と決定的に同一値を返す。3A.5 NativeRoadSnapper はこの k 候補を受けてシェイプ距離計算で再ソート | (B) AABB 中心点距離 (R-tree 枝刈りと不一致で Brute-force と決定的同一にならない、却下)、(C) AABB 4 頂点 + 中心 5 点最小 (処理重く Brute-force と一致取りにくい、却下) |
+| **Q6: テスト 8 件内訳** | **(1) R-tree アクセサー sanity / (2) Query 全包含 / (3) Query 範囲外 / (4) Query × 50 ランダム Brute-force 突合 / (5) Query overrun / (6) Nearest k=1 Brute-force 一致 / (7) Nearest k=10 Brute-force 集合一致 / (8) ノード構造 sanity (リーフフラグ + 子参照規約)** | (B) Nearest k=1/5/10 (9 件に拡張、計画書 §4.4 の 8 件枠超過)、(C) Query 中心 6 件 + Nearest 軽量 2 件 (Nearest 検証薄め、却下) |
+
+**距離単位の補足 (Q5)**: 点-AABB 最小距離は「経緯度の 2D euclidean 距離 (度単位)」を採用する。理由は (1) R-tree 枝刈りロジック自体が経緯度平面上の比較で動くため決定的一致が取りやすい、(2) k 候補絞り込み目的のため真値（Haversine メートル）は不要、(3) 3A.5 NativeRoadSnapper でメートル単位のシェイプ距離計算を行うため二重計算回避。
 
 ---
 
@@ -589,30 +614,101 @@ v0.4 §4.3.2 では「3A.3b は IF + ItineroRoadGraph + テスト追従のみ、
 
 ---
 
-### 4.4 3A.4: STR R-tree クエリ実装
+### 4.4 3A.4: STR R-tree クエリ実装 (v0.8 で詳細化)
 
-**実装**:
+**前提**: §2.9 / §2.10 ユーザー判断 6 件確定済 (Q1 OdrgBbox / Q2 Brute-force 突合 / Q3 NativeRoadGraph に internal API / Q4 ヒット総数返却 / Q5 点-AABB 最小距離 / Q6 テスト 8 件内訳)。
 
-- `NativeRTreeQuery` 型（`internal static class`）
-- `int Query(ReadOnlySpan<RTreeNode> tree, in EdgeAabb queryBox, Span<int> resultBuffer)` シグネチャ
-  - tree のルートから DFS、子ノードの bbox が queryBox と交差するもののみ再帰
-  - リーフ到達時、エッジ ID を resultBuffer に詰める
-  - 戻り値はヒット数（resultBuffer に書き込んだ要素数）
-- バッファあふれ時の挙動: ヒット数だけ返し、`resultBuffer.Length` を超えるエッジは捨てる（呼出側は再試行）。または `Length` を返して別 API で再クエリを促す
-- 最近傍検索 `int Nearest(ReadOnlySpan<RTreeNode> tree, double lat, double lon, int k, Span<int> resultBuffer)` も同様
+#### 4.4-A 事前作業: `NativeRoadGraph` への R-tree アクセサー追加
 
-**Done 基準**:
+- [`src/OsmDotRoute/Native/NativeRoadGraph.cs`](../src/OsmDotRoute/Native/NativeRoadGraph.cs): 以下を追加
+  - private フィールド: `long _rtreeOffset`、`uint _rtreeNodeCount`、`uint _rtreeRootIndex`、`uint _rtreeBranchingFactor`、`uint _rtreeHeight`
+  - コンストラクタ追加処理: `_directory.FindSection(OdrgFormat.SectionEdgeSpatialIndex)` でセクション取得後、`OdrgFormat.RTreeHeaderSize = 16` byte をパース (NodeCount/RootIndex/Branching/Height u32 × 4 LE) し `_rtreeOffset = sectionOffset + 16` を確定
+  - internal アクセサー:
+    - `internal ReadOnlySpan<OdrgRTreeNode> GetRTreeNodes()`: `_mmf.GetSpan<OdrgRTreeNode>(_rtreeOffset, (int)_rtreeNodeCount)` を返す (Dispose 後は `ObjectDisposedException`)
+    - `internal uint RTreeRootIndex` / `internal uint RTreeBranchingFactor` / `internal uint RTreeHeight` / `internal uint RTreeNodeCount` プロパティ
+  - Done 基準: 既存 551 件 pass 維持 (アクセサー追加のみ、ホットパス未変更)
 
-- 津島市 `.odrg` の R-tree（仕様書 §4.7 STR パック M=16）に対し、任意の bbox クエリでヒットエッジ ID 集合が **ブルートフォース AABB 線形走査と完全一致**（38,004 エッジ × 50 個のランダム bbox クエリ）
-- 最近傍 k=10 クエリで、`ItineroSnapper` 内部の `EdgeIndex.SearchClosestEdges` と同じエッジ ID 集合を返す（順序は問わない、集合一致）
-- xUnit テスト 8 件
+#### 4.4-B 実装: `NativeRTreeQuery`
+
+- 配置: `src/OsmDotRoute/Native/NativeRTreeQuery.cs`（`internal static class`、新規）
+- シグネチャ:
+
+  ```csharp
+  internal static class NativeRTreeQuery
+  {
+      /// <summary>
+      /// 指定 bbox と交差する全エッジ ID を resultBuffer に書き込み、ヒット総数を返す。
+      /// </summary>
+      /// <returns>ヒット総数。戻り値 &gt; resultBuffer.Length の場合は overrun (buffer.Length 件のみ書込済)。</returns>
+      public static int Query(
+          ReadOnlySpan<OdrgRTreeNode> nodes,
+          uint rootIndex,
+          in OdrgBbox queryBox,
+          Span<uint> resultBuffer);
+
+      /// <summary>
+      /// クエリ点に対し点-AABB 最小距離（経緯度 2D euclidean、度単位）の最小 k 件のエッジ ID を返す。
+      /// </summary>
+      /// <returns>実際に書き込んだ件数 (Min(k, ヒット可能数, resultBuffer.Length))。</returns>
+      public static int Nearest(
+          ReadOnlySpan<OdrgRTreeNode> nodes,
+          uint rootIndex,
+          double lon,
+          double lat,
+          int k,
+          Span<uint> resultBuffer);
+  }
+  ```
+
+- アルゴリズム:
+  - **Query**: ルートから明示スタック (`Stack<uint>` または stackalloc `Span<uint>`) で DFS。各ノードの `Bbox` と `queryBox` の交差判定（`OdrgBbox.Intersects` の Lon-Lat 版を `NativeRTreeQuery` 内 private static で実装、struct なので invocation 軽量）。リーフ (`Flags & 1 != 0`) なら `FirstChildIndex` から `ChildCount` 個のエッジ ID を resultBuffer に書込 (overrun は無視して count のみ加算)、内部ノードなら子ノードインデックス `FirstChildIndex..FirstChildIndex+ChildCount` を stack に push
+  - **Nearest**: best-first 優先キュー (`PriorityQueue<uint, double>` または手書き min-heap) でノードを点-AABB 最小距離順に展開。リーフ展開時にエッジ ID + AABB 最小距離を結果ヒープ (max-heap、サイズ k) に投入、結果ヒープが k 件で埋まった後はトップを上回るノードを pruning。最後に結果ヒープを最小距離順に並べて resultBuffer に書込
+  - **点-AABB 最小距離 (経緯度 2D euclidean、度単位)**:
+
+    ```text
+    dx = max(0, max(box.MinLon - lon, lon - box.MaxLon))
+    dy = max(0, max(box.MinLat - lat, lat - box.MaxLat))
+    distance² = dx² + dy²   ← 平方根は最終出力時にだけ取る、内部比較は二乗距離で十分
+    ```
+
+  - 再帰スタック深さ: STR M=16 で 38,004 エッジ → 高さ ≒ 4、都道府県でも 5〜6。本実装は明示スタック (再帰ではない) のため stack overflow リスクなし
+- Done 基準 (4.4-B):
+  - 既存 551 件 pass 維持
+  - ビルド 0 Warning / 0 Error
+  - 後続テスト (4.4-C) 通過
+
+#### 4.4-C 追加テスト 8 件 (`tests/OsmDotRoute.Tests/Native/NativeRTreeQueryTests.cs`、新規)
+
+Q6 確定の 8 件:
+
+1. **`Constructor_LoadsTsushimaOdrg_ExposesRTreeAccessors`**: `NativeRoadGraph` 構築後、`RTreeNodeCount > 0`、`RTreeRootIndex < NodeCount`、`RTreeBranchingFactor == 16`、`RTreeHeight >= 1`、`GetRTreeNodes().Length == NodeCount`
+2. **`Query_FullBoundsBbox_ReturnsAllEdgeIds`**: HEADER.Bbox をそのまま queryBox に渡して全 38,004 エッジが返る（重複なし、`HashSet<uint>` で集合化して `Count == EdgeCount`）
+3. **`Query_OutOfBoundsBbox_ReturnsZeroHits`**: 津島市 bbox から十分離れた bbox (例: 北緯 89-90 度) でヒット 0
+4. **`Query_FiftyRandomBboxes_MatchesBruteForceAabb` (Done 基準本体)**: 固定シード (`Random(42)`) で 50 個のランダム bbox (HEADER.Bbox 内の 0.1-30% サイズ)、各クエリで `NativeRTreeQuery.Query` 結果と `EDGE_AABB` セクション全走査 (各 AABB と queryBox の交差判定) で得た集合が完全一致 (`HashSet<uint>` 比較)
+5. **`Query_BufferOverrun_ReturnsTotalHitsAndWritesUpToBufferLength`**: 全包含 bbox に対し `Span<uint>(stackalloc uint[10])` を渡し、戻り値 `== 38004`、buffer の最初 10 要素は有効エッジ ID（範囲チェックのみ）
+6. **`Nearest_K1_MatchesBruteForceMinimumDistance`**: 津島市内ランダム 1 点 (固定シード)、k=1、Brute-force = 全 EDGE_AABB に対し点-AABB 最小距離計算し最小エッジを抽出 → エッジ ID 一致
+7. **`Nearest_K10_MatchesBruteForceTopTen`**: 同様に k=10、Brute-force 上位 10 と集合一致 (順序不問)。同距離タイ発生時は受容: テストは「Brute-force 上位 10 の距離値の最大」を取り、Native 結果の k 件すべてがその距離以下であることを assert（厳密一致は数値誤差で破綻リスクあるため）
+8. **`RTreeNodeStructure_LeafFlagAndChildReferenceContract_Holds`**: ルートから全ノード走査し以下を検証:
+   - 各ノードの `IsLeaf = (Flags & 1) != 0`
+   - リーフノードなら `FirstChildIndex + ChildCount <= EdgeCount` (子はエッジ ID 連続)
+   - 内部ノードなら `FirstChildIndex + ChildCount <= NodeCount` (子は子ノードインデックス連続)
+   - 全リーフのエッジ ID 和集合 == `{0, 1, ..., EdgeCount-1}` (パーティション規約)
+
+**Done 基準 (3A.4 完了時)**:
+
+- 8 件全 pass
+- 累計 551 + 8 = **559 件 pass** 想定
+- `dotnet build` 0 Warning / 0 Error
+- Done 基準本体 (テスト 4) で 50 ランダム bbox の Brute-force 完全一致 → R-tree 実装の正確性を統計的に担保
+
+**commit メッセージ案**: `feat: Phase 3 ステップ 3A.4 STR R-tree クエリ実装 (NativeRTreeQuery + NativeRoadGraph R-tree アクセサー追加、559 件 pass)`
 
 **設計判断**:
 
-- 再帰スタック深さ制限: STR M=16 で 38,004 エッジ → 木の高さ ≒ ceil(log_16(38004)) = 4。深さ制限不要
-- 都道府県単位（数百万エッジ）でも高さ ≒ 5〜6、深さ制限不要（3G で確認）
+- 再帰スタック深さ制限: STR M=16 で 38,004 エッジ → 木の高さ ≒ ceil(log_16(38004)) = 4。深さ制限不要、ただし明示スタック (`Stack<uint>` または stackalloc) で実装し将来の都道府県データ (高さ 5〜6) でも stack overflow リスクなし
+- `OdrgRTreeNode` の `MemoryMarshal.Cast<byte, OdrgRTreeNode>` 直 Span 化: G1 で書出 / 読出 / Core struct 完全対称を確認済、ゼロコピーで R-tree ノード列を取得可能
 
-**リスク**: R-tree レイアウトの読み違い。対処として Phase 2 `OdrgWriter.WriteRTreeSection` の書出ロジックを逐条で対比し、ノード構造体を完全互換にする。
+**リスク**: R-tree レイアウトの読み違い。対処として §2.9 G1 で書出 ([`OdrgWriter.cs:145-162`](../src/OsmDotRoute.Extractor/Pipeline/OdrgWriter.cs#L145-L162)) / 読出 ([`OdrgReader.cs:270-303`](../src/OsmDotRoute.Extractor/Pipeline/OdrgReader.cs#L270-L303)) / Core struct ([`OdrgSections.cs:38-45`](../src/OsmDotRoute/Internal/Odrg/OdrgSections.cs#L38-L45)) の完全対称を実地確認済。テスト 4 (50 ランダム bbox Brute-force 一致) で実データ突合により最終担保。
 
 ---
 
@@ -716,7 +812,7 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | ~~3A.3d~~ | ~~0~~ | ~~既存テスト追従最終確認~~ | v0.5 で 3A.3b に統合 |
 | 3A.3e | 3 | NativeRoadGraph 構築 / 頂点読出 / Dispose の sanity check | ✅ 3 件 (commit `4549633`、542 件 pass) |
 | 3A.3f | 9 | OdrgReader 真値突合: 頂点 100 / エッジ 100 / Shape 50 / GetEdgeShape 50 / キャッシュ 1 / 評価 API 50×2 × 2 / エラー 2 (v0.7 で Itinero 突合不可能と判明、OdrgReader 突合に絞り再定義) | ✅ 9 件 (551 件 pass) |
-| 3A.4 | 8 | R-tree クエリ正確性 / ブルートフォース突合 | |
+| 3A.4 | 8 | (v0.8 で内訳確定 Q6) R-tree アクセサー sanity / Query 全包含 / Query 範囲外 / Query × 50 ランダム Brute-force 突合 / Query overrun / Nearest k=1 / Nearest k=10 / ノード構造 sanity | |
 | 3A.5 | 183 | `NativeRoadSnapper` 178 + 解決失敗 5 | |
 | 3A.6 | 178 | 89 ペア × 2 実装 経路パリティ | |
 | **合計** | **394** | （Phase 2 累計 526 → Phase 3 3A 完了時 920） | 累計 539 → 920 想定 |
@@ -760,8 +856,15 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
   - P2 = **BakedProfileEntry と一致** (Itinero タグ評価は Phase 2 で証明済み)
   - P3 = **エラーケース 2 件** (未開封 path + マジック改竄)
   - P4 = **サンプル 100 / 100 / 50 / 50×2 profile**
-- [x] **3A.3f 完了** (551 件 pass、3A.3 全体完了)
-- [ ] 本ステップ計画書 v0.7 ユーザーレビュー → 承認
+- [x] **3A.3f 完了** (551 件 pass、3A.3 全体完了、commit `f573c08`)
+- [x] 3A.4 着手前事前調査 → §2.9 / §2.10 整理、ユーザー判断 6 件確定 (2026-05-26):
+  - Q1 = **OdrgBbox 採用** (Lon-Lat、Internal.Odrg 既存型、wire format 一致)
+  - Q2 = **Brute-force 突合に変更** (Itinero 突合は 3A.5/3A.6 で経路結果一致として担保)
+  - Q3 = **NativeRoadGraph に internal API 追加** (`GetRTreeNodes` + `RTreeRootIndex` 等)
+  - Q4 = **ヒット総数を返し buffer.Length まで書込** (overrun は呼出側検出)
+  - Q5 = **点-AABB 最小距離** (経緯度 2D euclidean、度単位、R-tree 枝刈り規約と一致)
+  - Q6 = **テスト 8 件内訳確定** (R-tree アクセサー sanity / Query 全包含 / Query 範囲外 / Query × 50 Brute-force / Query overrun / Nearest k=1 / Nearest k=10 / ノード構造)
+- [ ] 本ステップ計画書 v0.8 ユーザーレビュー → 承認
 - [ ] 3A.4 (STR R-tree クエリ) 着手
 
 ---
@@ -774,6 +877,7 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 0.2 (draft) | 2026-05-26 | v0.1 ユーザー承認 (commit `b27be51`) 後、3A.1 着手前の現状確認で発見した訂正を反映：(1) §2.4 セクション構成表を実装確認済の 9 セクション (VERTEX / EDGE / EDGE_SHAPE / EDGE_AABB / EDGE_FLAG 独立 / SPATIAL_INDEX / BAKED_PROFILE / TURN_RESTRICTION / METADATA) に訂正、v0.1 の誤記 (PROFILE_BAKE / STRING_POOL、flags が EDGE 内、`バージョン 0x0002`) を訂正。(2) §3.1 スコープ内に「OdrgFormat を Extractor → Core へ移動」を前提リファクタとして追加（依存方向 Core ← Pbf ← Extractor のため）。(3) §4.1 (3A.1) を「ステップ 0: OdrgFormat Core 移動 / ステップ 1: OdrgSectionDirectory 実装」に分割、検証条件を `VersionMajor == 1` / `edgeFlagBytes == 2` / `sectionCount == 9` に具体化、参照真値を `OdrgReader.Read` に統一 | Claude (Opus 4.7) |
 | 0.3 (draft) | 2026-05-26 | 3A.1 完了 (commit `fb6cd45`) / 3A.2 完了 (commit `279a6ec`) 後、3A.3 着手前の `IRoadGraph` 依存連鎖調査で発見した重大な設計問題を反映：(1) §2.5 追加 = `.odrg` には OSM タグ生データなし → `NativeRoadGraph.GetEdgeOsmTags` 実装不可、`IRoadGraph` 改修必須。ユーザー判断 B 案 (3A.3 で `IRoadGraph` 改修込み) 確定。(2) §2.6 追加 = 着手前ペンディング判断 §3A.3-API 起票 (新評価 API シグネチャ a/b/c)、推奨 (a) `EdgeEvaluation EvaluateEdge`。(3) §4.3 を B 案サブステップ詳細 3A.3a〜3A.3f に全面書き直し（API 改修案ドラフト / `ItineroRoadGraph` 追従 / `EdgeWeightCalculator` 内部置換 / 既存テスト追従 / `NativeRoadGraph` 新規 / テスト 12 件）。各サブステップで `dotnet test` 全 pass 維持。(4) §5 リスク表に 3A-R7 (改修で既存テスト破壊) / 3A-R8 (新 API がホットパス不適合) 追加。(5) §6 テスト件数表に 3A.3 サブステップ分割反映 + 3A.1/3A.2 実績反映 (5+8、累計 539)。(6) §7 着手前確認事項を v0.3 用に更新。3A.1〜3A.2 完了済をチェック、§3A.3-API 確定 + v0.3 承認をペンディング | Claude (Opus 4.7) |
 | 0.4 (draft) | 2026-05-26 | v0.3 ユーザー承認 (commit `eb1431c`) + §3A.3-API (a) ユーザー判断確定後、3A.3a 成果物を反映：(1) §2.6 確定マーク追記。(2) §2.6.1 追加 = (a) 案 確定後の詳細シグネチャ。3A.3a 着手時の現状確認で `IRoadProfile` 不在（v0.3 §2.6 の架空型）/ `ProfileEvaluator.Name` 未公開を発見、確定シグネチャを `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` に補正。`ProfileEvaluator.Name` プロパティ追加方針 + `EdgeWeightCalculator` 改修コード骨格 + `IRoadGraphEdgeEnumerator.EdgeProfileIndex` の扱い (保持、3C で廃止検討) も決定。(3) §2.6.2 追加 = 既存テスト 5 ファイル `GetEdgeOsmTags` 直呼び 6 箇所 (本番 2 + テスト 4) の grep 結果 + 改修方針表。(4) §7 着手前確認事項を v0.4 用に更新、3A.3a 完了済をチェック、v0.4 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
+| 0.8 (draft) | 2026-05-26 | v0.7 commit `f573c08` (3A.3f 完了、551 件 pass、3A.3 全体完了) 後、3A.4 着手前事前調査で計画書 v0.7 §4.4 と現状コードのギャップ 5 件を発見 (§2.9 新設): G1 R-tree 書出/読出/Core struct 完全対称 (`MemoryMarshal.Cast` 可) / G2 AABB 型 3 系統 (Geometry.Aabb / Extractor.Aabb / OdrgBbox) / G3 `ItineroSnapper.EdgeIndex.SearchClosestEdges` 不在 (Router.Resolve 一本のみ、ID 独立採番と 2 重で突合不可) / G4 `NativeRoadGraph` に R-tree アクセサー未実装 / G5 計画書 8 件テストの内訳未確定。これに対するペンディング判断 6 件 (§2.10) をユーザー判断確定 (2026-05-26): Q1 入力 bbox 型 = **OdrgBbox** (Lon-Lat、wire format 一致) / Q2 Nearest Done 基準 = **Brute-force 突合に変更** (Itinero 突合は 3A.5/3A.6 で経路結果一致として担保) / Q3 R-tree API 配置 = **NativeRoadGraph に internal API 追加** / Q4 overrun = **ヒット総数返し buffer.Length まで書込** / Q5 Nearest 距離 = **点-AABB 最小距離** (経緯度 2D euclidean 度単位) / Q6 テスト 8 件内訳確定 (R-tree アクセサー sanity / Query 全包含 / 範囲外 / × 50 Brute-force / overrun / Nearest k=1 / k=10 / ノード構造)。§4.4 を v0.8 詳細化: 4.4-A 事前作業 (NativeRoadGraph R-tree アクセサー追加) + 4.4-B 実装 (NativeRTreeQuery static class、Query / Nearest シグネチャ、明示スタック DFS + best-first Nearest + 点-AABB 最小距離計算式) + 4.4-C テスト 8 件詳細。§6 テスト件数表で 3A.4 行に内訳追記。§7 着手前確認事項を v0.8 用に更新、3A.3 全体完了 + ユーザー判断 6 件確定をチェック、v0.8 承認 + 3A.4 着手をペンディング | Claude (Opus 4.7) |
 | 0.7 (draft) | 2026-05-26 | v0.6 ユーザー承認 (commit `a952efc`) + 3A.3e 完了 (commit `4549633`、542 件 pass) 後、3A.3f 着手前調査で **.odrg と Itinero RouterDb の頂点 ID / エッジ ID が独立採番**で Itinero との ID ベース突合は不可能と判明、ユーザー判断 4 件 (2026-05-26) で対応方針確定: P1 突合対象 = OdrgReader 真値のみ (Itinero 突合は 3A.6 で経路結果一致として担保) / P2 評価 API = BakedProfileEntry と一致 (Itinero タグ評価は Phase 2 で証明済み) / P3 エラー = 未開封 path + マジック改竄 2 件 / P4 サンプル = 頂点 100 / エッジ 100 / Shape 50 / 評価 50×2 profile。§4.3.6 を OdrgReader 真値突合 9 件版に再定義: GetVertex / GetEdgeEnumerator 反転 / GetEdge Shape / GetEdgeShape Span / キャッシュ動作 (Assert.Same) / EvaluateEdge en × Car/Pedestrian / EvaluateEdge RoadEdge × Car/Pedestrian / 未開封 path / マジック改竄。§6 テスト件数表で 3A.3e/3A.3f 実績マーク + ✅。§7 着手前確認事項を v0.7 用に更新、v0.6 承認 + 3A.3e 完了 + ユーザー判断 4 件確定 + 3A.3f 完了をチェック、v0.7 承認 + 3A.4 着手をペンディング | Claude (Opus 4.7) |
 | 0.6 (draft) | 2026-05-26 | v0.5 ユーザー承認 (commit `10a2038`) + 3A.3b 完了 (commit `c46a2ca`、539 件 pass 維持) 後、3A.3e 着手前事前調査で `.odrg` / Itinero / 各実装の発見 5 件を整理 (§2.7 新設): F1 EDGE は頂点グループ化されていない → CSR インデックス必要 / F2 edgeCount は無向辺数 (仕様書 §1 表記の誤り、Itinero と数値一致) / F3 EDGE_SHAPE は中間点のみ (Itinero と一致) / F4 GeoCoordinate(Lat,Lon) と OdrgVertex(Lon,Lat) のフィールド順が逆 (直 Span 化不可) / F5 tsushima.odrg = 3.55 MB 確認。これに対するペンディング判断 4 件を §2.8 で起票 + ユーザー判断確定: L1 CSR (`firstOutEdge: uint[V+1]` + `OutEdgeEntry[2E]`) 採用 / L5 IRoadGraph に `GetEdgeShape(uint) -> ReadOnlySpan<GeoCoordinate>` 追加 + IRoadGraph : IDisposable 化 / L6 NativeEdgeEnumerator は class 毎回 new (Itinero と同じ) / L8 3A.3e で sanity 3 件 + 3A.3f で 9 件 (累計 12 件)。L2 EdgeCount セマンティクス / L3 Shape 端点扱い / L4 GeoCoordinate レイアウト / L7 Dispose 後アクセスは推奨案通り。§4.3.5 3A.3e を v0.6 詳細化: 事前作業 (IRoadGraph.GetEdgeShape 追加 + IRoadGraph : IDisposable 化 + Itinero 追従) + 実装 (NativeRoadGraph 全フィールド + コンストラクタ + IRoadGraph 全メソッド) + NativeEdgeEnumerator 詳細 + DistanceM 計算 (Haversine + キャッシュ) + sanity test 3 件。§4.3.6 3A.3f を 9 件版に再配分。§6 テスト件数表で 3A.3e の 0→3 件、3A.3f の 12→9 件に補正 + 累計 542/551 に補正。§7 着手前確認事項を v0.6 用に更新、v0.5 承認 + 3A.3b 完了 + ユーザー判断 4 件確定をチェック、v0.6 承認 + 3A.3e 着手をペンディング | Claude (Opus 4.7) |
 | 0.5 (draft) | 2026-05-26 | v0.4 ユーザー承認 (commit `cd661d0`) 後、3A.3b 着手前事前調査で v0.4 §2.6.1 と現状コードのギャップを 3 件発見：(1) `DijkstraEngine.cs:42,46` は `RoadEdge.EdgeProfileIndex` 経由の評価呼出で `en` を持たない (v0.4 単一シグネチャ `EvaluateEdge(en, evaluator)` だけでは呼べない)。(2) `GetEdgeOsmTags(ushort)` 削除後は `EdgeWeightCalculator.Evaluate(ushort)` 内部から新 API を呼ぶ術がなく、v0.4 §4.3.2 で示唆した「案 α (3A.3b で暫定 fall back)」は**技術的に不成立**。(3) テスト 5 ファイル `IsCarHighway(tags["highway"])` ヘルパは `ProfileEvaluator.Evaluate(tags).CanPass` では粒度再現不可。ユーザー判断 3 件確定 (2026-05-26): (a) **RoadEdge オーバーロード追加** = `IRoadGraph.EvaluateEdge` を `(en, evaluator)` + `(RoadEdge, evaluator)` の 2 本に。(b) **Itinero テスト用 extension 新設** = `src/OsmDotRoute.Itinero/ItineroRoadGraphTestExtensions.cs` で `GetEdgeOsmTagsForTest` を提供、テストヘルパは `IsCarHighway` 判定を維持。(c) **案 β (3A.3b/3A.3c/3A.3d 統合) 採用、案 α 不採用**。反映: (1) §2.6.1 確定シグネチャを 2 オーバーロードに訂正、ギャップ発見記述追加。(2) §2.6.2 改修方針表を Itinero extension 経由に訂正、テスト改修パターン明示。(3) §2.6.3 新設 = Itinero テスト用 extension の設計 + InternalsVisibleTo 確認手順 + テスト書換パターン。(4) §4.3.2 を v0.4 3A.3b/c/d 統合版に全面書き直し、作業項目 8 段 + Done 基準 6 段 + v0.4 サブステップ対応表追加。(5) §4.3.3 / §4.3.4 を削除し v0.5 で 3A.3b に統合した旨を明示。(6) §6 テスト件数表で 3A.3c/3A.3d を取り消し線 (3A.3b に統合)、3A.3b の説明を統合版に書き換え、3A.3a 実績マーク。(7) §7 着手前確認事項を v0.5 用に更新、v0.4 承認済 + ユーザー判断 3 件確定をチェック、v0.5 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
