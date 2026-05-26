@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3A: ランタイム `.odrg` 読込実装 計画書
 
-**ステータス**: ドラフト v0.9（v0.8 commit `7ee84e4` + 3A.4 完了 commit `78d4581` (559 件 pass) 後、3A.5 着手前事前調査で計画書 §4.5 と現状コードのギャップ 6 件を発見 (GeoMath 不在 / IRoadProfile 架空 / Itinero 突合不可能 / スコープ大 等)、ユーザー判断 8 件 (Q1-Q8) で対応方針確定、2026-05-26）
+**ステータス**: ドラフト v0.10（v0.9 commit `86d591c` + 3A.5a commit `88d00fe` (567 件 pass) + 3A.5b commit `5a54296` (579 件 pass) 後、3A.6 着手前事前調査で計画書 §4.6 と現状コードのギャップ 6 件を発見 (.routerdb / .odrg 別ソース / Phase 1 既存テストは ±10% 緩い比較 / 89 ペア架空 / IRoadProfile 架空 等)、ユーザー判断 6 件 (Q1-Q6) で対応方針確定、2026-05-26）
 **対応ステップ**: Phase 3 ステップ 3A（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 3 最大リスク要因）
 **対応要件**: REQ-MAP-005（`.odrg` ランタイム読込）、REQ-NFR-003（経路 1 本あたりアロケート削減の土台）
 **関連文書**:
@@ -323,6 +323,31 @@ var tags = itineroGraph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
 | **Q6: SnapResult.Offset (ushort 0..65535) の意味** | **エッジ全長に対する累積距離比 × 65535** (Itinero 互換、`IRoadSnapper.cs:28` XML doc の「0=From、65535=To」と一致): `Offset = (ushort)Math.Round(累積距離メートル / エッジ全長メートル × 65535)` | (B) シェイプ点間 t × 65535 (シェイプ点分布が不均一なとき距離比とずれる、却下) |
 | **Q7: GeoMath の点-線分最短距離 平面化手法** | **緯度補正コサイン (局所メートル平面)**: `x = (lon - lon0) × cos(lat0) × R`、`y = (lat - lat0) × R` (R = 6371008.8m WGS84 平均半径)。エッジ単位 (最大 30m 程度) で誤差サブ cm。シェイプ 1 本ごとに `cos(lat0)` を 1 回計算してセグメント間で使い回し | (B) Haversine だけ (点-線分の球面公式は複雑でバグ生みやすい、却下)、(C) 生経緯度を x/y として 2D euclidean (lat=35° で経度方向 18%超 不足、却下) |
 | **Q8: テスト 8+12=20 件構成 (累計 559 → 579)** | **(A) 提案 A**: 3A.5a (GeoMath) 8 件 = Haversine 2 / 点-線分距離 3 (端点/線分内/外側) / 投影 t 3 (0/0.5/1)。3A.5b (NativeRoadSnapper) 12 件 = コンストラクタ 1 / 頂点上 1 / エッジ中央 1 / 通行不可除外 1 / 検索半径超過 null 1 / 範囲外 null 1 / bbox 拡張 1 / Brute-force ×50 ランダム 1 / Offset 単調性 1 / From/To 端点 2 / Dispose 後例外 1 | (B) 30 件 (重複多い)、(C) 14 件 (回帰検知力低い) |
+
+### 2.13 3A.6 着手前の事前調査結果（2026-05-26、v0.10 起草時）
+
+3A.5b 完了 (commit `5a54296`、579 件 pass) 後、3A.6 (並存パリティ + 設計書 §3 反映) 着手前に既存 `Router.Calculate` / `CalculateRouteTests` / `Phase 3 設計書 §3` を実地調査し、計画書 v0.9 §4.6 と現状コードのギャップ 6 件を特定。
+
+| # | 発見 | 影響 |
+| --- | --- | --- |
+| T1 | **`ParentDefaultRouterDb` (default.routerdb) と `TsushimaOdrg` は別データソース**: [`TestPaths.cs:13`](../tests/OsmDotRoute.Tests/TestData/TestPaths.cs#L13) は親プロ `災害廃棄物処理シミュレーション/Data/Scenarios/default.routerdb`、[`TestPaths.cs:31`](../tests/OsmDotRoute.Tests/TestData/TestPaths.cs#L31) は `samples/Data/tsushima.odrg`。地理エリアが違うため同じペアで両方経路計算しても比較対象にならない | 計画書 v0.9 §4.6「89 ペア × 2 実装 = 178 経路で完全一致」は技術的に不可能 |
+| T2 | **既存 Phase 1 経路テスト (`CalculateRouteTests.cs:62-128`) は ±10% 一致の緩い比較**: `maxPairs: 12` で動的生成、Itinero との総距離 ±10% を 80% 達成で pass。コメントに「完全一致は目指さない」と明記 | 計画書 v0.9 §4.6「頂点列 / 距離 / 時間が完全一致」は **Phase 1 設計と矛盾** |
+| T3 | **計画書 §4.6「89 ペア」は架空数値**: 実態は最大 12 ペア、コードの値は `CollectCarAccessibleVertexPairs(routerDb, maxPairs: 12, minSeparationDeg: 0.01)`。 「89 ペア」「178 ケース」「183 件」等の数値はどこからも導出できない | 件数を計画書から実体に合わせる必要 |
+| T4 | **`tsushima_extract.osm.pbf` (約 13MB) は存在**: [`TestPaths.cs:21`](../tests/OsmDotRoute.Tests/TestData/TestPaths.cs#L21)。これから Itinero RouterDb を fixture で生成すれば津島スコープで Itinero/Native 比較が可能になる選択肢が存在（採用可否は Q1 で確定） | 大論点 |
+| T5 | **`IRoadProfile` 計画書記述は架空** (3A.5 S2 と同じ): 計画書 §4.6 fixture `IRoadProfile CarProfile` は架空、`VehicleProfile.Car` を使う | 自明訂正 |
+| T6 | **`RouterDb(IRoadGraph, IRoadSnapper)` コンストラクタは internal** ([`RouterDb.cs:15`](../src/OsmDotRoute/RouterDb.cs#L15)): `InternalsVisibleTo("OsmDotRoute.Tests")` 経由でテストから直接構築可能 → Phase 1 既存 `Router.Calculate` を Native 系で再利用できる、DI 拡張 (3C スコープ) 不要 | Native Router 構築の道筋確定 |
+| T7 | **Phase 3 設計書 §3 は全項目「未記述」のテンプレ枠**: [`phase3_design.md:142-173`](phase3_design.md) (3.1 意図 / 3.2 採用設計 / 3.3 設計判断 / 3.4 トレードオフ / 3.5 検証方法 / 3.6 実装メモ) 全 6 項目に「（未記述）」 | 3A.6 で全 6 項目を肉付けが必要 |
+
+### 2.14 3A.6 着手前ペンディング判断（2026-05-26、v0.10 起草時に確定）
+
+| 論点 | 確定案 | 不採用案 |
+| --- | --- | --- |
+| **Q1: テストデータソース** | **(B) Native 自己整合のみ、Itinero 突合廃止**。tsushima.odrg のみ使い Native 経路計算の不変量を検証。Itinero との並存証明は **Phase 1 既存 526 件全 pass** が継続している事実で代替する (Itinero 系統は本ステップで一切触らない) | (A) tsushima_extract.osm.pbf から Itinero 生成 (fixture 5-15 秒、エッジ ID 採番独立で頂点列一致不可、却下)、(C) 独立テスト (連携テストなしで完了判定根拠弱い、却下) |
+| **Q2: Done 基準** | **Native 単体経路計算の不変量検証**: tsushima.odrg + NativeRoadGraph + NativeRoadSnapper で経路計算を行い、(a) 結果が返る (b) 起点・終点頂点が想定範囲 (c) 距離 > 0 (d) 逆向きほぼ同距離 等の不変量を検証。これにより「Native 経由でも Router が破綻なく動く」ことを担保 | (B) Brute-force Dijkstra 参照実装 (Phase 1 Dijkstra と二重実装、却下)、(C) Smoke のみ 10 件 (Done 基準弱すぎ、却下) |
+| **Q3: テスト件数表 178 件記口** | **(A) 178 → 16 件に記口**。累計 579 → 595。Phase 1 既存 Itinero 526 件は Native 並走なし、Native 系のみで 16 件 | (B) 178 件維持 (Itinero 突合 89 ペア × 2 の元意味が崩れている、却下)、(C) 0 件 (Native Router 統合証明なし、却下) |
+| **Q4: 設計書 §3 反映の範囲** | **(A) 3A.6 で設計書 §3 の全 6 サブセクションを一括記述** (3.1 意図 / 3.2 採用設計 / 3.3 設計判断の根拠 / 3.4 トレードオフ・制約 / 3.5 検証方法 / 3.6 実装メモ)。コード変更と設計書反映を 1 commit で同期 | (B) 設計書反映を 3B/3C へ送る (3A 完了判定が宙ぶらりん、却下)、(C) 3A.6a (テスト) + 3A.6b (設計書) 分割 (コミット件数増、却下) |
+| **Q5: テスト 16 件内訳** | **smoke 5 + 不変量 8 + RouterDb コンストラクタ 2 + fixture sanity 1 = 16**。 Smoke 5: 同点 / 短距離 / 中距離 / from 範囲外 null / to 範囲外 null。 不変量 8: 距離正 / 頂点列先頭が起点近傍 / 末尾が終点近傍 / 直線距離 ≤ 経路距離 / シェイプ点列非空 / 逆向き同距離 ±2% / 同入力決定性 / RouteSegment 連続性 (前 To = 後 From)。 RouterDb 2: 正常構築 / null ArgumentNullException。 fixture sanity 1: NativeRouterDbFixture 初期化で例外なし | (B) 20 件 (重複多い)、(C) 最低 12 件 (チェックポイント薄い) |
+| **Q6: NativeRouterDb fixture 化** | **NativeRouterDbFixture 新設し IClassFixture で共有**。`NativeRoadGraph` + `NativeRoadSnapper` + `RouterDb` + `Router` インスタンスを 1 度作って 16 件で使い回す。`NativeAndOdrgReaderFixture` とは独立 (OdrgReader Truth ロードは 3A.6 で不要) | (B) 既存 fixture 拡張 (Truth 不要なロードコスト)、(C) fixture 不使用 (~30ms 余計 + シンプル) |
 
 ---
 
@@ -862,47 +887,96 @@ Q6 確定の 8 件:
 
 ---
 
-### 4.6 3A.6: 並存パリティテスト + 設計書 §3 反映
+### 4.6 3A.6: Native 自己整合テスト + 設計書 §3 反映 (v0.10 で再定義)
 
-**実装**:
+**前提**: §2.13 / §2.14 ユーザー判断 6 件確定済 (Q1 Native 自己整合のみ / Q2 不変量検証 / Q3 16 件 / Q4 設計書一括 / Q5 内訳 / Q6 fixture 化)。
 
-- `tests/OsmDotRoute.Tests/NativeRoadGraphParityTests.cs`（新規）
-- xUnit `[Theory]` + `[MemberData(nameof(Pair89Cases))]` で 89 ペアを `IRoadGraph` 別に流す
-- fixture: `IClassFixture<NativeAndItineroGraphFixture>` で `.odrg` と `.routerdb` を同時ロード、テストクラス共有
-- 各ペアで以下を完全一致 assert:
-  - 経路頂点列（int[]、Itinero / Native で同一頂点 ID 列）
-  - 経路総距離（double、±1e-6 m）
-  - 経路総所要時間（double、±1e-6 秒）
+#### 4.6-A NativeRouterDbFixture 新設
 
-**fixture 構造**:
+- 新規 `tests/OsmDotRoute.Tests/Native/NativeRouterDbFixture.cs` (`public sealed class : IDisposable`):
+  - `NativeRoadGraph Graph` (tsushima.odrg をロード)
+  - `NativeRoadSnapper Snapper`
+  - `OsmDotRoute.RouterDb RouterDb` (`internal` コンストラクタを `InternalsVisibleTo` 経由で呼出)
+  - `Router Router` (Phase 1 公開 API)
+  - `Dispose()` で Graph.Dispose()
 
-```csharp
-public sealed class NativeAndItineroGraphFixture : IDisposable
-{
-    public ItineroRoadGraph ItineroGraph { get; }
-    public NativeRoadGraph NativeGraph { get; }
-    public ItineroSnapper ItineroSnapper { get; }
-    public NativeRoadSnapper NativeSnapper { get; }
-    public IRoadProfile CarProfile { get; }
-    // ...
-}
-```
+#### 4.6-B 自己整合テスト 16 件 (`tests/OsmDotRoute.Tests/Native/NativeRouterIntegrationTests.cs`、新規)
 
-**Done 基準**:
+**Smoke 5 件 (Native Router が破綻なく経路を返すこと)**:
 
-- 89 ペア × 2 実装 = 178 テスト全 pass
-- 1 件でも頂点列 / 距離 / 時間が不一致なら fail（許容差は浮動小数演算の数値誤差レベルのみ）
-- 解決失敗が両実装で同じケース集合になる
-- xUnit テスト 178 件（fail 0）
+1. `Calculate_SamePoint_ReturnsTinyRoute`: 同一頂点座標で経路、`TotalDistanceM < 50m` (Phase 1 既存 `Calculate_SamePoint_ReturnsTrivialOrTinyRoute` と同じ判定)
+2. `Calculate_ShortDistance_ReturnsRoute`: 100m 程度離れた 2 点で経路が返る
+3. `Calculate_MediumDistance_ReturnsRoute`: 1km 程度離れた 2 点で経路が返る
+4. `Calculate_FromOutsideBounds_ReturnsNull`: 起点が範囲外 (N89 度等) で null
+5. `Calculate_ToOutsideBounds_ReturnsNull`: 終点が範囲外で null
 
-**設計書 §3 反映内容**:
+**不変量 8 件 (経路結果の数学的整合性)**:
 
-- アーキテクチャ図（`OdrgMmfHandle` / `OdrgSectionDirectory` / `OdrgSpanView` / `NativeRoadGraph` / `NativeRoadSnapper` / `NativeRTreeQuery` の関係）
-- `IRoadGraph.GetEdgeShape` の API 仕様（`ReadOnlySpan<GeoCoordinate>`、Span ライフタイムは `NativeRoadGraph.Dispose()` 呼出までと明記）
-- MMF 解放方針（ユーザー判断 #21 (b) 反映、`SafeHandle` 系の CriticalFinalizer 動作説明）
-- 並存パリティテスト 178 ケースの根拠と運用（3C で `ItineroRoadGraph` 撤去まで CI で常時実行）
+6. `Route_TotalDistanceIsPositive`: 中距離経路で `TotalDistanceM > 0`
+7. `Route_FirstShapePointNearStart`: `Shape[0]` が起点から < 600m (スナップ半径 500m + 余裕)
+8. `Route_LastShapePointNearEnd`: `Shape[^1]` が終点から < 600m
+9. `Route_StraightLineDistanceLeqRouteDistance`: 起点→終点直線距離 ≤ 経路総距離
+10. `Route_ShapeIsNotEmpty`: シェイプ点列が非空
+11. `Route_ReverseDirectionApproximatelySameDistance`: from→to と to→from の距離が ±2% (一方通行影響でやや乖離許容)
+12. `Route_DeterministicForSameInput`: 同じ from/to で 2 回計算、TotalDistanceM が完全一致
+13. `Route_SegmentConnectivity`: `RouteSegment` 列で前 segment の `To` == 後 segment の `From` (RouteSegment が存在する場合)
 
-**最終 commit メッセージ案**: `feat: Phase 3 ステップ 3A 完了 (NativeRoadGraph + NativeRoadSnapper 並存パリティ)`
+**RouterDb コンストラクタ 2 件**:
+
+14. `RouterDb_ConstructWithNativeGraphAndSnapper_DoesNotThrow`: 正常構築
+15. `RouterDb_NullArguments_ThrowsArgumentNullException`: null IRoadGraph / null IRoadSnapper で `ArgumentNullException`
+
+**Fixture sanity 1 件**:
+
+16. `Fixture_Initializes_WithoutException`: fixture コンストラクタが例外を投げない (`new NativeRouterDbFixture()` が成功)
+
+**Done 基準 (4.6-B)**:
+
+- 16 件全 pass、累計 579 + 16 = **595 件 pass**
+- ビルド 0 Warning / 0 Error
+- Phase 1 既存 526 件 (Itinero 系) は変更なし、全 pass を維持 (Native 並存証明の代替)
+
+#### 4.6-C 設計書 §3 全 6 サブセクション肉付け
+
+[`Documents/phase3_design.md`](phase3_design.md) §3 を「（未記述）」プレースホルダから本実装に基づく内容に置換:
+
+- **3.1 意図**: REQ-MAP-005 ([`requirement_definition.md`](requirement_definition.md)) 「`.odrg` ランタイム読込」の Phase 3 段階での実装。Phase 1 比 0.48× 性能維持 + 経路 1 本あたり 77MB アロケート削減土台 (REQ-NFR-003)
+- **3.2 採用設計**: アーキテクチャ図 (text-art)
+  - `OdrgMmfHandle` (MMF + SafeHandle ラッパ) → `OdrgSectionDirectory` (HEADER + SECTION TABLE) → `NativeRoadGraph` (CSR + ゼロコピー Span) → `NativeRoadSnapper` (R-tree + GeoMath) ↔ `NativeRTreeQuery` (Query + Nearest) ↔ `GeoMath` (Haversine + PointToSegment)
+- **3.3 設計判断の根拠**: ユーザー判断確定一覧 (#21 MMF=SafeHandle ファイナライザ併用 / #22 Cache=制約 ID 単位 (3B 担当) / §3A.3-API EvaluateEdge 2 オーバーロード / L1 CSR / L5 GetEdgeShape Span / Q1 OdrgBbox / Q2 Brute-force 突合 / Q4 Brute-force / Q5 緯度依存近似 / Q6 Offset 距離比 / Q7 緯度補正コサイン 等)
+- **3.4 トレードオフ・制約**:
+  - Span ライフタイムは `NativeRoadGraph.Dispose()` まで (3A-R4)
+  - プロファイル評価は `.odrg` BAKED_PROFILE 直読、`ProfileEvaluator` 非依存 (Native 専用最適化、3C で統合方針再検討)
+  - `RouterDb(IRoadGraph, IRoadSnapper)` は internal、DI 統合は 3C 担当
+  - Itinero との並存パリティは技術的に不可能 (ID 独立採番)、Phase 1 既存 526 件 pass で互換性証明を代替
+- **3.5 検証方法**: 3A.1〜3A.6 のテスト合計 51 件 (5+8+0+0+3+9+8+8+12+16)
+  - 3A.1 OdrgSectionDirectory 5 件
+  - 3A.2 OdrgMmfHandle Span 切出 8 件
+  - 3A.3e/3A.3f NativeRoadGraph 12 件 (OdrgReader 真値突合)
+  - 3A.4 NativeRTreeQuery 8 件 (R-tree 正確性、Brute-force 突合)
+  - 3A.5a GeoMath 8 件 (Haversine / 点-線分距離 / 投影 t)
+  - 3A.5b NativeRoadSnapper 12 件 (Brute-force 突合)
+  - 3A.6 NativeRouter 統合 16 件 (Smoke + 不変量)
+- **3.6 実装メモ**: 主要ファイル一覧 + commit 番号
+  - `src/OsmDotRoute/Internal/Odrg/` 配下 (OdrgFormat, OdrgSections, OdrgSectionDirectory, OdrgMmfHandle, OdrgFormatException): commits `fb6cd45`, `279a6ec`
+  - `src/OsmDotRoute/Native/` 配下 (NativeRoadGraph, NativeEdgeEnumerator, OutEdgeEntry, NativeRTreeQuery, NativeRoadSnapper): commits `4549633`, `78d4581`, `5a54296`
+  - `src/OsmDotRoute/Geometry/GeoMath.cs`: commit `88d00fe`
+  - `src/OsmDotRoute/Routing/IRoadGraph.cs` 改修 (`EvaluateEdge` 2 オーバーロード追加 / `GetEdgeShape` 追加): commit `c46a2ca`
+
+**Done 基準 (4.6-C)**:
+
+- 設計書 §3 の 6 項目すべて「（未記述）」が消えている
+- アーキテクチャ図がコード現状と一致
+
+**Done 基準 (3A.6 / 3A 全体完了時)**:
+
+- 16 件全 pass、累計 **595 件 pass**
+- ビルド 0 Warning / 0 Error
+- Phase 1 既存 526 件 (Itinero 系) は変更なし、全 pass 継続 (Native 並存証明の代替)
+- 設計書 phase3_design.md §3 全 6 サブセクション肉付け完了
+- 3A 全体完了の commit メッセージで全サブステップ commit 番号を一覧
+
+**最終 commit メッセージ案 (4.6-B + 4.6-C 統合)**: `feat: Phase 3 ステップ 3A.6 + 3A 完了 (NativeRouter 統合 16 件 + 設計書 §3 反映、595 件 pass)`
 
 ---
 
@@ -936,10 +1010,10 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 3A.3e | 3 | NativeRoadGraph 構築 / 頂点読出 / Dispose の sanity check | ✅ 3 件 (commit `4549633`、542 件 pass) |
 | 3A.3f | 9 | OdrgReader 真値突合: 頂点 100 / エッジ 100 / Shape 50 / GetEdgeShape 50 / キャッシュ 1 / 評価 API 50×2 × 2 / エラー 2 (v0.7 で Itinero 突合不可能と判明、OdrgReader 突合に絞り再定義) | ✅ 9 件 (551 件 pass) |
 | 3A.4 | 8 | (v0.8 で内訳確定 Q6) R-tree アクセサー sanity / Query 全包含 / Query 範囲外 / Query × 50 ランダム Brute-force 突合 / Query overrun / Nearest k=1 / Nearest k=10 / ノード構造 sanity | ✅ 8 件 (commit `78d4581`、559 件 pass) |
-| 3A.5a | 8 | (v0.9 で分割 Q1/Q8) GeoMath 単体: Haversine 2 / 点-線分距離 3 / 投影 t 3 | |
-| 3A.5b | 12 | (v0.9 で分割 Q8) NativeRoadSnapper: コンストラクタ 1 / 頂点上 1 / エッジ中央 1 / 通行不可除外 1 / 検索半径超過 null 1 / 範囲外 null 1 / bbox 拡張 1 / Brute-force ×50 ランダム 1 / Offset 単調性 1 / From/To 端点 2 / Dispose 後例外 1 | |
-| 3A.6 | 178 | 89 ペア × 2 実装 経路パリティ | |
-| **合計** | **394** | （Phase 2 累計 526 → Phase 3 3A 完了時 920） | 累計 539 → 920 想定 |
+| 3A.5a | 8 | (v0.9 で分割 Q1/Q8) GeoMath 単体: Haversine 2 / 点-線分距離 3 / 投影 t 3 | ✅ 8 件 (commit `88d00fe`、567 件 pass) |
+| 3A.5b | 12 | (v0.9 で分割 Q8) NativeRoadSnapper: コンストラクタ 1 / 頂点上 1 / エッジ中央 1 / 非存在 profile 1 / 検索半径 0 null 1 / 範囲外 null 1 / bbox 拡張 1 / Brute-force ×20 ランダム 1 / Offset 単調性 1 / From/To 端点 2 / Dispose 後例外 1 (v0.9 §4.5.2 からの軽微逸脱: 通行不可除外を非存在 profile / 検索半径 0 に置換、Brute-force は 50→20 で CI 安定) | ✅ 12 件 (commit `5a54296`、579 件 pass) |
+| 3A.6 | 16 | (v0.10 で再定義 Q3/Q5) Native 自己整合: smoke 5 + 不変量 8 + RouterDb コンストラクタ 2 + fixture sanity 1 (v0.9 「178 件 Itinero 突合」は T1 で技術的に不可能と判明、Native 自己整合 + Phase 1 既存 526 件継続で並存証明を代替) | |
+| **合計** | **69** | （Phase 2 累計 526 → Phase 3 3A 完了時 595） | 累計 539 → 595 想定 |
 
 **並存戦略**:
 
@@ -999,8 +1073,18 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
   - Q6 = **Offset = 距離比 × 65535** (Itinero 互換)
   - Q7 = **緯度補正コサイン** (局所メートル平面、x = (lon-lon0) × cos(lat0) × R)
   - Q8 = **テスト 8+12=20 件** (累計 559 → 579)
-- [ ] 本ステップ計画書 v0.9 ユーザーレビュー → 承認
-- [ ] 3A.5a (GeoMath ヘルパ新設) 着手
+- [x] **本ステップ計画書 v0.9 ユーザー承認** (commit `86d591c`)
+- [x] **3A.5a 完了** (commit `88d00fe`、567 件 pass)
+- [x] **3A.5b 完了** (commit `5a54296`、579 件 pass、計画書 §4.5.2 から軽微な逸脱: 通行不可除外テストを非存在 profile / 検索半径 0 に置換、Brute-force 50→20 で CI 安定)
+- [x] 3A.6 着手前事前調査 → §2.13 / §2.14 整理、ユーザー判断 6 件確定 (2026-05-26):
+  - Q1 = **(B) Native 自己整合のみ、Itinero 突合廃止** (.routerdb と .odrg が別ソース、Itinero 並存証明は Phase 1 既存 526 件で代替)
+  - Q2 = **Native 単体経路計算の不変量検証** (Brute-force 二重実装は避ける)
+  - Q3 = **テスト 178 → 16 件に記口** (累計 579 → 595)
+  - Q4 = **3A.6 で設計書 §3 全 6 サブセクション一括記述** (1 commit 化)
+  - Q5 = **16 件内訳**: smoke 5 + 不変量 8 + RouterDb コンストラクタ 2 + fixture sanity 1
+  - Q6 = **NativeRouterDbFixture 新設し IClassFixture で共有**
+- [ ] 本ステップ計画書 v0.10 ユーザーレビュー → 承認
+- [ ] 3A.6 (Native 自己整合テスト + 設計書 §3 反映) 着手
 
 ---
 
@@ -1012,6 +1096,7 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 0.2 (draft) | 2026-05-26 | v0.1 ユーザー承認 (commit `b27be51`) 後、3A.1 着手前の現状確認で発見した訂正を反映：(1) §2.4 セクション構成表を実装確認済の 9 セクション (VERTEX / EDGE / EDGE_SHAPE / EDGE_AABB / EDGE_FLAG 独立 / SPATIAL_INDEX / BAKED_PROFILE / TURN_RESTRICTION / METADATA) に訂正、v0.1 の誤記 (PROFILE_BAKE / STRING_POOL、flags が EDGE 内、`バージョン 0x0002`) を訂正。(2) §3.1 スコープ内に「OdrgFormat を Extractor → Core へ移動」を前提リファクタとして追加（依存方向 Core ← Pbf ← Extractor のため）。(3) §4.1 (3A.1) を「ステップ 0: OdrgFormat Core 移動 / ステップ 1: OdrgSectionDirectory 実装」に分割、検証条件を `VersionMajor == 1` / `edgeFlagBytes == 2` / `sectionCount == 9` に具体化、参照真値を `OdrgReader.Read` に統一 | Claude (Opus 4.7) |
 | 0.3 (draft) | 2026-05-26 | 3A.1 完了 (commit `fb6cd45`) / 3A.2 完了 (commit `279a6ec`) 後、3A.3 着手前の `IRoadGraph` 依存連鎖調査で発見した重大な設計問題を反映：(1) §2.5 追加 = `.odrg` には OSM タグ生データなし → `NativeRoadGraph.GetEdgeOsmTags` 実装不可、`IRoadGraph` 改修必須。ユーザー判断 B 案 (3A.3 で `IRoadGraph` 改修込み) 確定。(2) §2.6 追加 = 着手前ペンディング判断 §3A.3-API 起票 (新評価 API シグネチャ a/b/c)、推奨 (a) `EdgeEvaluation EvaluateEdge`。(3) §4.3 を B 案サブステップ詳細 3A.3a〜3A.3f に全面書き直し（API 改修案ドラフト / `ItineroRoadGraph` 追従 / `EdgeWeightCalculator` 内部置換 / 既存テスト追従 / `NativeRoadGraph` 新規 / テスト 12 件）。各サブステップで `dotnet test` 全 pass 維持。(4) §5 リスク表に 3A-R7 (改修で既存テスト破壊) / 3A-R8 (新 API がホットパス不適合) 追加。(5) §6 テスト件数表に 3A.3 サブステップ分割反映 + 3A.1/3A.2 実績反映 (5+8、累計 539)。(6) §7 着手前確認事項を v0.3 用に更新。3A.1〜3A.2 完了済をチェック、§3A.3-API 確定 + v0.3 承認をペンディング | Claude (Opus 4.7) |
 | 0.4 (draft) | 2026-05-26 | v0.3 ユーザー承認 (commit `eb1431c`) + §3A.3-API (a) ユーザー判断確定後、3A.3a 成果物を反映：(1) §2.6 確定マーク追記。(2) §2.6.1 追加 = (a) 案 確定後の詳細シグネチャ。3A.3a 着手時の現状確認で `IRoadProfile` 不在（v0.3 §2.6 の架空型）/ `ProfileEvaluator.Name` 未公開を発見、確定シグネチャを `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` に補正。`ProfileEvaluator.Name` プロパティ追加方針 + `EdgeWeightCalculator` 改修コード骨格 + `IRoadGraphEdgeEnumerator.EdgeProfileIndex` の扱い (保持、3C で廃止検討) も決定。(3) §2.6.2 追加 = 既存テスト 5 ファイル `GetEdgeOsmTags` 直呼び 6 箇所 (本番 2 + テスト 4) の grep 結果 + 改修方針表。(4) §7 着手前確認事項を v0.4 用に更新、3A.3a 完了済をチェック、v0.4 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
+| 0.10 (draft) | 2026-05-26 | v0.9 commit `86d591c` + 3A.5a commit `88d00fe` (567 件 pass) + 3A.5b commit `5a54296` (579 件 pass) 後、3A.6 着手前事前調査で計画書 v0.9 §4.6 と現状コードのギャップ 7 件を発見 (§2.13 新設): T1 default.routerdb と tsushima.odrg が別データソース (地理エリア違いで並存比較不可) / T2 Phase 1 既存経路テストは ±10% 緩い比較で「完全一致は目指さない」明記 / T3 89 ペアは架空数値 (実態 12 ペア最大) / T4 tsushima_extract.osm.pbf あり (Itinero 生成可能だがコスト) / T5 IRoadProfile 架空 (3A.5 S2 と同根) / T6 RouterDb(IRoadGraph, IRoadSnapper) は internal 構築可能 / T7 Phase 3 設計書 §3 全項目「未記述」。これに対するペンディング判断 6 件 (§2.14) をユーザー判断確定 (2026-05-26): Q1 = (B) **Native 自己整合のみ、Itinero 突合廃止** (並存証明は Phase 1 既存 526 件で代替) / Q2 = **Native 単体経路計算の不変量検証** / Q3 = **テスト 178 → 16 件に記口** (累計 579 → 595) / Q4 = **3A.6 で設計書 §3 一括記述** / Q5 = **16 件内訳** (smoke 5 + 不変量 8 + RouterDb 2 + fixture 1) / Q6 = **NativeRouterDbFixture 新設**。§4.6 を v0.10 で再定義: 4.6-A NativeRouterDbFixture 新設 + 4.6-B 自己整合 16 件詳細 (smoke / 不変量 / コンストラクタ / fixture sanity) + 4.6-C 設計書 §3 全 6 サブセクション肉付け (3.1 意図 / 3.2 採用設計 アーキテクチャ図 / 3.3 設計判断根拠 ユーザー判断確定一覧 / 3.4 トレードオフ / 3.5 検証方法 全 51 件内訳 / 3.6 実装メモ 主要ファイル一覧 + commit 番号)。§6 テスト件数表で 3A.5a/3A.5b 実績マーク + 3A.6 178→16 訂正 + 累計 920→595 訂正。§7 着手前確認事項を v0.10 用に更新、3A.5 完了 + ユーザー判断 6 件確定をチェック、v0.10 承認 + 3A.6 着手をペンディング | Claude (Opus 4.7) |
 | 0.9 (draft) | 2026-05-26 | v0.8 commit `7ee84e4` + 3A.4 完了 commit `78d4581` (559 件 pass) 後、3A.5 着手前事前調査で計画書 v0.8 §4.5 と現状コードのギャップ 6 件を発見 (§2.11 新設): S1 `GeoMath` ヘルパ完全不在 (計画書「Phase 1 既存流用」は架空) / S2 `IRoadProfile` 不在 (3A.3a 同様、現 IRoadSnapper 維持必要) / S3 profileName → ProfileEvaluator 仲介は二択 (経由 or NativeRoadGraph 直アクセス) / S4 Itinero との ID 一致 + 座標一致 Done 基準は技術的不可能 (3A.4 Q2 と同根) / S5 3A.5 スコープが GeoMath 新設で 3A.3 並み / S6 `Router.SnapToRoad` は profileName 一本で統合済。これに対するペンディング判断 8 件 (§2.12) をユーザー判断確定 (2026-05-26): Q1 サブステップ分割 = **3A.5a (GeoMath) / 3A.5b (NativeRoadSnapper) 分割** / Q2 profile 仲介 = **NativeRoadGraph 経由直アクセス** (ProfileEvaluator 不要) / Q3 GeoMath 配置 = **`src/OsmDotRoute/Geometry/GeoMath.cs` 新設** / Q4 Done 基準 = **Brute-force 突合に変更** (Itinero 突合は 3A.6 担当) / Q5 度換算 = **緯度依存近似** (dLat = m/111320、dLon = m/(111320 × cos(lat))) / Q6 Offset = **距離比 × 65535** (Itinero 互換) / Q7 平面化 = **緯度補正コサイン** / Q8 テスト = **3A.5a 8件 + 3A.5b 12件 = 20件** (累計 559 → 579)。§4.5 を v0.9 で 3A.5a / 3A.5b に分割詳細化: 4.5.1 GeoMath 新設 + 既存 NativeRoadGraph.HaversineMeters 統合 + テスト 8 件 / 4.5.2 NativeRoadGraph.CanPass 追加 + NativeRoadSnapper 本体 + Snap 6 ステップ + テスト 12 件 (Brute-force 突合本体含む)。§6 テスト件数表で 3A.5 を 3A.5a/3A.5b に分割 + 3A.4 実績マーク ✅。§7 着手前確認事項を v0.9 用に更新、3A.4 完了 + ユーザー判断 8 件確定をチェック、v0.9 承認 + 3A.5a 着手をペンディング | Claude (Opus 4.7) |
 | 0.8 (draft) | 2026-05-26 | v0.7 commit `f573c08` (3A.3f 完了、551 件 pass、3A.3 全体完了) 後、3A.4 着手前事前調査で計画書 v0.7 §4.4 と現状コードのギャップ 5 件を発見 (§2.9 新設): G1 R-tree 書出/読出/Core struct 完全対称 (`MemoryMarshal.Cast` 可) / G2 AABB 型 3 系統 (Geometry.Aabb / Extractor.Aabb / OdrgBbox) / G3 `ItineroSnapper.EdgeIndex.SearchClosestEdges` 不在 (Router.Resolve 一本のみ、ID 独立採番と 2 重で突合不可) / G4 `NativeRoadGraph` に R-tree アクセサー未実装 / G5 計画書 8 件テストの内訳未確定。これに対するペンディング判断 6 件 (§2.10) をユーザー判断確定 (2026-05-26): Q1 入力 bbox 型 = **OdrgBbox** (Lon-Lat、wire format 一致) / Q2 Nearest Done 基準 = **Brute-force 突合に変更** (Itinero 突合は 3A.5/3A.6 で経路結果一致として担保) / Q3 R-tree API 配置 = **NativeRoadGraph に internal API 追加** / Q4 overrun = **ヒット総数返し buffer.Length まで書込** / Q5 Nearest 距離 = **点-AABB 最小距離** (経緯度 2D euclidean 度単位) / Q6 テスト 8 件内訳確定 (R-tree アクセサー sanity / Query 全包含 / 範囲外 / × 50 Brute-force / overrun / Nearest k=1 / k=10 / ノード構造)。§4.4 を v0.8 詳細化: 4.4-A 事前作業 (NativeRoadGraph R-tree アクセサー追加) + 4.4-B 実装 (NativeRTreeQuery static class、Query / Nearest シグネチャ、明示スタック DFS + best-first Nearest + 点-AABB 最小距離計算式) + 4.4-C テスト 8 件詳細。§6 テスト件数表で 3A.4 行に内訳追記。§7 着手前確認事項を v0.8 用に更新、3A.3 全体完了 + ユーザー判断 6 件確定をチェック、v0.8 承認 + 3A.4 着手をペンディング | Claude (Opus 4.7) |
 | 0.7 (draft) | 2026-05-26 | v0.6 ユーザー承認 (commit `a952efc`) + 3A.3e 完了 (commit `4549633`、542 件 pass) 後、3A.3f 着手前調査で **.odrg と Itinero RouterDb の頂点 ID / エッジ ID が独立採番**で Itinero との ID ベース突合は不可能と判明、ユーザー判断 4 件 (2026-05-26) で対応方針確定: P1 突合対象 = OdrgReader 真値のみ (Itinero 突合は 3A.6 で経路結果一致として担保) / P2 評価 API = BakedProfileEntry と一致 (Itinero タグ評価は Phase 2 で証明済み) / P3 エラー = 未開封 path + マジック改竄 2 件 / P4 サンプル = 頂点 100 / エッジ 100 / Shape 50 / 評価 50×2 profile。§4.3.6 を OdrgReader 真値突合 9 件版に再定義: GetVertex / GetEdgeEnumerator 反転 / GetEdge Shape / GetEdgeShape Span / キャッシュ動作 (Assert.Same) / EvaluateEdge en × Car/Pedestrian / EvaluateEdge RoadEdge × Car/Pedestrian / 未開封 path / マジック改竄。§6 テスト件数表で 3A.3e/3A.3f 実績マーク + ✅。§7 着手前確認事項を v0.7 用に更新、v0.6 承認 + 3A.3e 完了 + ユーザー判断 4 件確定 + 3A.3f 完了をチェック、v0.7 承認 + 3A.4 着手をペンディング | Claude (Opus 4.7) |
