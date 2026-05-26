@@ -29,8 +29,6 @@ namespace OsmDotRoute.Native;
 /// </remarks>
 internal sealed class NativeRoadGraph : IRoadGraph
 {
-    private const double EarthRadiusMeters = 6371008.8;  // WGS84 平均半径
-
     private readonly OdrgMmfHandle _mmf;
     private readonly OdrgSectionDirectory _directory;
 
@@ -324,10 +322,10 @@ internal sealed class NativeRoadGraph : IRoadGraph
         var prev = from;
         for (int i = 0; i < shape.Length; i++)
         {
-            total += HaversineMeters(prev, shape[i]);
+            total += GeoMath.HaversineMeters(prev, shape[i]);
             prev = shape[i];
         }
-        total += HaversineMeters(prev, to);
+        total += GeoMath.HaversineMeters(prev, to);
 
         var distance = (float)total;
         _distanceCache[edgeId] = distance;
@@ -499,19 +497,6 @@ internal sealed class NativeRoadGraph : IRoadGraph
             firstOutEdge = newFirst;
             outEntries = trimmed;
         }
-    }
-
-    private static double HaversineMeters(GeoCoordinate a, GeoCoordinate b)
-    {
-        double lat1 = a.Latitude * Math.PI / 180.0;
-        double lat2 = b.Latitude * Math.PI / 180.0;
-        double dLat = (b.Latitude - a.Latitude) * Math.PI / 180.0;
-        double dLon = (b.Longitude - a.Longitude) * Math.PI / 180.0;
-        double sinDLat = Math.Sin(dLat * 0.5);
-        double sinDLon = Math.Sin(dLon * 0.5);
-        double h = sinDLat * sinDLat + Math.Cos(lat1) * Math.Cos(lat2) * sinDLon * sinDLon;
-        double c = 2.0 * Math.Atan2(Math.Sqrt(h), Math.Sqrt(1.0 - h));
-        return EarthRadiusMeters * c;
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
