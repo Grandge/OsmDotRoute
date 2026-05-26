@@ -19,6 +19,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Profiles\car.json" />
     <EmbeddedResource Include="Profiles\pedestrian.json" />
+    <EmbeddedResource Include="Profiles\bicycle.json" />
   </ItemGroup>
 
 </Project>

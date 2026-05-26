@@ -20,6 +20,7 @@ public sealed class VehicleProfile
 
     private static readonly Lazy<VehicleProfile> CarLazy = new(() => LoadEmbedded("car.json"));
     private static readonly Lazy<VehicleProfile> PedestrianLazy = new(() => LoadEmbedded("pedestrian.json"));
+    private static readonly Lazy<VehicleProfile> BicycleLazy = new(() => LoadEmbedded("bicycle.json"));
 
     private readonly JsonProfileDefinition _definition;
     private readonly ProfileEvaluator _evaluator;
@@ -39,6 +40,13 @@ public sealed class VehicleProfile
 
     /// <summary>同梱の歩行者プロファイル。Profiles/pedestrian.json から遅延ロード（埋込リソース）。</summary>
     public static VehicleProfile Pedestrian => PedestrianLazy.Value;
+
+    /// <summary>
+    /// 同梱の自転車プロファイル（REQ-PRF-003、Phase 3 ステップ 3D.1）。
+    /// Profiles/bicycle.json から遅延ロード（埋込リソース）。
+    /// 平均 15 km/h、cycleway/path 優先、motorway/trunk 通行不可。
+    /// </summary>
+    public static VehicleProfile Bicycle => BicycleLazy.Value;
 
     /// <summary>内部評価器（Dijkstra・難所判定で使用）</summary>
     internal ProfileEvaluator Evaluator => _evaluator;
