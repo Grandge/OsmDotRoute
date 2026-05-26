@@ -192,6 +192,34 @@ internal sealed class NativeRoadGraph : IRoadGraph
     }
 
     /// <inheritdoc/>
+    public IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds)
+    {
+        ThrowIfDisposed();
+        return QueryEdgesByAabbCore(queryBounds);
+    }
+
+    private IEnumerable<uint> QueryEdgesByAabbCore(Aabb queryBounds)
+    {
+        var qbox = new OdrgBbox(
+            queryBounds.MinLongitude,
+            queryBounds.MinLatitude,
+            queryBounds.MaxLongitude,
+            queryBounds.MaxLatitude);
+
+        uint[] buffer;
+        int hits;
+        int capacity = 1024;
+        do
+        {
+            buffer = new uint[capacity];
+            hits = NativeRTreeQuery.Query(GetRTreeNodes(), RTreeRootIndex, GetEdgeAabbs(), qbox, buffer);
+            capacity = hits;  // overrun の場合は次回 hits 件まで拡大
+        } while (hits > buffer.Length);
+
+        for (int i = 0; i < hits; i++) yield return buffer[i];
+    }
+
+    /// <inheritdoc/>
     public EdgeEvaluation EvaluateEdge(IRoadGraphEdgeEnumerator en, ProfileEvaluator evaluator)
     {
         ArgumentNullException.ThrowIfNull(en);

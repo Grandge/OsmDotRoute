@@ -71,4 +71,21 @@ internal interface IRoadGraph : IDisposable
     /// </para>
     /// </remarks>
     ReadOnlySpan<GeoCoordinate> GetEdgeShape(uint edgeId);
+
+    /// <summary>
+    /// 指定 AABB と交差するエッジ ID を列挙する（Phase 3 ステップ 3B.2、動的制約 eager bake 用）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用途: <see cref="OsmDotRoute.RestrictedAreaService"/> の eager bake (制約 add 時)
+    /// が制約形状の AABB をクエリしてエッジ ID 集合を取得する。bake はホットパスではないため
+    /// alloc 許容、列挙順序は実装依存（呼出側は集合として扱う）。
+    /// </para>
+    /// <para>
+    /// <c>NativeRoadGraph</c>: <see cref="OsmDotRoute.Native.NativeRTreeQuery"/> (3A.4) で R-tree クエリ、O(log E)。
+    /// <c>ItineroRoadGraph</c>: 全エッジ走査 fallback（<see cref="GetEdge"/> でシェイプ + 端点から AABB 都度計算、O(E)）。
+    /// 3C で <c>ItineroRoadGraph</c> 撤去予定。
+    /// </para>
+    /// </remarks>
+    IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds);
 }

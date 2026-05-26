@@ -147,6 +147,44 @@ internal sealed class ItineroRoadGraph : IRoadGraph
     }
 
     /// <inheritdoc/>
+    public IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds)
+    {
+        long count = _routerDb.Network.EdgeCount;
+        for (uint e = 0; e < count; e++)
+        {
+            if (EdgeAabbIntersects(e, queryBounds))
+            {
+                yield return e;
+            }
+        }
+    }
+
+    private bool EdgeAabbIntersects(uint edgeId, Aabb query)
+    {
+        var edge = GetEdge(edgeId);
+        var from = GetVertex(edge.From);
+        var to = GetVertex(edge.To);
+
+        double minLat = Math.Min(from.Latitude, to.Latitude);
+        double maxLat = Math.Max(from.Latitude, to.Latitude);
+        double minLon = Math.Min(from.Longitude, to.Longitude);
+        double maxLon = Math.Max(from.Longitude, to.Longitude);
+
+        foreach (var c in edge.Shape)
+        {
+            if (c.Latitude < minLat) minLat = c.Latitude;
+            if (c.Latitude > maxLat) maxLat = c.Latitude;
+            if (c.Longitude < minLon) minLon = c.Longitude;
+            if (c.Longitude > maxLon) maxLon = c.Longitude;
+        }
+
+        return !(maxLat < query.MinLatitude
+              || minLat > query.MaxLatitude
+              || maxLon < query.MinLongitude
+              || minLon > query.MaxLongitude);
+    }
+
+    /// <inheritdoc/>
     public GeoBounds GetBounds()
     {
         var network = _routerDb.Network;
