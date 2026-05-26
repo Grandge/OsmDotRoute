@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3B: 動的制約ホットパス高速化 計画書
 
-**ステータス**: ドラフト v0.6（v0.5 + 3B.3 完了 + 3B.4 着手前事前調査 = 既存 API で要件充足、ユーザー判断不要、2026-05-27）
+**ステータス**: ドラフト v0.7（v0.6 + 3B.4 完了 + 3B.5 着手前事前調査 + ユーザー判断 T13/T15/T16 確定、2026-05-27）
 **対応ステップ**: Phase 3 ステップ 3B（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 1 §18.3 解消）
 **対応要件**: REQ-NFR-002（制約 100 件下でも経路計算 ≤ 100ms 維持）、REQ-NFR-003（経路 1 本あたりアロケート削減）
 **関連文書**:
@@ -735,7 +735,14 @@ graph 注入時のホットパス比較:
   - T10/T11 = `IRoadGraphEdgeEnumerator.EdgeId` + `RoadEdge.EdgeId` が既存 (Phase 1/3A.3b で追加済)、シグネチャ変更不要
   - T12 = `BuildFullShape` は graph 未注入 fallback で残置 (3C 後に再評価)
   - → 計画書 v0.6 で §4.4 を確定化、新たなユーザー判断不要
-- [ ] **本ステップ計画書 v0.6 ユーザー承認**（次の確認ポイント）
+- [x] **本ステップ計画書 v0.6 ユーザー承認 (commit `a94dbe4`)**
+- [x] **3B.4 完了 (commit `61789e7`、618 件 pass、duration 37s→24s、軽微逸脱なし、ホットパス置換成功)**
+- [x] **3B.5 着手前事前調査 + ユーザー判断 T13/T15/T16 確定（2026-05-27）**:
+  - T13 = (A) Native 独自シナリオ 5〜8 件 (Phase 1 既存 36 件でセマンティクス維持は証明済、Native 実機動作のみ軽量追加)
+  - T14 = 自動確定: restrictions-mixed-100.json は津島市 .odrg bbox 内に収まる (新規データ生成不要、3B-R8 解消)
+  - T15 = (A) `Router` に internal バリエーション追加 (`internal Router(RouterDb, RestrictedAreaService?, bool autoAttachGraph)`)、Mode "Native-Detached" 実現
+  - T16 = (A) `BenchmarkAssets` に `LoadNativeRouterDb()` 追加 (既存 `LoadOsmDotRouterDb` パターン踏襲)
+- [ ] **本ステップ計画書 v0.7 ユーザー承認**（次の確認ポイント、3B.5 = 3B 全体完了対象）
 - [ ] 3B.1 着手前事前調査 → ユーザー判断（必要なら T1〜T3 等）→ 計画書 v0.2
 - [ ] 3B.1 完了 → ユーザー確認 → commit
 - [ ] 3B.2 着手前事前調査 → ユーザー判断（必要なら T4〜T5）→ 計画書 v0.3
@@ -759,3 +766,4 @@ graph 注入時のホットパス比較:
 | v0.4 | 2026-05-27 | 3B.1 完了 (commit `8e92dd7`) を §7 反映、3B.2 着手前事前調査 + ユーザー判断 T4〜T6 確定追記。§4.2 を 4.2.1 事前調査結果 / 4.2.2 採用設計 / 4.2.3 Done 基準 に分割、`QueryEdgesByAabb(Aabb)` シグネチャ + Native R-tree 実装 + Itinero fallback 実装の最終形を確定、単体テスト 6 件の内訳確定（608 件 pass 目標） |
 | v0.5 | 2026-05-27 | 3B.2 完了 (commit `33778be`、軽微逸脱: Brute-force 真値ソース変更) を §7 反映、3B.3 着手前事前調査 + ユーザー判断 T7〜T9 確定追記。§4.3 を 4.3.1 事前調査結果 / 4.3.2 採用設計 / 4.3.3 Done 基準 に分割、`AttachGraph` + bake + Router 自動呼出の最終形を確定、単体テスト 10 件の内訳確定（618 件 pass 目標） |
 | v0.6 | 2026-05-27 | 3B.3 完了 (commit `c789ee7`、軽微逸脱なし、公開 API 不変) を §7 反映、3B.4 着手前事前調査 = ユーザー判断不要を §7 反映。§4.4 を 4.4.1 事前調査結果 / 4.4.2 採用設計 / 4.4.3 ホットパス効果 / 4.4.4 Done 基準 に分割、`EvaluateConstraintFactor` 内部置換の最終形を確定（618 件 pass 維持目標、新規テスト 0 件、Phase 1 既存 36 件で代替検証）|
+| v0.7 | 2026-05-27 | 3B.4 完了 (commit `61789e7`、duration 37s→24s) を §7 反映、3B.5 着手前事前調査 + ユーザー判断 T13/T15/T16 確定追記。T14 = 自動確定 (既存制約データは津島市範囲内、3B-R8 解消)。§4.5-A テスト件数を 10〜15 件 → 5〜8 件 に調整 (Phase 1 既存 36 件でセマンティクス維持は既証明)。§4.5-B `Router` internal バリエーション + `BenchmarkAssets.LoadNativeRouterDb` 追加方針確定。§6 テスト件数表更新、本ステップ完了で 3B 全体完了 (累計 623〜626 件 pass 目標)|
