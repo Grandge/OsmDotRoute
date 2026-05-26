@@ -18,14 +18,29 @@ public sealed class Router
     /// <param name="routerDb">経路計算用グラフ</param>
     /// <param name="restrictions">動的制約サービス（null の場合は制約なし）</param>
     public Router(RouterDb routerDb, RestrictedAreaService? restrictions = null)
+        : this(routerDb, restrictions, autoAttachGraph: true)
+    {
+    }
+
+    /// <summary>
+    /// 自動 AttachGraph 有無を指定する internal コンストラクタ（Phase 3 ステップ 3B.5、計画書 §4.5-B T15=A）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="autoAttachGraph"/> = <c>false</c> は Mode "Native-Detached" ベンチ専用。
+    /// graph 未注入のまま <see cref="RestrictedAreaService"/> を Router に渡すことで、3B 効果測定の
+    /// 「導入前」ベースライン (Phase 1 動作) を再現する。
+    /// </para>
+    /// </remarks>
+    internal Router(RouterDb routerDb, RestrictedAreaService? restrictions, bool autoAttachGraph)
     {
         ArgumentNullException.ThrowIfNull(routerDb);
         _routerDb = routerDb;
         _restrictions = restrictions;
-        // Phase 3 ステップ 3B.3 (T9=A): restrictions に IRoadGraph を注入して
-        // eager bake を有効化。同一 service の複数 Router 共有時は 2 回目以降 no-op、
-        // 別 routerDb への流用は InvalidOperationException。
-        restrictions?.AttachGraph(routerDb.Graph);
+        if (autoAttachGraph)
+        {
+            restrictions?.AttachGraph(routerDb.Graph);
+        }
     }
 
     /// <summary>

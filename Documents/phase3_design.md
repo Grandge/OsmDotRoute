@@ -295,35 +295,174 @@ NativeRoadSnapper          IRoadSnapper 実装
 
 ## 4. 動的制約ホットパス（交差エッジキャッシュ）
 
-**対応ステップ**: 3B
-**対応要件**: （Phase 1 §18.3 解消、REQ-NFR-002 改善）
+**対応ステップ**: 3B (3B.1〜3B.5)
+**対応要件**: REQ-NFR-002（制約 100 件下でも経路計算 ≤ 100ms 維持）、Phase 1 §18.3 解消、Phase 1 §18.4 アロケート削減
 **Phase 2 申し送り**: 設計書 §8.3 表 3B 行
-**実装日**: （未着手）
-**実装バージョン**: （未着手）
+**実装日**: 2026-05-27（3B.1〜3B.5 同日完了）
+**実装バージョン**: ユーザー採番
+**主要ファイル**:
+
+- [`src/OsmDotRoute/Restrictions/RestrictedAreaEdgeCache.cs`](../src/OsmDotRoute/Restrictions/RestrictedAreaEdgeCache.cs)（`internal sealed class`、Block + Difficulty 双方キャッシュ）
+- [`src/OsmDotRoute/Restrictions/RestrictedAreaService.cs`](../src/OsmDotRoute/Restrictions/RestrictedAreaService.cs)（`AttachGraph` + eager bake 追加、公開 API 不変）
+- [`src/OsmDotRoute/Routing/IRoadGraph.cs`](../src/OsmDotRoute/Routing/IRoadGraph.cs)（`QueryEdgesByAabb` メソッド追加）
+- [`src/OsmDotRoute/Native/NativeRoadGraph.cs`](../src/OsmDotRoute/Native/NativeRoadGraph.cs)（`QueryEdgesByAabb` 実装、`NativeRTreeQuery` 経由）
+- [`src/OsmDotRoute.Itinero/ItineroRoadGraph.cs`](../src/OsmDotRoute.Itinero/ItineroRoadGraph.cs)（`QueryEdgesByAabb` fallback 実装、3C で撤去予定）
+- [`src/OsmDotRoute/Routing/EdgeWeightCalculator.cs`](../src/OsmDotRoute/Routing/EdgeWeightCalculator.cs)（`EvaluateConstraintFactor` ホットパス置換）
+- [`src/OsmDotRoute/Router.cs`](../src/OsmDotRoute/Router.cs)（`internal` バリエーション追加、自動 AttachGraph）
+- [`tests/OsmDotRoute.Benchmarks/BenchmarkAssets.cs`](../tests/OsmDotRoute.Benchmarks/BenchmarkAssets.cs)（`LoadNativeRouterDb` 追加）
+- [`tests/OsmDotRoute.Benchmarks/Benchmarks/RouteWithConstraintsBenchmark.cs`](../tests/OsmDotRoute.Benchmarks/Benchmarks/RouteWithConstraintsBenchmark.cs)（3 モード分岐）
 
 ### 4.1 意図
 
-（未記述：ステップ 3B 完了時に肉付け、`RestrictedAreaEdgeCache` 設計）
+REQ-NFR-002（制約 100 件下でも経路計算 ≤ 100ms 維持）と Phase 1 §18.3 / §18.4 の改善を目的とする。Phase 1 では `EdgeWeightCalculator.EvaluateConstraintFactor` が Dijkstra 辺展開時に毎エッジ実行され、内部で `BuildFullShape` (`new List<GeoCoordinate>(N+2)`)、`Aabb.FromCoordinates` (全 shape 走査)、`new HashSet<RestrictedAreaId>()` (seenIds alloc)、`_index.Query` (`SpatialIndex` 線形走査、制約 100 件で 100 回 AABB 交差判定)、`EdgeIntersectsAreaShapes` (シェイプ × Shape 二重ループ) が走り、Phase 1 §18.4 = 経路 1 本あたり 77MB アロケートの主因の一つとなっていた。
+
+3B では **「制約 ID → エッジ ID 集合」のキャッシュを `RestrictedAreaService` の add 時に eager bake** し、Dijkstra ホットパスを **HashSet/Dictionary 各 1 発のキャッシュ参照** に圧縮する。`.odrg` の STR R-tree (3A.4 `NativeRTreeQuery`) を活用してエッジ AABB 候補を O(log E) で抽出 → 厳密判定 → キャッシュ格納する設計。Phase 1 の公開 API は完全不変。
 
 ### 4.2 採用設計
 
-（未記述）
+#### 4.2.1 レイヤ構成
+
+```text
+公開 API: new RestrictedAreaService() + Add/Remove/Clear (Phase 1 不変)
+        ↓
+Router(routerDb, restrictions)
+        ↓ (T9=A: コンストラクタで自動呼出)
+RestrictedAreaService.AttachGraph(IRoadGraph)
+        ↓
+RestrictedAreaEdgeCache (internal sealed class)
+   ├─ _blockedByArea: Dictionary<RestrictedAreaId, HashSet<uint>>  (Block 逆引き)
+   ├─ _blockedEdges: HashSet<uint>                                 (Block 集約、IsBlocked O(1))
+   ├─ _difficultyByArea: Dictionary<RestrictedAreaId, HashSet<uint>>  (Difficulty 逆引き)
+   └─ _difficultyAreasByEdge: Dictionary<uint, List<DifficultyArea>>  (Difficulty 列挙)
+        ↑
+        │ Add/Remove 時に同期更新 (Register/Remove/RemoveByTag/ClearAll)
+        │
+IRoadGraph.QueryEdgesByAabb(Aabb queryBounds) → IEnumerable<uint>
+   ├─ NativeRoadGraph: NativeRTreeQuery.Query (3A.4) + buffer growable
+   └─ ItineroRoadGraph: 全エッジ走査 fallback (3C で撤去予定)
+        ↓
+EdgeWeightCalculator.EvaluateConstraintFactor(edgeId, from, to, middleShape)
+   ├─ graph 注入時: cache.IsBlocked / cache.GetDifficultyAreas + evaluator.EvaluateDifficulty (T1=A 都度評価)
+   └─ graph 未注入時: Phase 1 動作にフォールバック (BuildFullShape + EvaluateConstraints)
+```
+
+#### 4.2.2 主要 API
+
+| API | 役割 |
+| --- | --- |
+| `new Router(routerDb, restrictions)` | 既存公開 API、内部で `restrictions?.AttachGraph(routerDb.Graph)` 自動呼出 (T9=A) |
+| `internal Router(routerDb, restrictions, autoAttachGraph)` | 3B.5-B ベンチ用、`autoAttachGraph=false` で Phase 1 動作再現 (T15=A) |
+| `RestrictedAreaService.AttachGraph(IRoadGraph)` | 同一 graph 再 attach は no-op、別 graph は `InvalidOperationException` (T7=A) |
+| `IRoadGraph.QueryEdgesByAabb(Aabb)` | エッジ ID を `IEnumerable<uint>` で yield return (T5=A) |
+| `RestrictedAreaEdgeCache.IsBlocked(uint)` | ホットパス API、HashSet 1 発 |
+| `RestrictedAreaEdgeCache.GetDifficultyAreas(uint)` | ホットパス API、Dictionary 1 発、該当なし時 `Array.Empty<>()` |
 
 ### 4.3 設計判断の根拠
 
-（未記述）
+3B 期間中に着手前事前調査でユーザー確認した設計判断は以下のとおり（コア設計 Q1〜Q4、効果測定 Q5〜Q7、サブステップ詳細 T1〜T16）：
+
+| ID | 論点 | 確定 | 理由 |
+| --- | --- | --- | --- |
+| Q1 | キャッシュ構築タイミング | (A) eager bake (Add 時に同期実行) | ホットパス単純化を優先、制約変更は経路計算より圧倒的に少ない |
+| Q2 | IRoadGraph 注入方式 | (A) オプション注入 (`AttachGraph`) | 公開 API 完全不変、graph 未注入時は Phase 1 動作フォールバック |
+| Q3 | Itinero 対応範囲 | (A) Native のみ高速化 | 3C で Itinero 撤去予定、`ItineroRoadGraph.QueryEdgesByAabb` は全エッジ走査 fallback |
+| Q4 | サブステップ分割粒度 | (A) 5 サブ分割 (3B.1〜3B.5) | 3A.4〜3A.6 と同じ細分化、各サブで `dotnet test` 全 pass を維持 |
+| Q5 | 効果測定計測手法 | (A) Phase 1 既存 `RouteWithConstraintsBenchmark` 改修 (BenchmarkDotNet) | Phase 1 資産活用、3E 本番ベンチと連動 |
+| Q6 | 測定指標 | (A) 時間 + アロケート量 (`MemoryDiagnoser`) | 3B はホットパス List/HashSet 削減が本命、アロケート量で効果が見える |
+| Q7 | 比較ベースライン | (A) graph 未注入モード (Native-Detached) | フェアな比較 (同一 RouterDb / プロファイル、3B キャッシュ有無のみが違う) |
+| T1 | Difficulty 評価タイミング | (A) 都度評価 (ホットパスで `EvaluateDifficulty` を呼ぶ) | Phase 1 セマンティクス完全互換、プロファイル動的追加 OK |
+| T2 | Block 重複処理 | (A) `OtherContains` 走査 (Remove 時) | シンプル、メモリ増なし、削除は非ホットパスで O(K×M) 許容 |
+| T3 | Difficulty 重複処理 | (A) List `RemoveAll` (Remove 時) | T1 (A) との整合性、`_difficultyAreasByEdge` リスト操作 |
+| T4 | `QueryEdgesByAabb` 公開型 | (A) `Aabb` (Lat-Lon、Phase 1 既存型) | REQ-API-003、内部実装型 `OdrgBbox` を公開 API に露出しない |
+| T5 | `QueryEdgesByAabb` シグネチャ | (A) `IEnumerable<uint>` yield return | bake は非ホットパス、内部 buffer growable リトライで alloc 許容 |
+| T6 | Itinero fallback 方式 | (A) `GetEdge(e)` 都度 AABB 計算 | 3C で Itinero 撤去予定のため投資最小 |
+| T7 | `AttachGraph` 呼出規約 | (A) 同一 graph no-op / 別 graph 例外 | `ReferenceEquals` 判定、同一 Service の複数 Router 共有可 |
+| T8 | graph 範囲外形状 | (A) 無視 (cache に入らない) | Phase 1 セマンティクス完全互換、範囲外制約は経路に影響しない |
+| T9 | Router 自動 AttachGraph | (A) コンストラクタで自動呼出 | 公開 API 不変、ユーザーから見えるのは `new Router` のみ |
+| T10/T11 | `EdgeId` プロパティ | 既存 (Phase 1/3A.3b で追加済)、シグネチャ変更不要 | `IRoadGraphEdgeEnumerator.EdgeId` / `RoadEdge.EdgeId` |
+| T12 | `BuildFullShape` 削除可否 | graph 未注入 fallback で残置 (3C で再評価) | Phase 1 既存 36 件互換性のため |
+| T13 | 3B.5-A テスト粒度 | (A) Native 独自シナリオ 6 件 | Phase 1 既存 36 件でセマンティクス維持は証明済、Native 実機動作のみ軽量追加 |
+| T14 | ベンチ制約データ | 自動確定: `restrictions-mixed-100.json` は津島市 .odrg 範囲内 | 新規データ生成不要、3B-R8 解消 |
+| T15 | ベンチ Native-Detached 実現 | (A) `Router` に `internal` バリエーション追加 | 公開 API 不変、テスト/ベンチから利用容易 |
+| T16 | Native ロードヘルパ | (A) `BenchmarkAssets.LoadNativeRouterDb` 追加 | 既存 `LoadOsmDotRouterDb` パターン踏襲、共通化 |
 
 ### 4.4 トレードオフ・制約
 
-（未記述）
+- **Phase 1 セマンティクス完全互換**: graph 注入時のキャッシュ動作と graph 未注入時の Phase 1 動作で経路結果が完全一致。Phase 1 既存 36 件 (`RestrictedAreaServiceTests` 14 + `RestrictedRoutingTests` 9 + `RestrictedAreaServiceGmlTests` 13) すべて pass 維持で証明。
+- **Difficulty 評価のホットパス呼出**: T1=(A) で `evaluator.EvaluateDifficulty(area.DifficultyType)` をホットパスで都度呼ぶ。Phase 1 動作と同等、プロファイル動的追加 OK。プロファイル × DifficultyType の事前計算は Phase 4+ で再評価。
+- **Itinero fallback の性能**: T6=(A) で `GetEdge(e)` を毎エッジ呼ぶ全エッジ走査、Native R-tree O(log E) と比較して非効率。3C で Itinero 撤去後に問題解消。
+- **`BuildFullShape` の存続**: graph 未注入時 fallback で `EdgeWeightCalculator` 内に残置 (T12)。3C で Itinero 撤去 + Router 必須化後に削除検討。
+- **`RestrictedAreaService` の単一 graph バインド**: T7=(A) で別 graph への attach は `InvalidOperationException`。同一 service を複数 Router で使う場合は同一 RouterDb 必須。
+- **キャッシュ rebuild の自動化なし**: graph 自体を再ロードした場合 (Native の場合 .odrg ファイル更新) は service を再構築する必要あり。3F 親プロ統合時に運用フロー策定。
 
 ### 4.5 検証方法
 
-（未記述）
+#### 4.5.1 単体テスト 29 件（Phase 3 累計 +29、618 → 624）
+
+| サブステップ | 件数 | 観点 | 完了 commit | 累計 |
+| --- | --- | --- | --- | --- |
+| 3B.1 | 7 | `RestrictedAreaEdgeCache` 単体 (Empty / Add / Multiple / Remove + 重複制約 + 削除整合性) | `8e92dd7` | 602 |
+| 3B.2 | 6 | `IRoadGraph.QueryEdgesByAabb` (Native R-tree 3 + Itinero fallback 3) | `33778be` | 608 |
+| 3B.3 | 10 | `AttachGraph` + eager bake (状態確認 2 + bake 3 + Remove 連動 3 + T7 規約 2) | `c789ee7` | 618 |
+| 3B.4 | 0 | `EdgeWeightCalculator` ホットパス置換 (既存テスト維持で代替) | `61789e7` | 618 |
+| 3B.5-A | 6 | Native + 制約統合 (empty baseline / Block 迂回 / Difficulty 時間増加 / add+remove / ClearAll / RemoveByTag) | （本ステップ） | 624 |
+| **合計** | **29** | Phase 1 既存 526 件 + Phase 3 累計 = **624 件 pass** | | |
+
+Phase 1 既存 36 件 (Restricted 系) は変更なし、graph 自動注入後も Phase 1 動作と経路結果完全一致を維持。
+
+#### 4.5.2 3B 効果ベンチマーク (BenchmarkDotNet、`--job short`、2026-05-27 実測)
+
+**測定環境**: Windows 11 (10.0.26200.8457)、11th Gen Intel Core i7-1165G7 2.80GHz、.NET SDK 9.0.103
+**測定対象**: 津島市 .odrg (3.55MB、27,235 頂点 / 38,004 エッジ) で 100 ペア × Car プロファイル
+
+| Mode | Case | Mean | Allocated | 3B 効果 |
+| --- | --- | --- | --- | --- |
+| Itinero（参考、default.routerdb 43k 頂点） | C0 | 30.83 ms | 70.58 MB | - |
+| Itinero（参考、default.routerdb 43k 頂点） | C3 | 12.52 ms | 21.70 MB | - |
+| **Native-Detached（3B 前相当）** | C0 | **3.040 ms** | (報告なし) | 基準 |
+| **Native-Detached（3B 前相当）** | C3 | **18.045 ms** | **2.79 MB** | 基準 |
+| **Native-Attached（3B 後）** | C0 | **3.030 ms** | **1.13 MB** | Mean: -0.3% (制約なしで効果現れず、期待通り) |
+| **Native-Attached（3B 後）** | C3 | **1.177 ms** | **0.74 MB** | **Mean: -93.5%、Allocated: -73.5%** |
+
+**3B 効果の解釈**:
+
+- **C0 (制約なし、baseline)**: Native-Detached 3.040 ms ≈ Native-Attached 3.030 ms。制約 0 件なのでホットパスは同一、期待通り。3B がリグレッション (退化) を起こしていない証明。
+- **C3 (制約 100 件下、3B 本命)**: Native-Detached 18.045 ms → Native-Attached 1.177 ms = **約 15 倍高速化**。Phase 1 §18.3 の制約 100 件下劣化問題が完全解消。Allocated も 2.79MB → 0.74MB で **約 4 倍削減**、Phase 1 §18.4 の経路 1 本あたりアロケート削減に直接貢献。
+- **Itinero 参考値**: RouterDb 規模差 (43k 頂点 vs 27k 頂点) があり直接比較は不可だが、Native-Attached C3 (1.18 ms) は Itinero C3 (12.52 ms) より約 10 倍高速、Allocated は 30 倍小。詳細は 3E 本番ベンチで再評価。
+
+注意: `--job short` (iteration 3) のため StdDev が大きい (信頼区間 99.9% で ±数十 ms)。本番統計値は 3E で iteration 10+ で再測定予定。本値は **3B 効果の桁オーダー確認用**。
 
 ### 4.6 実装メモ
 
-（未記述）
+#### 主要 commit（時系列）
+
+| commit | 概要 |
+| --- | --- |
+| `ce7ef00` | 3B 計画書 v0.2 (Q1〜Q7 確定、ベンチ 3 モード改修方針) |
+| `cab741a` | 3B.1 計画書 v0.3 (T1〜T3 確定) |
+| `8e92dd7` | 3B.1: `RestrictedAreaEdgeCache` 新設 (単体 7 件、602 件 pass) |
+| `f57ebfc` | 3B.2 計画書 v0.4 (T4〜T6 確定) |
+| `33778be` | 3B.2: `IRoadGraph.QueryEdgesByAabb` 追加 + Native/Itinero 実装 (単体 6 件、608 件 pass) |
+| `e73bc26` | 3B.3 計画書 v0.5 (T7〜T9 確定) |
+| `c789ee7` | 3B.3: `RestrictedAreaService.AttachGraph` + eager bake 統合 (公開 API 不変、単体 10 件、618 件 pass) |
+| `a94dbe4` | 3B.4 計画書 v0.6 (T10〜T12 確認 = ユーザー判断不要) |
+| `61789e7` | 3B.4: `EdgeWeightCalculator` ホットパス置換 (`BuildFullShape` 排除、Phase 1 セマンティクス維持、618 件 pass) |
+| `bdcfbdf` | 3B.5 計画書 v0.7 (T13/T15/T16 確定、T14 自動確定) |
+| 本 commit | 3B.5 + 3B 完了: Native + 制約パリティ 6 件 + ベンチ 3 モード改修 + 設計書 §4 反映 (624 件 pass、3B 効果 C3 Mean -93.5%/Alloc -73.5%) |
+
+#### 暗黙の前提・引っかかりポイント
+
+- **`Aabb` (`OsmDotRoute.Geometry`) vs `OdrgBbox` (`OsmDotRoute.Internal.Odrg`)**: 前者 Lat-Lon、後者 Lon-Lat、3A.1 で別型として並存 (B 案、3C で統合検討)。3B では `NativeRoadGraph.QueryEdgesByAabb` 内部で変換 1 行。
+- **`OdrgReadResult.EdgeAabbs` は `OsmDotRoute.Extractor.Pipeline.Aabb`**: Core の `Aabb` とは別型、3A.1 並存の影響でテスト中の Brute-force 突合では `NativeRoadGraph.GetEdgeAabbs()` (`OdrgBbox`) を直接使用 (3B.2 軽微逸脱、commit `33778be` メッセージに明記)。
+- **BenchmarkDotNet 子プロセス起動時のパス**: `AppContext.BaseDirectory` がベンチ中間ディレクトリに変わるため、相対パスは利用不可。`BenchmarkAssets.TsushimaOdrgPath` は `RouterDbPath` 同様に絶対パスを直書き。
+- **3B.5-A テスト軽微逸脱**: 計画書 §4.5-A 当初想定 10〜15 件 → v0.7 で 5〜8 件に縮小、最終 6 件。Phase 1 既存 36 件でセマンティクス維持は既に証明済 (3B.4 完了時)、Native 独自シナリオのみ追加。
+- **`RestrictedAreaService.SpatialIndex<T>`**: 既存の制約形状 R-tree インデックスは Phase 1 動作 fallback 用に残置 (graph 未注入時の `EvaluateConstraints` で使用)。graph 注入時は実質使われない。3C で Itinero 撤去後に再評価。
+
+#### Phase 4+ への申し送り
+
+- プロファイル × DifficultyType の事前計算 (T1=(B) 案): `evaluator.EvaluateDifficulty` の都度呼出を排除する余地。3E ベンチで呼出コストを実測してから決定。
+- ターン制限 (PBF Relation `type=restriction`) 対応: 現状未対応、Phase 4+ で必要に応じて。
+- マルチスレッド対応: 現状 `RestrictedAreaService` は単一スレッド前提 (Phase 1 既存方針継続)。3B-R リスク表参照。
 
 ---
 

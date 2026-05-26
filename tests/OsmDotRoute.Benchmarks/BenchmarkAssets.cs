@@ -1,3 +1,4 @@
+using OsmDotRoute.Native;
 using ItineroDb = global::Itinero.RouterDb;
 
 namespace OsmDotRoute.Benchmarks;
@@ -57,5 +58,37 @@ internal static class BenchmarkAssets
     {
         var itinero = LoadItineroRouterDb();
         return OsmDotRoute.Itinero.ItineroRouterDbLoader.FromItineroRouterDb(itinero);
+    }
+
+    /// <summary>
+    /// 津島市 <c>.odrg</c>（リポジトリ同梱、3.55MB）のパス（Phase 3 ステップ 3B.5、計画書 §4.5-B T16=A）。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="RouterDbPath"/> と同様の絶対パス指定。BenchmarkDotNet は子プロセスでベンチを実行し
+    /// <c>AppContext.BaseDirectory</c> が中間ディレクトリに変わるため、相対パスは利用不可。
+    /// </remarks>
+    public const string TsushimaOdrgPath =
+        @"d:\workspace\DotRoute\samples\Data\tsushima.odrg";
+
+    /// <summary>
+    /// Native 系統 (<see cref="NativeRoadGraph"/> + <see cref="NativeRoadSnapper"/>) で
+    /// 津島市 <c>.odrg</c> をロードし、<see cref="OsmDotRoute.RouterDb"/> として返す
+    /// （Phase 3 ステップ 3B.5、計画書 §4.5-B T16=A）。
+    /// </summary>
+    /// <returns>(<see cref="OsmDotRoute.RouterDb"/>, <see cref="NativeRoadGraph"/>) のタプル。
+    /// graph は <see cref="IDisposable"/> なので呼出側で Dispose 必須。</returns>
+    public static (OsmDotRoute.RouterDb RouterDb, NativeRoadGraph Graph) LoadNativeRouterDb()
+    {
+        if (!File.Exists(TsushimaOdrgPath))
+        {
+            throw new FileNotFoundException(
+                $"ベンチマーク用 .odrg が見つかりません: {TsushimaOdrgPath}\n" +
+                "リポジトリ同梱の samples/Data/tsushima.odrg が必要です（commit 4a5a90a 以降）。",
+                TsushimaOdrgPath);
+        }
+        var graph = new NativeRoadGraph(TsushimaOdrgPath);
+        var snapper = new NativeRoadSnapper(graph);
+        var routerDb = new OsmDotRoute.RouterDb(graph, snapper);
+        return (routerDb, graph);
     }
 }
