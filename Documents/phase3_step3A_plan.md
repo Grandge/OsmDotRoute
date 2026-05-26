@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3A: ランタイム `.odrg` 読込実装 計画書
 
-**ステータス**: ドラフト v0.6（v0.5 ユーザー承認 commit `10a2038` + 3A.3b 完了 commit `c46a2ca` 後、3A.3e 着手前事前調査で 5 件の発見（CSR 不在 / EdgeCount セマンティクス / Shape 端点扱い / GeoCoordinate レイアウト / tsushima.odrg サイズ）を整理、ユーザー判断 4 件で対応方針確定、2026-05-26）
+**ステータス**: ドラフト v0.7（v0.6 ユーザー承認 commit `a952efc` + 3A.3e 完了 commit `4549633` 後、3A.3f 着手前調査で `.odrg` と Itinero RouterDb の頂点 ID / エッジ ID 体系不一致を発見、Itinero 突合は ID ベースで不可能と判明、ユーザー判断 4 件 (P1-P4) で OdrgReader 真値突合に絞り 9 件のテストを再定義、3A.3f 完了、2026-05-26）
 **対応ステップ**: Phase 3 ステップ 3A（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 3 最大リスク要因）
 **対応要件**: REQ-MAP-005（`.odrg` ランタイム読込）、REQ-NFR-003（経路 1 本あたりアロケート削減の土台）
 **関連文書**:
@@ -553,29 +553,39 @@ v0.4 §4.3.2 では「3A.3b は IF + ItineroRoadGraph + テスト追従のみ、
 
 ---
 
-#### 4.3.6 3A.3f: `NativeRoadGraph` テスト残り 9 件追加 + 並存パリティ確認 (v0.6 で 9 件に再配分)
+#### 4.3.6 3A.3f: `NativeRoadGraph` パリティテスト 9 件追加 (v0.7 で OdrgReader 真値突合に絞り再定義)
+
+**v0.7 改訂理由**: v0.6 §4.3.6 の記述「Itinero との座標 ±1e-7 度一致、両端 / 距離 / DataInverted の整合、ProfileEvaluator + Itinero タグ評価と一致」は、3A.3f 着手前調査で **`.odrg` と Itinero RouterDb の頂点 ID / エッジ ID が独立採番 (VertexAssignment vs Itinero) で、同じ ID が同じ要素を指さない**ことが判明したため不可能。ユーザー判断 4 件 (P1-P4、2026-05-26) で **OdrgReader 真値との自己整合性突合に絞る**方針に変更。Itinero との突合は 3A.6 (89 ペア経路パリティ) で経路結果一致として担保する。
+
+**確定方針 (P1-P4、2026-05-26)**:
+
+- **P1 突合対象 = OdrgReader 真値との自己整合のみ** (Itinero 突合は 3A.6 担当)
+- **P2 評価 API テスト = OdrgReader.BakedProfileEntry と一致** (Itinero タグ評価との一致は Phase 2 で証明済み)
+- **P3 エラーケース = 未開封 path + マジック改竄の 2 件**
+- **P4 サンプル = 頂点 100 / エッジ 100 / Shape 50 / 評価 50×2 profile**
 
 **作業**:
 
-- `tests/OsmDotRoute.Tests/Native/NativeRoadGraphTests.cs` 新規（9 件、3A.3e の sanity 3 件と合わせて累計 12 件）
-  - 頂点列挙パリティ（`ItineroRoadGraph` との座標 ±1e-7 度一致、サンプル 100 頂点）
-  - エッジ列挙パリティ（両端 / 距離 / DataInverted の整合、サンプル 100 エッジ）
-  - `GetEdge(edgeId)` シェイプ一致（`OdrgReader` 真値との完全一致、サンプル 50 エッジ）
-  - `GetEdgeShape(edgeId)` Span 返却が `GetEdge(edgeId).Shape` と要素一致
-  - `GetEdgeShape` 連続呼出で同一 Span (キャッシュ動作確認)
-  - 新評価 API `EvaluateEdge(en, evaluator)` 結果が ProfileEvaluator + Itinero タグ評価と一致
-  - 新評価 API `EvaluateEdge(RoadEdge, evaluator)` 結果も同上
-  - 未開封 path で `FileNotFoundException` (または `OdrgFormatException` 等の妥当な例外)
-  - 不正 `.odrg` (マジック改竄) で `OdrgFormatException`
-- `IClassFixture<NativeAndItineroGraphFixture>` で `.odrg` + `.routerdb` を同時ロード
+- `tests/OsmDotRoute.Tests/Native/NativeRoadGraphParityTests.cs` 新規（9 件）+ `NativeAndOdrgReaderFixture` 共有
+- 9 件:
+  1. `GetVertex_Sample100_MatchesOdrgReaderCoordinates`: 等間隔 100 頂点で `Native.GetVertex(v)` == `OdrgReader.Vertices[v]`
+  2. `GetEdgeEnumerator_Sample100Edges_FromToAndDataInvertedConsistentWithOdrgReader`: サンプル 100 エッジ ID で起点頂点から列挙して発見可能 + 反転側からも発見可能 + From/To/DataInverted の整合
+  3. `GetEdge_Sample50_ShapeMatchesOdrgReader`: サンプル 50 エッジで `Native.GetEdge(edgeId).Shape` == `OdrgReader.EdgeShapes[edgeId]`
+  4. `GetEdgeShape_Span_ContainsSameElementsAsGetEdgeList`: 同じ 50 エッジで `Native.GetEdgeShape(edgeId)` (Span) == `Native.GetEdge(edgeId).Shape` (IReadOnlyList) 要素一致
+  5. `GetEdgeShape_CalledTwice_ReturnsSameCachedArray`: 中間点ありエッジ 1 本で `Native.GetOrBuildShape(id)` を 2 回呼んで同一参照 (`Assert.Same`)
+  6. `EvaluateEdge_Enumerator_Sample50TimesCarPedestrian_MatchesBakedProfileEntry`: 50 エッジ × Car/Pedestrian で `EvaluateEdge(en, evaluator)` が `OdrgReader.ProfileTable.EntriesByProfile[slot][edgeId]` と一致
+  7. `EvaluateEdge_RoadEdge_Sample50TimesCarPedestrian_MatchesBakedProfileEntry`: 同上、RoadEdge オーバーロード版
+  8. `Constructor_NonExistentPath_ThrowsFileNotFoundException`: 存在しないパスで `FileNotFoundException`
+  9. `Constructor_InvalidMagicBytes_ThrowsOdrgFormatException`: tsushima.odrg をコピー + マジック先頭バイト改竄 → `OdrgFormatException`
 
 **Done 基準**:
 
-- xUnit テスト 9 件全 pass (3A.3e の 3 件と合わせて累計 12 件)
+- xUnit テスト 9 件全 pass (3A.3e の sanity 3 件と合わせて累計 12 件)
 - 累計 542 + 9 = **551 件 pass**
+- `dotnet build` 0 Warning / 0 Error
 - 並存パリティ実測値が記録される（3A.6 178 経路パリティの前段）
 
-**commit メッセージ案**: `feat: Phase 3 ステップ 3A.3 完了 (NativeRoadGraph + IRoadGraph 評価 API 改修)`
+**commit メッセージ案**: `feat: Phase 3 ステップ 3A.3f NativeRoadGraph パリティテスト 9 件 (OdrgReader 真値突合、3A.3 全体完了)`
 
 ---
 
@@ -704,8 +714,8 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 3A.3b | 0 | IF + ItineroRoadGraph + EdgeWeightCalculator + Dijkstra + テスト 5 ファイル + Itinero テスト extension 一括改修 (v0.5 で旧 3A.3b/c/d 統合、件数増減なし、539 維持) | 計画書 v0.5 |
 | ~~3A.3c~~ | ~~0~~ | ~~`EdgeWeightCalculator.Evaluate` 内部置換~~ | v0.5 で 3A.3b に統合 |
 | ~~3A.3d~~ | ~~0~~ | ~~既存テスト追従最終確認~~ | v0.5 で 3A.3b に統合 |
-| 3A.3e | 3 | NativeRoadGraph 構築 / 頂点読出 / Dispose の sanity check (v0.6 で 0→3 件に再配分) | 計画書 v0.6 |
-| 3A.3f | 9 | エッジ列挙パリティ / Shape / 評価 API / エラーケース (v0.6 で 12→9 件に再配分、3A.3e の 3 件と合わせて累計 12 件) | 計画書 v0.6 |
+| 3A.3e | 3 | NativeRoadGraph 構築 / 頂点読出 / Dispose の sanity check | ✅ 3 件 (commit `4549633`、542 件 pass) |
+| 3A.3f | 9 | OdrgReader 真値突合: 頂点 100 / エッジ 100 / Shape 50 / GetEdgeShape 50 / キャッシュ 1 / 評価 API 50×2 × 2 / エラー 2 (v0.7 で Itinero 突合不可能と判明、OdrgReader 突合に絞り再定義) | ✅ 9 件 (551 件 pass) |
 | 3A.4 | 8 | R-tree クエリ正確性 / ブルートフォース突合 | |
 | 3A.5 | 183 | `NativeRoadSnapper` 178 + 解決失敗 5 | |
 | 3A.6 | 178 | 89 ペア × 2 実装 経路パリティ | |
@@ -743,8 +753,16 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
   - L5 = **`GetEdgeShape` 追加** (Itinero per-call、Native ゼロコピー)
   - L6 = **class 毎回 new** (Itinero と同じシンプル実装)
   - L8 = **3A.3e で sanity 3 件 + 3A.3f で 9 件**
-- [ ] 本ステップ計画書 v0.6 ユーザーレビュー → 承認
-- [ ] 3A.3e 着手
+- [x] **本ステップ計画書 v0.6 ユーザー承認** (commit `a952efc`)
+- [x] **3A.3e 完了** (commit `4549633`、542 件 pass)
+- [x] 3A.3f 着手前調査 → .odrg と Itinero RouterDb の頂点 ID / エッジ ID が独立採番で Itinero 突合は ID ベースで不可能と判明、ユーザー判断 4 件確定 (2026-05-26):
+  - P1 = **OdrgReader 真値突合のみ** (Itinero 突合は 3A.6 で経路結果一致として担保)
+  - P2 = **BakedProfileEntry と一致** (Itinero タグ評価は Phase 2 で証明済み)
+  - P3 = **エラーケース 2 件** (未開封 path + マジック改竄)
+  - P4 = **サンプル 100 / 100 / 50 / 50×2 profile**
+- [x] **3A.3f 完了** (551 件 pass、3A.3 全体完了)
+- [ ] 本ステップ計画書 v0.7 ユーザーレビュー → 承認
+- [ ] 3A.4 (STR R-tree クエリ) 着手
 
 ---
 
@@ -756,5 +774,6 @@ public sealed class NativeAndItineroGraphFixture : IDisposable
 | 0.2 (draft) | 2026-05-26 | v0.1 ユーザー承認 (commit `b27be51`) 後、3A.1 着手前の現状確認で発見した訂正を反映：(1) §2.4 セクション構成表を実装確認済の 9 セクション (VERTEX / EDGE / EDGE_SHAPE / EDGE_AABB / EDGE_FLAG 独立 / SPATIAL_INDEX / BAKED_PROFILE / TURN_RESTRICTION / METADATA) に訂正、v0.1 の誤記 (PROFILE_BAKE / STRING_POOL、flags が EDGE 内、`バージョン 0x0002`) を訂正。(2) §3.1 スコープ内に「OdrgFormat を Extractor → Core へ移動」を前提リファクタとして追加（依存方向 Core ← Pbf ← Extractor のため）。(3) §4.1 (3A.1) を「ステップ 0: OdrgFormat Core 移動 / ステップ 1: OdrgSectionDirectory 実装」に分割、検証条件を `VersionMajor == 1` / `edgeFlagBytes == 2` / `sectionCount == 9` に具体化、参照真値を `OdrgReader.Read` に統一 | Claude (Opus 4.7) |
 | 0.3 (draft) | 2026-05-26 | 3A.1 完了 (commit `fb6cd45`) / 3A.2 完了 (commit `279a6ec`) 後、3A.3 着手前の `IRoadGraph` 依存連鎖調査で発見した重大な設計問題を反映：(1) §2.5 追加 = `.odrg` には OSM タグ生データなし → `NativeRoadGraph.GetEdgeOsmTags` 実装不可、`IRoadGraph` 改修必須。ユーザー判断 B 案 (3A.3 で `IRoadGraph` 改修込み) 確定。(2) §2.6 追加 = 着手前ペンディング判断 §3A.3-API 起票 (新評価 API シグネチャ a/b/c)、推奨 (a) `EdgeEvaluation EvaluateEdge`。(3) §4.3 を B 案サブステップ詳細 3A.3a〜3A.3f に全面書き直し（API 改修案ドラフト / `ItineroRoadGraph` 追従 / `EdgeWeightCalculator` 内部置換 / 既存テスト追従 / `NativeRoadGraph` 新規 / テスト 12 件）。各サブステップで `dotnet test` 全 pass 維持。(4) §5 リスク表に 3A-R7 (改修で既存テスト破壊) / 3A-R8 (新 API がホットパス不適合) 追加。(5) §6 テスト件数表に 3A.3 サブステップ分割反映 + 3A.1/3A.2 実績反映 (5+8、累計 539)。(6) §7 着手前確認事項を v0.3 用に更新。3A.1〜3A.2 完了済をチェック、§3A.3-API 確定 + v0.3 承認をペンディング | Claude (Opus 4.7) |
 | 0.4 (draft) | 2026-05-26 | v0.3 ユーザー承認 (commit `eb1431c`) + §3A.3-API (a) ユーザー判断確定後、3A.3a 成果物を反映：(1) §2.6 確定マーク追記。(2) §2.6.1 追加 = (a) 案 確定後の詳細シグネチャ。3A.3a 着手時の現状確認で `IRoadProfile` 不在（v0.3 §2.6 の架空型）/ `ProfileEvaluator.Name` 未公開を発見、確定シグネチャを `EvaluateEdge(IRoadGraphEdgeEnumerator, ProfileEvaluator)` に補正。`ProfileEvaluator.Name` プロパティ追加方針 + `EdgeWeightCalculator` 改修コード骨格 + `IRoadGraphEdgeEnumerator.EdgeProfileIndex` の扱い (保持、3C で廃止検討) も決定。(3) §2.6.2 追加 = 既存テスト 5 ファイル `GetEdgeOsmTags` 直呼び 6 箇所 (本番 2 + テスト 4) の grep 結果 + 改修方針表。(4) §7 着手前確認事項を v0.4 用に更新、3A.3a 完了済をチェック、v0.4 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
+| 0.7 (draft) | 2026-05-26 | v0.6 ユーザー承認 (commit `a952efc`) + 3A.3e 完了 (commit `4549633`、542 件 pass) 後、3A.3f 着手前調査で **.odrg と Itinero RouterDb の頂点 ID / エッジ ID が独立採番**で Itinero との ID ベース突合は不可能と判明、ユーザー判断 4 件 (2026-05-26) で対応方針確定: P1 突合対象 = OdrgReader 真値のみ (Itinero 突合は 3A.6 で経路結果一致として担保) / P2 評価 API = BakedProfileEntry と一致 (Itinero タグ評価は Phase 2 で証明済み) / P3 エラー = 未開封 path + マジック改竄 2 件 / P4 サンプル = 頂点 100 / エッジ 100 / Shape 50 / 評価 50×2 profile。§4.3.6 を OdrgReader 真値突合 9 件版に再定義: GetVertex / GetEdgeEnumerator 反転 / GetEdge Shape / GetEdgeShape Span / キャッシュ動作 (Assert.Same) / EvaluateEdge en × Car/Pedestrian / EvaluateEdge RoadEdge × Car/Pedestrian / 未開封 path / マジック改竄。§6 テスト件数表で 3A.3e/3A.3f 実績マーク + ✅。§7 着手前確認事項を v0.7 用に更新、v0.6 承認 + 3A.3e 完了 + ユーザー判断 4 件確定 + 3A.3f 完了をチェック、v0.7 承認 + 3A.4 着手をペンディング | Claude (Opus 4.7) |
 | 0.6 (draft) | 2026-05-26 | v0.5 ユーザー承認 (commit `10a2038`) + 3A.3b 完了 (commit `c46a2ca`、539 件 pass 維持) 後、3A.3e 着手前事前調査で `.odrg` / Itinero / 各実装の発見 5 件を整理 (§2.7 新設): F1 EDGE は頂点グループ化されていない → CSR インデックス必要 / F2 edgeCount は無向辺数 (仕様書 §1 表記の誤り、Itinero と数値一致) / F3 EDGE_SHAPE は中間点のみ (Itinero と一致) / F4 GeoCoordinate(Lat,Lon) と OdrgVertex(Lon,Lat) のフィールド順が逆 (直 Span 化不可) / F5 tsushima.odrg = 3.55 MB 確認。これに対するペンディング判断 4 件を §2.8 で起票 + ユーザー判断確定: L1 CSR (`firstOutEdge: uint[V+1]` + `OutEdgeEntry[2E]`) 採用 / L5 IRoadGraph に `GetEdgeShape(uint) -> ReadOnlySpan<GeoCoordinate>` 追加 + IRoadGraph : IDisposable 化 / L6 NativeEdgeEnumerator は class 毎回 new (Itinero と同じ) / L8 3A.3e で sanity 3 件 + 3A.3f で 9 件 (累計 12 件)。L2 EdgeCount セマンティクス / L3 Shape 端点扱い / L4 GeoCoordinate レイアウト / L7 Dispose 後アクセスは推奨案通り。§4.3.5 3A.3e を v0.6 詳細化: 事前作業 (IRoadGraph.GetEdgeShape 追加 + IRoadGraph : IDisposable 化 + Itinero 追従) + 実装 (NativeRoadGraph 全フィールド + コンストラクタ + IRoadGraph 全メソッド) + NativeEdgeEnumerator 詳細 + DistanceM 計算 (Haversine + キャッシュ) + sanity test 3 件。§4.3.6 3A.3f を 9 件版に再配分。§6 テスト件数表で 3A.3e の 0→3 件、3A.3f の 12→9 件に補正 + 累計 542/551 に補正。§7 着手前確認事項を v0.6 用に更新、v0.5 承認 + 3A.3b 完了 + ユーザー判断 4 件確定をチェック、v0.6 承認 + 3A.3e 着手をペンディング | Claude (Opus 4.7) |
 | 0.5 (draft) | 2026-05-26 | v0.4 ユーザー承認 (commit `cd661d0`) 後、3A.3b 着手前事前調査で v0.4 §2.6.1 と現状コードのギャップを 3 件発見：(1) `DijkstraEngine.cs:42,46` は `RoadEdge.EdgeProfileIndex` 経由の評価呼出で `en` を持たない (v0.4 単一シグネチャ `EvaluateEdge(en, evaluator)` だけでは呼べない)。(2) `GetEdgeOsmTags(ushort)` 削除後は `EdgeWeightCalculator.Evaluate(ushort)` 内部から新 API を呼ぶ術がなく、v0.4 §4.3.2 で示唆した「案 α (3A.3b で暫定 fall back)」は**技術的に不成立**。(3) テスト 5 ファイル `IsCarHighway(tags["highway"])` ヘルパは `ProfileEvaluator.Evaluate(tags).CanPass` では粒度再現不可。ユーザー判断 3 件確定 (2026-05-26): (a) **RoadEdge オーバーロード追加** = `IRoadGraph.EvaluateEdge` を `(en, evaluator)` + `(RoadEdge, evaluator)` の 2 本に。(b) **Itinero テスト用 extension 新設** = `src/OsmDotRoute.Itinero/ItineroRoadGraphTestExtensions.cs` で `GetEdgeOsmTagsForTest` を提供、テストヘルパは `IsCarHighway` 判定を維持。(c) **案 β (3A.3b/3A.3c/3A.3d 統合) 採用、案 α 不採用**。反映: (1) §2.6.1 確定シグネチャを 2 オーバーロードに訂正、ギャップ発見記述追加。(2) §2.6.2 改修方針表を Itinero extension 経由に訂正、テスト改修パターン明示。(3) §2.6.3 新設 = Itinero テスト用 extension の設計 + InternalsVisibleTo 確認手順 + テスト書換パターン。(4) §4.3.2 を v0.4 3A.3b/c/d 統合版に全面書き直し、作業項目 8 段 + Done 基準 6 段 + v0.4 サブステップ対応表追加。(5) §4.3.3 / §4.3.4 を削除し v0.5 で 3A.3b に統合した旨を明示。(6) §6 テスト件数表で 3A.3c/3A.3d を取り消し線 (3A.3b に統合)、3A.3b の説明を統合版に書き換え、3A.3a 実績マーク。(7) §7 着手前確認事項を v0.5 用に更新、v0.4 承認済 + ユーザー判断 3 件確定をチェック、v0.5 承認 + 3A.3b 着手をペンディング | Claude (Opus 4.7) |
