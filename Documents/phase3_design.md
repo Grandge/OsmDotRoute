@@ -141,36 +141,155 @@ Phase 2 設計書 §8「Phase 3 申し送り事項」が本書の出発点。Pha
 
 ## 3. NativeRoadGraph / NativeRoadSnapper（MMF + Span）
 
-**対応ステップ**: 3A
-**対応要件**: REQ-MAP-005
+**対応ステップ**: 3A (3A.1〜3A.6)
+**対応要件**: REQ-MAP-005（`.odrg` ランタイム読込）、REQ-NFR-003（経路 1 本あたり 77MB アロケート削減の土台）
 **Phase 2 申し送り**: 設計書 §8.3 表 3A 行
-**実装日**: （未着手）
-**実装バージョン**: （未着手）
-**主要ファイル**: 着手時に確定
+**実装日**: 2026-05-26（3A.1 着手）〜 2026-05-27（3A.6 完了）
+**実装バージョン**: ユーザー採番
+**主要ファイル**:
+
+- [`src/OsmDotRoute/Internal/Odrg/OdrgFormat.cs`](../src/OsmDotRoute/Internal/Odrg/OdrgFormat.cs)（セクションコード定数）
+- [`src/OsmDotRoute/Internal/Odrg/OdrgSections.cs`](../src/OsmDotRoute/Internal/Odrg/OdrgSections.cs)（`OdrgHeader` / `OdrgSectionEntry` / `OdrgVertex` / `OdrgEdge` / `OdrgEdgeAabb` / `OdrgBakedProfileEntry` / `OdrgBbox` 等）
+- [`src/OsmDotRoute/Internal/Odrg/OdrgSectionDirectory.cs`](../src/OsmDotRoute/Internal/Odrg/OdrgSectionDirectory.cs)（HEADER + SECTION TABLE パース）
+- [`src/OsmDotRoute/Internal/Odrg/OdrgMmfHandle.cs`](../src/OsmDotRoute/Internal/Odrg/OdrgMmfHandle.cs)（MMF + SafeBuffer ゼロコピー読込）
+- [`src/OsmDotRoute/Internal/Odrg/OdrgFormatException.cs`](../src/OsmDotRoute/Internal/Odrg/OdrgFormatException.cs)
+- [`src/OsmDotRoute/Native/NativeRoadGraph.cs`](../src/OsmDotRoute/Native/NativeRoadGraph.cs)（`IRoadGraph` 実装 + CSR インデックス + シェイプ詰替えキャッシュ + 距離キャッシュ）
+- [`src/OsmDotRoute/Native/NativeEdgeEnumerator.cs`](../src/OsmDotRoute/Native/NativeEdgeEnumerator.cs)（class enumerator、CSR 反復）
+- [`src/OsmDotRoute/Native/OutEdgeEntry.cs`](../src/OsmDotRoute/Native/OutEdgeEntry.cs)（CSR 出力エントリ）
+- [`src/OsmDotRoute/Native/NativeRTreeQuery.cs`](../src/OsmDotRoute/Native/NativeRTreeQuery.cs)（R-tree クエリ + Nearest）
+- [`src/OsmDotRoute/Native/NativeRoadSnapper.cs`](../src/OsmDotRoute/Native/NativeRoadSnapper.cs)（`IRoadSnapper` 実装、R-tree 候補 + 点-線分最短距離）
+- [`src/OsmDotRoute/Geometry/GeoMath.cs`](../src/OsmDotRoute/Geometry/GeoMath.cs)（Haversine + MetersToBboxDegrees + PointToSegment）
+- [`src/OsmDotRoute/Routing/IRoadGraph.cs`](../src/OsmDotRoute/Routing/IRoadGraph.cs)（3A.3b 改修: `EvaluateEdge` 2 オーバーロード追加 + `GetEdgeShape` 追加）
 
 ### 3.1 意図
 
-（未記述：ステップ 3A 完了時に肉付け）
+REQ-MAP-005（`.odrg` ランタイム読込）を Phase 3 段階で実装する。Phase 2 で確定した `.odrg` v0.2 形式を `MemoryMappedFile` + `ReadOnlySpan<T>` でゼロコピー読込する `NativeRoadGraph` / `NativeRoadSnapper` を、Itinero 系（`ItineroRoadGraph` / `ItineroSnapper`）と**並存可能な形**で実装した。Itinero 撤去は 3C、DI 統合（`MapService.LoadFromOdrg`）も 3C で行う。
+
+Phase 1 §18.4 で識別された「経路 1 本あたり 77MB アロケート」の主因（`Route.Shape` の `IReadOnlyList<GeoCoordinate>` 化）に対し、`IRoadGraph.GetEdgeShape(uint edgeId) -> ReadOnlySpan<GeoCoordinate>` を新設し、`NativeRoadGraph` 側で**ゼロアロケーション API シグネチャを確定**させた（REQ-NFR-003 の土台）。実際の `Route.Shape` 自体の `ReadOnlyMemory<T>` 化と素通し保持は 3C 担当。
 
 ### 3.2 採用設計
 
-（未記述）
+#### 3.2.1 レイヤ構成
+
+```text
+.odrg バイナリファイル (Phase 2 グラフ形式仕様書 v0.2)
+        ↓
+OdrgMmfHandle              MemoryMappedFile + SafeBuffer (IDisposable + ファイナライザ併用)
+        ↓ ReadOnlySpan<byte> ビュー
+OdrgSectionDirectory       HEADER + SECTION TABLE 9 エントリパース (Read-only)
+        ↓ セクションオフセット
+NativeRoadGraph            IRoadGraph 実装
+   ├─ CSR インデックス     firstOutEdge (uint[]) + outEntries (OutEdgeEntry[])、起動時構築 O(E)
+   ├─ シェイプ詰替えキャッシュ  GeoCoordinate[]?[] (初回 GetEdgeShape 時、Lon-Lat → Lat-Lon)
+   ├─ 距離キャッシュ       float[] + bool[] (初回 Haversine 積算後)
+   ├─ BAKED_PROFILE        Dictionary<string, int> (profile name → slot index)
+   └─ R-tree セクション参照 ノード count / root / branching / height を起動時抽出
+        ↓
+NativeRoadSnapper          IRoadSnapper 実装
+   ├─ NativeRTreeQuery     Query (bbox + buffer + 結果数) + Nearest (k=N)
+   └─ GeoMath              Haversine + MetersToBboxDegrees + PointToSegment
+```
+
+#### 3.2.2 主要 API
+
+| API | 役割 |
+| --- | --- |
+| `new NativeRoadGraph(string odrgPath)` | MMF オープン + セクション解析 + CSR 構築 + プロファイル table ロード |
+| `IRoadGraph.GetEdgeShape(uint edgeId) -> ReadOnlySpan<GeoCoordinate>` | Phase 1 から追加された API。`NativeRoadGraph` はキャッシュ配列を返却（ゼロコピー、ライフタイム = `NativeRoadGraph.Dispose` まで） |
+| `IRoadGraph.EvaluateEdge(in NativeEdgeEnumerator, ProfileEvaluator)` / `IRoadGraph.EvaluateEdge(in RoadEdge, ProfileEvaluator)` | 3A.3b で追加された 2 オーバーロード評価 API。`NativeRoadGraph` は `.odrg` BAKED_PROFILE 直読、`ItineroRoadGraph` は OSM tags 経由 |
+| `new NativeRoadSnapper(NativeRoadGraph)` | 内部に `uint[1024]` クエリバッファを持つ |
+| `IRoadSnapper.Snap(string profileName, GeoCoordinate, float searchDistanceM)` | R-tree で bbox 絞り込み → 候補エッジに対し `GeoMath.PointToSegment` → グローバル最短エッジ選択 |
+| `new RouterDb(IRoadGraph, IRoadSnapper)`（internal） | 既存 Phase 1 公開ファサードに Native 系統を組み込む経路。`InternalsVisibleTo` でテストから利用、DI 統合は 3C |
 
 ### 3.3 設計判断の根拠
 
-（未記述）
+3A 期間中に着手前事前調査でのギャップ発見ごとにユーザー確認した設計判断は以下のとおり：
+
+| ID | 論点 | 確定 | 理由 |
+| --- | --- | --- | --- |
+| §5.5-#21 | MMF 解放方針 | (b) SafeHandle ファイナライザ併用 | `MemoryMappedViewAccessor.SafeMemoryMappedViewHandle` が `SafeBuffer:SafeHandle` 派生で、CriticalFinalizer 経由のクリーンアップを既定で享受。利用側 `Dispose` を契約で求めつつ、忘れた場合の OS リソース解放を保証 |
+| §5.5-#22 | 制約 ID 単位キャッシュ粒度 | (a) 制約 ID 単位（3B 担当） | 3B 着手時の論点を 3A 計画書時点で先行確定。3A.4 R-tree クエリは制約付与とは独立、bbox 引数のみ受ける汎用 API |
+| §3A.3-API | `IRoadGraph` 評価 API 形状 | (a) `EvaluateEdge(en, ProfileEvaluator)` 2 オーバーロード | ホットパス内のメソッドコール 1 回追加コストは無視可能、`ProfileEvaluator` 注入で `NativeRoadGraph` が tags 経由を強要されない |
+| L1（3A.3e） | `NativeRoadGraph` 内部表現 | CSR（`firstOutEdge` + `outEntries`） | LINKED LIST 案より cache miss が少なく、Itinero RouterDb 内部とも近い |
+| L5（3A.3e） | `GetEdgeShape` API 追加 | `IRoadGraph` に追加（Itinero per-call、Native ゼロコピー） | Phase 1 では存在しなかった API。`Route.Shape` の `ReadOnlyMemory<T>` 化（3C）に向けた土台 |
+| L6（3A.3e） | EdgeEnumerator 実装方式 | class、毎回 new（Itinero と同じ） | struct enumerator は 3E 性能測定で評価、シンプル優先 |
+| P1（3A.3f） | 真値突合方針 | `OdrgReader` 真値突合のみ | Itinero RouterDb と `.odrg` で頂点 ID / エッジ ID が独立採番、ID ベース突合は技術的に不可能と判明 |
+| Q1（3A.4） | R-tree クエリ bbox 表現 | `OdrgBbox`（Lon-Lat、Internal.Odrg） | wire format と一致、`OdrgWriter` 側との比較が容易 |
+| Q3（3A.4） | R-tree ノードアクセサー | `NativeRoadGraph` に internal API 追加 | 別 class 化より結合が緩く、テストから直接呼べる |
+| Q4（3A.4） | overrun ハンドリング | ヒット総数を返し `buffer.Length` まで書込 | 呼出側で容量増やして再クエリ（`QueryWithGrowableBuffer` パターン） |
+| Q5（3A.4） | 点-AABB 最小距離 | 経緯度 2D euclidean（度単位、R-tree 枝刈り規約と一致） | R-tree 枝刈りに使う距離関数なので AABB 用度 metric が最も自然 |
+| Q1（3A.5a） | GeoMath ヘルパ分離 | 3A.5a / 3A.5b 分割 | テスト独立性確保、Brute-force 突合のサブ基盤を先に確定 |
+| Q3（3A.5a） | GeoMath 配置 | `src/OsmDotRoute/Geometry/GeoMath.cs` internal static | Native 専用ではなく Phase 1 既存 `PolygonIntersection` 等とも共有可能な位置 |
+| Q5（3A.5a） | `MetersToBboxDegrees` | 緯度依存近似（dLat = m/111320、dLon = m/(111320 × cos(lat))） | 1km 以下のローカル bbox 拡張で精度十分、R-tree 候補絞り込み用途 |
+| Q2（3A.5b） | プロファイル評価 | `NativeRoadGraph.CanPass` で BAKED_PROFILE.Flags 直読（`ProfileEvaluator` 非依存） | `.odrg` 設計の意図（タグ → ProfileEvaluator ルートをバイパス、bake 値直読）と一致 |
+| Q6（3A.5b） | Offset 計算 | 距離比 × 65535（Itinero 互換） | 既存 Phase 1 `SnapResult.Offset` セマンティクス継続 |
+| Q1（3A.6） | テスト方針 | (B) Native 自己整合のみ、Itinero 突合廃止 | Phase 1 既存 526 件（Itinero 系）の全 pass 維持で並存証明を代替。ID 独立採番により ID ベース突合は技術的に不可能 |
+| Q6（3A.6） | NativeRouterDb fixture | 新設、`IClassFixture` で共有 | 16 件のテストで Graph / Snapper / RouterDb / Router を使い回し、CI 時間最小化 |
 
 ### 3.4 トレードオフ・制約
 
-（未記述）
+- **Span ライフタイム**: `IRoadGraph.GetEdgeShape` の戻り `ReadOnlySpan<GeoCoordinate>` のライフタイムは `NativeRoadGraph.Dispose()` まで。呼出側が `Dispose` 後に Span を使用すると不定動作（XML doc に明記、3A-R4）。3C で `Route.Shape` を `ReadOnlyMemory<T>` 化する際は `MemoryManager<T>` 経由で延命する設計に移行可能。
+- **プロファイル評価のバイパス**: `NativeRoadGraph` は `.odrg` BAKED_PROFILE 直読（`SpeedKmh` + `Flags`）。`ProfileEvaluator` は API 形状として保持するが Native 系統は値を見ない。Itinero 系統との API 互換性は `IRoadGraph.EvaluateEdge` の 2 オーバーロードで担保。3C で統合方針再検討。
+- **Itinero との並存パリティ証明**: `.odrg` と Itinero RouterDb の頂点 ID / エッジ ID が独立採番のため、ID ベースの突合は技術的に不可能（3A.3f / 3A.6 で判明）。**経路結果一致による並存証明は Phase 1 既存 526 件全 pass の維持で代替**。
+- **`RouterDb` コンストラクタ公開度**: `RouterDb(IRoadGraph, IRoadSnapper)` は internal（`InternalsVisibleTo` でテストから利用）。DI 統合（`AddOsmDotRoute(odrgPath)`）は 3C で実装。
+- **Big-endian ホスト**: `.odrg` 仕様はリトル固定。Big-endian ホストでは `OdrgFormatException`。Phase 3 スコープ外（将来検討、3A-R6）。
+- **R-tree Query の overrun**: `buffer.Length` 不足時はヒット総数を返し `buffer` には先頭部分のみ書込、呼出側がバッファを増やして再クエリ。`NativeRoadSnapper.QueryWithGrowableBuffer` で 2 倍化リトライ。
 
 ### 3.5 検証方法
 
-（未記述）
+3A 期間中の単体テスト 69 件、いずれも津島市 `.odrg`（3.55 MB、頂点 27,235 / エッジ 38,004、commit `4a5a90a` 同梱）を実データとして使用：
+
+| サブステップ | 件数 | 観点 | 完了 commit | 累計 |
+| --- | --- | --- | --- | --- |
+| 3A.1 | 5 | セクションテーブルパース正常 / 異常 | `fb6cd45` | 531 |
+| 3A.2 | 8 | Span 切出 / `Dispose` 後アクセス | `279a6ec` | 539 |
+| 3A.3a | 0 | API 改修案ドラフト（計画書 v0.3 / v0.4） | `eb1431c` / `cd661d0` | 539 |
+| 3A.3b | 0 | `IRoadGraph` + `ItineroRoadGraph` + `EdgeWeightCalculator` + `DijkstraEngine` + テスト 5 ファイル一括改修 | `c46a2ca` | 539 |
+| 3A.3e | 3 | `NativeRoadGraph` 構築 / 頂点読出 / Dispose sanity | `4549633` | 542 |
+| 3A.3f | 9 | `OdrgReader` 真値突合: 頂点 100 / エッジ 100 / Shape 50 / `GetEdgeShape` 50 / 評価 API 50×2×2 / エラー 2 | `f573c08` | 551 |
+| 3A.4 | 8 | R-tree アクセサー / Query 全包含 / Query 範囲外 / Query × 50 Brute-force / Query overrun / Nearest k=1 / Nearest k=10 / ノード構造 | `78d4581` | 559 |
+| 3A.5a | 8 | GeoMath 単体: Haversine 2 / 点-線分距離 3 / 投影 t 3 | `88d00fe` | 567 |
+| 3A.5b | 12 | `NativeRoadSnapper`: コンストラクタ / 頂点 / エッジ中央 / 非存在 profile / 検索半径 0 / 範囲外 / bbox 拡張 / Brute-force × 20 / Offset 単調 / From/To 端点 / Dispose 後 | `5a54296` | 579 |
+| 3A.6 | 16 | NativeRouter 自己整合: smoke 5 + 不変量 8 + RouterDb コンストラクタ 2 + fixture sanity 1 | （本ステップ完了 commit） | 595 |
+| **合計** | **69** | Phase 2 累計 526 → Phase 3 3A 完了時 **595 件 pass** | | |
+
+並存戦略:
+
+- Phase 1 / Phase 2 累計 526 件（Itinero 系）は触らず、全 pass を維持
+- Native 系テストは [`NativeAndOdrgReaderFixture`](../tests/OsmDotRoute.Tests/Native/NativeRoadGraphParityTests.cs) / [`NativeRouterDbFixture`](../tests/OsmDotRoute.Tests/Native/NativeRouterDbFixture.cs) を `IClassFixture` で共有し実行時間を最小化
+- 全 595 件の実行時間は約 47 秒（Phase 2 完了時 23 秒 → Native 追加 +24 秒、CI 許容範囲内）
 
 ### 3.6 実装メモ
 
-（未記述）
+#### 主要 commit（時系列）
+
+| commit | 概要 |
+| --- | --- |
+| `fb6cd45` | 3A.1: `OdrgSectionDirectory` 実装（HEADER + SECTION TABLE パース、5 件） |
+| `279a6ec` | 3A.2: `OdrgMmfHandle` 実装（MMF + SafeBuffer ゼロコピー Span 切出、8 件） |
+| `eb1431c` | 3A.3a: §3A.3-API 確定 (a) `EvaluateEdge` 2 オーバーロード（計画書 v0.3 承認） |
+| `c46a2ca` | 3A.3b: `IRoadGraph` 改修 + `ItineroRoadGraph` + `EdgeWeightCalculator` + `DijkstraEngine` + テスト 5 ファイル + Itinero テスト extension 一括改修（539 件 pass 維持） |
+| `4549633` | 3A.3e: `NativeRoadGraph` 実装（`IRoadGraph` 実装、CSR インデックス、シェイプ詰替えキャッシュ、距離キャッシュ、sanity 3 件、542 件 pass） |
+| `f573c08` | 3A.3f: `NativeRoadGraph` × `OdrgReader` 真値突合 9 件（551 件 pass、3A.3 全体完了） |
+| `78d4581` | 3A.4: `NativeRTreeQuery` 実装（R-tree クエリ + Nearest、Brute-force 突合、8 件、559 件 pass） |
+| `88d00fe` | 3A.5a: `GeoMath` ヘルパ新設（Haversine + MetersToBboxDegrees + PointToSegment、8 件、567 件 pass） |
+| `5a54296` | 3A.5b: `NativeRoadSnapper` 実装（R-tree 候補 + 点-線分最短距離 + Brute-force 突合、12 件、579 件 pass） |
+| 本ステップ | 3A.6 + 3A 完了: `NativeRouterDbFixture` + 自己整合テスト 16 件 + 設計書 §3 反映（595 件 pass） |
+
+#### 暗黙の前提・引っかかりポイント
+
+- **`OdrgVertex(Lon, Lat)` と `GeoCoordinate(Lat, Lon)` のフィールド順差**: `.odrg` 内 `OdrgVertex` は `(Lon, Lat)` 順、既存 `GeoCoordinate` は `(Lat, Lon)` 順。`MemoryMarshal.Cast` で直接キャスト不可。`NativeRoadGraph` は初回 `GetEdgeShape` 呼出時に**詰替えてキャッシュ**する（3A.3e §2.7 F4）。
+- **エッジ距離キャッシュ**: `RoadEdge.DistanceM` は `.odrg` に直接保持されない。端点 + 中間シェイプ点列の Haversine 距離合算で初回算出し、エッジごとに `float[]` + `bool[]` でキャッシュ。
+- **R-tree ノードレイアウト**: `OdrgWriter.WriteRTreeSection` と完全同一 struct で読込。リーフノードは `count > 0` かつ子は edge ID リスト、内部ノードは子ノードインデックスリスト。
+- **3A.4 計画書 §4.4-B からの軽微逸脱**: リーフ展開で `edgeAabbs` を Query API に追加（true-positive filter のため、commit `78d4581` メッセージに明記済）。
+- **3A.5b 計画書 §4.5.2 からの軽微逸脱**: 通行不可除外テストを「非存在 profile / 検索半径 0」に置換、Brute-force 50 → 20 で CI 安定（commit `5a54296` メッセージに明記済）。
+- **3A.6 計画書 §4.6-B テスト 13 からの軽微逸脱**: `Route_SegmentConnectivity` → `Route_ShapeIsContinuous` に変更。`Route` 型に `RouteSegment` プロパティが存在しない（`TotalDistanceM` / `TotalDurationSec` / `Shape` のみ）ため、Shape の隣接点間 Haversine 合計と `TotalDistanceM` の整合性を ±20% で検証。計画書 v0.10 自体に「(RouteSegment が存在する場合)」の注釈があり想定済の逸脱パターン。
+
+#### Phase 4+ への申し送り
+
+- `NativeEdgeEnumerator` は class（Itinero と同じ）。3E ベンチで struct enumerator 化の効果を測定し、必要なら 3D で切替検討。
+- `Route.Shape` の `ReadOnlyMemory<GeoCoordinate>` 化は 3C で実施予定。`MemoryManager<T>` 経由で Native の Span をラップする設計を予定。
+- Big-endian ホスト対応は将来課題（3A-R6）、現状は `OdrgFormatException` で明示拒否。
 
 ---
 

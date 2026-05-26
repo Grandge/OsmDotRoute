@@ -949,7 +949,7 @@ Q6 確定の 8 件:
   - プロファイル評価は `.odrg` BAKED_PROFILE 直読、`ProfileEvaluator` 非依存 (Native 専用最適化、3C で統合方針再検討)
   - `RouterDb(IRoadGraph, IRoadSnapper)` は internal、DI 統合は 3C 担当
   - Itinero との並存パリティは技術的に不可能 (ID 独立採番)、Phase 1 既存 526 件 pass で互換性証明を代替
-- **3.5 検証方法**: 3A.1〜3A.6 のテスト合計 51 件 (5+8+0+0+3+9+8+8+12+16)
+- **3.5 検証方法**: 3A.1〜3A.6 のテスト合計 69 件 (5+8+0+0+3+9+8+8+12+16、§6 表と整合)
   - 3A.1 OdrgSectionDirectory 5 件
   - 3A.2 OdrgMmfHandle Span 切出 8 件
   - 3A.3e/3A.3f NativeRoadGraph 12 件 (OdrgReader 真値突合)
