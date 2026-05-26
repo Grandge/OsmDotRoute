@@ -21,6 +21,7 @@ public sealed class VehicleProfile
     private static readonly Lazy<VehicleProfile> CarLazy = new(() => LoadEmbedded("car.json"));
     private static readonly Lazy<VehicleProfile> PedestrianLazy = new(() => LoadEmbedded("pedestrian.json"));
     private static readonly Lazy<VehicleProfile> BicycleLazy = new(() => LoadEmbedded("bicycle.json"));
+    private static readonly Lazy<VehicleProfile> TruckLazy = new(() => LoadEmbedded("truck.json"));
 
     private readonly JsonProfileDefinition _definition;
     private readonly ProfileEvaluator _evaluator;
@@ -47,6 +48,14 @@ public sealed class VehicleProfile
     /// 平均 15 km/h、cycleway/path 優先、motorway/trunk 通行不可。
     /// </summary>
     public static VehicleProfile Bicycle => BicycleLazy.Value;
+
+    /// <summary>
+    /// 同梱の 10t トラックプロファイル（REQ-PRF-004、Phase 3 ステップ 3D.3）。
+    /// Profiles/truck.json から遅延ロード（埋込リソース）。
+    /// 日本道路法ベース：車両総重量 20t / 全高 3.8m / 全幅 2.5m。hgv/maxweight/maxheight/maxwidth 評価、
+    /// living_street/track/footway は通行不可または徐行扱い。
+    /// </summary>
+    public static VehicleProfile Truck => TruckLazy.Value;
 
     /// <summary>内部評価器（Dijkstra・難所判定で使用）</summary>
     internal ProfileEvaluator Evaluator => _evaluator;
