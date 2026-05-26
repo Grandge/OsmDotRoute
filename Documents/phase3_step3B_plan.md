@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3B: 動的制約ホットパス高速化 計画書
 
-**ステータス**: ドラフト v0.4（v0.3 + 3B.2 着手前事前調査 + ユーザー判断 T4〜T6 確定、2026-05-27）
+**ステータス**: ドラフト v0.5（v0.4 + 3B.2 完了 + 3B.3 着手前事前調査 + ユーザー判断 T7〜T9 確定、2026-05-27）
 **対応ステップ**: Phase 3 ステップ 3B（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 1 §18.3 解消）
 **対応要件**: REQ-NFR-002（制約 100 件下でも経路計算 ≤ 100ms 維持）、REQ-NFR-003（経路 1 本あたりアロケート削減）
 **関連文書**:
@@ -396,28 +396,108 @@ private bool EdgeAabbIntersects(uint edgeId, Aabb query)
 
 ### 4.3 3B.3: `RestrictedAreaService.AttachGraph` + eager bake 統合
 
-**Done 基準**:
+#### 4.3.1 着手前事前調査結果（2026-05-27、ユーザー判断 T7〜T9 確定）
 
-- `RestrictedAreaService` に `internal AttachGraph(IRoadGraph)` メソッド追加
-- 内部に `_graph: IRoadGraph?` + `_cache: RestrictedAreaEdgeCache?` フィールド追加
-- `AttachGraph` 内部で既存 `_entries` を全て再評価してキャッシュに反映する `BakeIntoCache(id, entry)` private メソッド
-- `AddBlockArea` / `AddDifficultyArea` 時、`_cache != null` なら `BakeIntoCache` 呼出
-- `RemoveByTag` / `Remove(id)` / `Clear` 時、`_cache != null` なら対応する Cache 操作呼出
-- 公開 API シグネチャ完全不変（既存 Phase 1 テスト互換性死守）
-- 単体テスト（仮 5〜8 件、着手前に最終確定）:
-  - graph 未注入時の `EvaluateConstraints` が Phase 1 動作（既存テスト維持で代替）
-  - graph 注入後、既存制約が自動的にキャッシュに反映される
-  - 注入後の add/remove がキャッシュに反映される
-  - `Clear` でキャッシュも消える
-  - Phase 1 既存 `RestrictedRoutingTests` / `RestrictedAreaServiceTests` 全 pass 維持
-- 累計テスト + 5〜8 件
+**T7 = (A) 同一 graph なら no-op、別 graph なら例外**: `AttachGraph(IRoadGraph)` で `ReferenceEquals(_graph, graph)` なら no-op (同一 Service を複数 Router で共有可)、別 graph なら `InvalidOperationException`。安全側、Phase 1 既存テスト互換性備え、シナリオ不明時の警告。
 
-**着手前事前調査の論点候補** (3B.3 着手時に確認):
-- T6. `AttachGraph` 呼出回数の規約: 1 回のみ? それとも複数回上書き OK?
-- T7. graph と _entries の整合性: graph が `.odrg` ベース、`_entries` の制約形状が graph 範囲外 (例: 海外座標) の場合の挙動
-- T8. `RestrictedAreaServiceTests` の既存テスト件数と影響範囲（着手時に grep）
+**T8 = (A) 無視**: graph 範囲外の制約形状を AddBlockArea された場合、`QueryEdgesByAabb` が 0 件返すため cache に何も入らず、ホットパスはそのエッジをスキップ。範囲外制約は経路に影響しない自然な動作。Phase 1 セマンティクス完全互換。
 
-**commit メッセージ案**: `feat: Phase 3 ステップ 3B.3 RestrictedAreaService.AttachGraph + eager bake 統合 (公開 API 不変、累計 NNN 件 pass)`
+**T9 = (A) Router コンストラクタで自動呼出**: `Router(routerDb, restrictions)` 内部で `restrictions?.AttachGraph(routerDb.Graph)` を実行。ユーザーから見えるのは `new Router(routerDb, restrictions)` のみ、公開 API 不変、graph 注入は 1 行で完了。
+
+**追加の重要発見** (事前調査で確定):
+- Phase 1 既存テスト件数: `RestrictedAreaServiceTests` 14 件 + `RestrictedRoutingTests` 9 件 + `RestrictedAreaServiceGmlTests` 13 件 = **計 36 件**、すべて全 pass 維持必須
+- Router 現状: `Router(RouterDb routerDb, RestrictedAreaService? restrictions = null)` の引数構造のままで、コンストラクタ末尾 1 行追加で AttachGraph を実行
+- `RestrictedAreaService.Remove(id)` / `RemoveByTag(tag)` / `ClearAll()` はそれぞれ `_entries` + `_index` の 2 構造を更新。3B 統合では各メソッドに `_cache?.RemoveArea(id)` / `_cache?.Clear()` を追加
+- `RestrictedAreaService` 内部 `Shape` private record struct (`Aabb Bounds`, `GeoPolygon? Polygon`) は既存。bake では既存の交差判定ロジック (`PolygonIntersection.IntersectsSegment` + `Bounds.IntersectsSegment` + メッシュは AABB のみ) を流用
+- **3B.3 ではホットパスは Phase 1 のまま** (BuildFullShape + EvaluateConstraints が引き続き使われる)。 cache は bake されるが ホットパスでは未使用、3B.4 で置換
+
+#### 4.3.2 採用設計
+
+```csharp
+public sealed class RestrictedAreaService
+{
+    private readonly Dictionary<RestrictedAreaId, AreaEntry> _entries = new();
+    private readonly SpatialIndex<ShapeRef> _index = new();
+
+    // 3B.3 で追加
+    private IRoadGraph? _graph;
+    private RestrictedAreaEdgeCache? _cache;
+
+    internal bool IsGraphAttached => _graph != null;
+    internal RestrictedAreaEdgeCache? Cache => _cache;
+
+    /// <summary>
+    /// IRoadGraph を本サービスにアタッチし、内部キャッシュを初期化する（Phase 3 ステップ 3B.3）。
+    /// 同一 graph による再 attach は no-op、別 graph による attach は InvalidOperationException。
+    /// </summary>
+    internal void AttachGraph(IRoadGraph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        if (_graph != null)
+        {
+            if (ReferenceEquals(_graph, graph)) return;  // T7=A: 同一 graph → no-op
+            throw new InvalidOperationException(
+                "RestrictedAreaService は既に別の IRoadGraph に attach されています。");
+        }
+        _graph = graph;
+        _cache = new RestrictedAreaEdgeCache();
+        // 既存 _entries を全て再評価して bake
+        foreach (var (id, entry) in _entries)
+        {
+            BakeIntoCache(id, entry);
+        }
+    }
+
+    private void BakeIntoCache(RestrictedAreaId id, AreaEntry entry)
+    {
+        // _graph と _cache 確実に non-null (内部呼出規約)
+        foreach (var shape in entry.Shapes)
+        {
+            foreach (var edgeId in _graph!.QueryEdgesByAabb(shape.Bounds))
+            {
+                if (!EdgeIntersectsShape(_graph, edgeId, shape)) continue;  // 厳密判定
+
+                if (entry.Area is BlockArea) _cache!.AddBlocked(id, edgeId);
+                else if (entry.Area is DifficultyArea diff) _cache!.AddDifficulty(id, diff, edgeId);
+            }
+        }
+    }
+
+    // Register / Remove / RemoveByTag / ClearAll に _cache?.XX 1 行追加 (公開 API シグネチャ不変)
+}
+
+// Router コンストラクタ (T9=A):
+public Router(RouterDb routerDb, RestrictedAreaService? restrictions = null)
+{
+    ArgumentNullException.ThrowIfNull(routerDb);
+    _routerDb = routerDb;
+    _restrictions = restrictions;
+    restrictions?.AttachGraph(routerDb.Graph);  // 3B.3 追加
+}
+```
+
+#### 4.3.3 Done 基準
+
+- `RestrictedAreaService` に `internal AttachGraph(IRoadGraph)` メソッド + `_graph` / `_cache` フィールド + `IsGraphAttached` / `Cache` internal プロパティ追加
+- `BakeIntoCache(id, entry)` private メソッドで shape ループ + `QueryEdgesByAabb` + 厳密判定 + cache 格納
+- `Register` / `Remove` / `RemoveByTag` / `ClearAll` に `_cache?.XX` を 1 行ずつ追加（既存 API シグネチャ不変）
+- `Router` コンストラクタ末尾に `restrictions?.AttachGraph(routerDb.Graph)` 1 行追加
+- 公開 API シグネチャ完全不変、Phase 1 既存 36 件全 pass 維持
+- 単体テスト 10 件（着手前事前調査で内訳確定、`NativeAndOdrgReaderFixture` 流用、津島市 .odrg を共通基盤）:
+  1. `AttachGraph_NotCalled_GraphIsNotAttached` — 未注入状態の検証
+  2. `AttachGraph_FirstCall_CacheInitialized` — 注入後 cache が空で初期化
+  3. `AttachGraph_AddBlockAreaBefore_BakedOnAttach` — 注入前に追加した制約が attach 時に bake される
+  4. `AttachGraph_AddBlockAreaAfter_BakedImmediately` — 注入後に追加した制約が即座に bake される
+  5. `AttachGraph_AddDifficultyArea_BakedToCache` — Difficulty 制約の bake 動作
+  6. `AttachGraph_RemoveById_CacheUpdated` — Remove で cache 連動
+  7. `AttachGraph_RemoveByTag_CacheUpdated` — RemoveByTag で cache 連動
+  8. `AttachGraph_ClearAll_CacheCleared` — ClearAll で cache 連動
+  9. `AttachGraph_SameGraphTwice_NoOp` — T7=A 同一 graph 再 attach で no-op
+  10. `AttachGraph_DifferentGraph_Throws` — T7=A 別 graph で `InvalidOperationException`
+- Router 経由の自動呼出は既存 `RestrictedRoutingTests` 9 件で間接的に検証（graph 注入後の経路結果が Phase 1 と完全一致 = bake された cache がホットパスから無視されている検証、3B.4 で正しく置換される）
+- 累計テスト 608 + 10 = **618 件 pass**、Phase 1 既存 526 件 + Phase 3 累計テスト維持
+
+**commit メッセージ案**: `feat: Phase 3 ステップ 3B.3 RestrictedAreaService.AttachGraph + eager bake 統合 (公開 API 不変、単体 10 件、618 件 pass)`
 
 ### 4.4 3B.4: `EdgeWeightCalculator` ホットパス置換
 
@@ -571,7 +651,13 @@ private bool EdgeAabbIntersects(uint edgeId, Aabb query)
   - T4 = (A) Aabb (Lat-Lon) 公開、NativeRoadGraph 内部で OdrgBbox に変換
   - T5 = (A) IEnumerable<uint> yield return、内部で buffer growable
   - T6 = (A) ItineroRoadGraph fallback は GetEdge(e) で都度 AABB 計算
-- [ ] **本ステップ計画書 v0.4 ユーザー承認**（次の確認ポイント）
+- [x] **本ステップ計画書 v0.4 ユーザー承認 (commit `f57ebfc`)**
+- [x] **3B.2 完了 (commit `33778be`、608 件 pass、軽微逸脱: Brute-force 突合の真値ソースを `OdrgReader.EdgeAabbs` → `NativeRoadGraph.GetEdgeAabbs()` に変更)**
+- [x] **3B.3 着手前事前調査 + ユーザー判断 T7〜T9 確定（2026-05-27）**:
+  - T7 = (A) 同一 graph なら no-op、別 graph なら `InvalidOperationException`
+  - T8 = (A) graph 範囲外の制約形状は無視 (QueryEdgesByAabb 0 件 → cache 空)
+  - T9 = (A) Router コンストラクタで自動 `restrictions?.AttachGraph(routerDb.Graph)` 呼出
+- [ ] **本ステップ計画書 v0.5 ユーザー承認**（次の確認ポイント）
 - [ ] 3B.1 着手前事前調査 → ユーザー判断（必要なら T1〜T3 等）→ 計画書 v0.2
 - [ ] 3B.1 完了 → ユーザー確認 → commit
 - [ ] 3B.2 着手前事前調査 → ユーザー判断（必要なら T4〜T5）→ 計画書 v0.3
@@ -593,3 +679,4 @@ private bool EdgeAabbIntersects(uint edgeId, Aabb query)
 | v0.2 | 2026-05-27 | 3B 効果測定方針 Q5〜Q7 確定追記。§1 Done 判定 9 追加、§2.4 Q5〜Q7 追記、§4.5 を A/B/C 3 サブパート構成に拡張（A 統合テスト / B `RouteWithConstraintsBenchmark` 3 モード改修 + ベンチ実測 / C 設計書 §4 反映）、§5 リスク 3B-R8 / 3B-R9 追加、§6 テスト件数表更新、§7 着手前確認に Q5〜Q7 確定追加 |
 | v0.3 | 2026-05-27 | 3B.1 着手前事前調査 + ユーザー判断 T1〜T3 確定追記。§4.1 を 4.1.1 事前調査結果 / 4.1.2 採用設計 / 4.1.3 Done 基準 に分割、Cache クラスの最終 API を確定、単体テスト 7 件の内訳確定（602 件 pass 目標）、§7 着手前確認に T1〜T3 確定追加 |
 | v0.4 | 2026-05-27 | 3B.1 完了 (commit `8e92dd7`) を §7 反映、3B.2 着手前事前調査 + ユーザー判断 T4〜T6 確定追記。§4.2 を 4.2.1 事前調査結果 / 4.2.2 採用設計 / 4.2.3 Done 基準 に分割、`QueryEdgesByAabb(Aabb)` シグネチャ + Native R-tree 実装 + Itinero fallback 実装の最終形を確定、単体テスト 6 件の内訳確定（608 件 pass 目標） |
+| v0.5 | 2026-05-27 | 3B.2 完了 (commit `33778be`、軽微逸脱: Brute-force 真値ソース変更) を §7 反映、3B.3 着手前事前調査 + ユーザー判断 T7〜T9 確定追記。§4.3 を 4.3.1 事前調査結果 / 4.3.2 採用設計 / 4.3.3 Done 基準 に分割、`AttachGraph` + bake + Router 自動呼出の最終形を確定、単体テスト 10 件の内訳確定（618 件 pass 目標） |
