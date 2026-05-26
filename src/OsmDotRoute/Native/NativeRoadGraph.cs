@@ -267,6 +267,44 @@ internal sealed class NativeRoadGraph : IRoadGraph
         return _mmf.GetSpan<OdrgBbox>(_edgeAabbOffset, _edgeCount);
     }
 
+    /// <summary>
+    /// 指定プロファイル名で指定エッジが通行可能か (BAKED_PROFILE.Flags bit 0) を直読する
+    /// （Phase 3 ステップ 3A.5b、計画書 §2.12 Q2）。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="EvaluateByEdgeId"/> の CanPass 部分のみ抽出。方向制限 (Forward/Backward) は経路探索層で
+    /// 別途処理するため、本 API では「いずれかの方向で通行可能か」のみを判定する
+    /// （= <c>BakedProfileEntry.Flags &amp; 0x01</c> を返す）。
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">エッジ ID が範囲外。</exception>
+    /// <exception cref="InvalidOperationException">プロファイル名が <c>.odrg</c> に未登録。</exception>
+    internal bool CanPass(uint edgeId, string profileName)
+    {
+        ThrowIfDisposed();
+        if (edgeId >= _edgeCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(edgeId), edgeId,
+                $"edgeId out of range (0..{_edgeCount - 1}).");
+        }
+        if (!_profileSlotByName.TryGetValue(profileName, out var slot))
+        {
+            throw new InvalidOperationException(
+                $"プロファイル '{profileName}' は .odrg の BAKED_PROFILE に存在しません。");
+        }
+
+        long entryOffset = _bakedEntriesOffset
+            + ((long)slot * _edgeCount + edgeId) * OdrgFormat.BakedProfileEntrySize;
+        var entrySpan = _mmf.GetSpan<OdrgBakedProfileEntry>(entryOffset, 1);
+        return (entrySpan[0].Flags & 0x01) != 0;
+    }
+
+    /// <summary>プロファイル名が <c>.odrg</c> の BAKED_PROFILE に登録済みか。</summary>
+    internal bool HasProfile(string profileName)
+    {
+        ThrowIfDisposed();
+        return _profileSlotByName.ContainsKey(profileName);
+    }
+
     internal OdrgEdge ReadEdge(uint edgeId)
     {
         if (edgeId >= _edgeCount)
