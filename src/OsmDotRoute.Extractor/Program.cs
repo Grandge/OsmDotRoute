@@ -118,5 +118,7 @@ static VehicleProfile ResolveProfile(string name) =>
     {
         "car" => VehicleProfile.Car,
         "pedestrian" => VehicleProfile.Pedestrian,
-        _ => throw new ArgumentException($"未対応プロファイル: '{name}'。'car' / 'pedestrian' のみ対応"),
+        "bicycle" => VehicleProfile.Bicycle,
+        "truck" => VehicleProfile.Truck,
+        _ => throw new ArgumentException($"未対応プロファイル: '{name}'。'car' / 'pedestrian' / 'bicycle' / 'truck' のみ対応"),
     };

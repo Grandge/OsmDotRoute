@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3D: Bicycle / Truck プロファイル独自設計 計画書
 
-**ステータス**: ドラフト v0.1（着手前事前調査 + ユーザー判断 Q1〜Q4 確定、2026-05-27）
+**ステータス**: ドラフト v0.2（v0.1 + 3D.1〜3D.4 全完了 + 設計書 §5 全肉付け、2026-05-27）
 **対応ステップ**: Phase 3 ステップ 3D（[Phase 3 実装計画書 §3.3 / §6](phase3_implementation_plan.md)）
 **対応要件**: REQ-PRF-003（Bicycle プロファイル独自設計）、REQ-PRF-004（Truck = 10t、日本道路法ベース、独自設計）
 **関連文書**:
@@ -25,7 +25,7 @@
 4. `ProfileEvaluator` が `osmTags["maxweight"]` / `maxheight` / `maxwidth` を数値 parse し、プロファイル制限を超過するエッジを `CanPass=false` で返す
 5. `osmdotroute-extractor` の `--profiles` 引数で `car,pedestrian,bicycle,truck` の 4 列 bake が可能
 6. **公開 API は不変死守**（`VehicleProfile.LoadFromJsonString` の挙動、`Evaluator.Evaluate` のシグネチャ、`car.json` / `pedestrian.json` の評価結果が一切変化しないこと）
-7. Phase 1 既存 526 件 + Phase 3 累計 98 件 = **624 件 pass を全サブステップで維持**、3D 完了時は **+α 件**（Bicycle / vehicleLimits / Truck / Extractor の各サブで増分）
+7. Phase 1 既存 526 件 + Phase 3 累計 98 件 = **624 件 pass を全サブステップで維持**、3D 完了時は **+60 件 = 684 件 pass**（3D.1 +17 / 3D.2 +16 / 3D.3 +21 / 3D.4 +6、全て計画書目安を網羅性重視で上回り）
 8. **Bicycle / Truck で経路長が pedestrian / car と異なる**ことを単体テスト化（津島市データではなく、合成タグ集合の評価結果ベースで検証）
 9. 設計書 `phase3_design.md` §5 が 3D.4 完了時に肉付けされる
 
@@ -163,6 +163,14 @@ ProfileEvaluator.Evaluate(osmTags):
 - `Bicycle.Evaluator.EvaluateDifficulty(DifficultyTypes.Flooding)` が 0〜1 範囲で正常返却
 - `dotnet test` 全 pass、テスト件数 624 + N 件（N は新規テスト件数、目安 8 件程度）
 
+#### 4.1.4 実装結果（commit `f23f9fa`）
+
+- 新規 [`src/OsmDotRoute/Profiles/bicycle.json`](../src/OsmDotRoute/Profiles/bicycle.json)（埋込リソース、§3.2 採用設計通り）
+- `OsmDotRoute.csproj` に `<EmbeddedResource Include="Profiles\bicycle.json" />` 追加
+- [`VehicleProfile.cs`](../src/OsmDotRoute/VehicleProfile.cs) に `Bicycle` 静的プロパティ追加（`Car` / `Pedestrian` の `Lazy<T>` パターン踏襲）
+- 新規 [`BicycleProfileTests.cs`](../tests/OsmDotRoute.Tests/BicycleProfileTests.cs) **17 件**（目安 8 件、網羅性重視で +9）：同梱ロード 2 / 通行可エッジ 4 / 通行不可エッジ 3 / アクセスタグ上書き 4 / oneway 1 / 難所評価 3
+- **641 件 pass**（624 + 17）
+
 ---
 
 ### 4.2 サブステップ 3D.2: ProfileEvaluator vehicleLimits 拡張
@@ -210,6 +218,19 @@ ProfileEvaluator.Evaluate(osmTags):
 - 既存 `VehicleProfileTests.cs` 28 件 pass 維持（`vehicleLimits` 未定義の場合は完全に no-op）
 - `dotnet test` 全 pass
 
+#### 4.2.4 実装結果（commit `95193df`）
+
+- [`JsonProfileDefinition.cs`](../src/OsmDotRoute/Profiles/JsonProfileDefinition.cs) に `VehicleLimits` optional プロパティ追加 + `JsonVehicleLimits` DTO（`MaxWeightTon` / `MaxHeightMeter` / `MaxWidthMeter` 全て nullable）
+- [`ProfileEvaluator.cs`](../src/OsmDotRoute/Profiles/ProfileEvaluator.cs):
+  - `_vehicleLimits` フィールド + コンストラクタ初期化
+  - `Evaluate` の評価ステップ 2.5（accessTagKeys 後・通行不可早期 return 前）に `ExceedsVehicleLimit` 評価を挿入 → hard-deny 等価セマンティクス
+  - `ExceedsVehicleLimit` 新規（`osmTags["maxweight"]` / `maxheight` / `maxwidth` を順次評価）
+  - `TryParseLimitValue` 新規（"8" / "8 t" / "8t" / "3.5 m" など数値+単位サフィックス対応、既定単位 t/m と一致する場合のみ受け入れ、未対応単位は安全側 false）
+  - `ValidateAndCompile` に負数バリデーション追加（`maxWeightTon` / `maxHeightMeter` / `maxWidthMeter`）
+- 新規 [`VehicleLimitsEvaluatorTests.cs`](../tests/OsmDotRoute.Tests/VehicleLimitsEvaluatorTests.cs) **16 件**（目安 8 件、+8）：回帰確認 2 / maxWeightTon 4 / maxHeightMeter 2 / maxWidthMeter 1 / 未対応単位スルー 2 / hard-deny 1 / 複数制限組合せ 2 / バリデーション 2
+- `car.json` / `pedestrian.json` 評価結果完全不変を回帰テスト 2 件で実証
+- **657 件 pass**（641 + 16）
+
 ---
 
 ### 4.3 サブステップ 3D.3: Truck プロファイル
@@ -240,6 +261,15 @@ ProfileEvaluator.Evaluate(osmTags):
 - `Truck.Evaluator.Evaluate(("highway", "primary"), ("maxwidth", "2.0")).CanPass == false`（vehicleLimits 2.5m > 2.0m）
 - `Truck.Evaluator.EvaluateDifficulty(DifficultyTypes.Flooding).SpeedFactor < 0.5`（Truck は浸水に弱い）
 - `dotnet test` 全 pass、テスト件数 +N（目安 10 件程度）
+
+#### 4.3.4 実装結果（commit `f1c79eb`）
+
+- 新規 [`src/OsmDotRoute/Profiles/truck.json`](../src/OsmDotRoute/Profiles/truck.json)（§3.3 採用設計通り、`vehicleLimits: { maxWeightTon: 20.0, maxHeightMeter: 3.8, maxWidthMeter: 2.5 }`）
+- `OsmDotRoute.csproj` に `<EmbeddedResource Include="Profiles\truck.json" />` 追加
+- [`VehicleProfile.cs`](../src/OsmDotRoute/VehicleProfile.cs) に `Truck` 静的プロパティ追加
+- 新規 [`TruckProfileTests.cs`](../tests/OsmDotRoute.Tests/TruckProfileTests.cs) **21 件**（目安 10 件、+11）：同梱ロード 2 / 通行可主要道路 2 / 回避エッジ 2 / 物理通行不可 4 / hgv アクセスタグ 2 / vehicleLimits 評価 5 / 難所評価 3 / oneway 1
+- 既存テスト 45 件（VehicleProfile 28 + Bicycle 17）全 pass 維持で回帰なし証明
+- **678 件 pass**（657 + 21）
 
 ---
 
@@ -278,6 +308,19 @@ ProfileEvaluator.Evaluate(osmTags):
 - `dotnet test` 全 pass、テスト件数 +N（目安 5 件程度）
 - `phase3_design.md` §5 が記述充足、3D サブステップ毎の変更内容が反映
 
+#### 4.4.4 実装結果（本ステップ完了 commit）
+
+- [`Program.cs:ResolveProfile`](../src/OsmDotRoute.Extractor/Program.cs) に `bicycle` / `truck` ケース追加、エラーメッセージを "'car' / 'pedestrian' / 'bicycle' / 'truck' のみ対応" に更新
+- 新規 [`ExtractorMultiProfileTests.cs`](../tests/OsmDotRoute.Tests/Extractor/ExtractorMultiProfileTests.cs) **6 件**（目安 5 件、+1）：
+  - 4 プロファイル × 多様エッジで `BakedProfileTable` shape 確認
+  - motorway: car+truck 通行可、pedestrian+bicycle 通行不可
+  - cycleway: pedestrian+bicycle 通行可、car+truck 通行不可
+  - primary + maxweight=8: truck のみ vehicleLimits 拒否（他 3 プロファイルは vehicleLimits 未定義のため影響なし）
+  - living_street: truck 低速通行可（Q2 自然回避確認）
+  - primary + hgv=no: truck のみ accessTagKeys 末尾優先で拒否
+- 設計書 [`phase3_design.md`](phase3_design.md) §5 全 6 サブセクション肉付け（5.1 意図 / 5.2 採用設計（レイヤ構成 + Bicycle/Truck 仕様表 + vehicleLimits 評価ロジック + Extractor 拡張）/ 5.3 設計判断の根拠（Q1〜Q4 + 評価ステップ位置）/ 5.4 トレードオフ・制約 / 5.5 検証方法（60 件内訳表）/ 5.6 実装メモ（commit + 引っかかりポイント + Phase 4+ 申し送り））
+- **684 件 pass**（678 + 6、Phase 2 累計 526 + Phase 3 累計 158）
+
 ---
 
 ## 5. リスクと対処
@@ -294,28 +337,39 @@ ProfileEvaluator.Evaluate(osmTags):
 
 ## 6. テスト設計サマリ
 
-| サブ | テストファイル | 主要観点 | 想定件数 |
-| --- | --- | --- | --- |
-| 3D.1 | `BicycleProfileTests.cs`（新規） | Bicycle 同梱ロード / cycleway 通行可 / motorway 通行不可 / footway 通行可 / bicycle=no 上書き / 難所評価 | 約 8 件 |
-| 3D.2 | `VehicleLimitsEvaluatorTests.cs`（新規） | vehicleLimits 未定義回帰 / maxweight 超過 / maxheight 超過 / maxwidth 超過 / 単位サフィックス / hard-deny / 不正値スルー / バリデーション | 約 8 件 |
-| 3D.3 | `TruckProfileTests.cs`（新規） | Truck 同梱ロード / motorway 通行可 / footway 通行不可 / living_street 低速 / hgv=no / maxweight 違反 / maxheight 違反 / maxwidth 違反 / 難所評価 | 約 10 件 |
-| 3D.4 | `ExtractorMultiProfileTests.cs`（新規または既存拡張） | 4 プロファイル bake / 各セル評価値 / Truck × maxweight タグエッジ | 約 5 件 |
-| 既存 | `VehicleProfileTests.cs` / `ProfileBakerTests.cs` | Phase 1 同等動作維持（vehicleLimits 未定義時の no-op） | 既存 28 + 11 件 pass 維持 |
+| サブ | テストファイル | 主要観点 | 想定件数 | 実装件数 |
+| --- | --- | --- | --- | --- |
+| 3D.1 | `BicycleProfileTests.cs`（新規） | Bicycle 同梱ロード / cycleway 通行可 / motorway 通行不可 / footway 通行可 / bicycle=no 上書き / 難所評価 | 約 8 件 | **17 件** |
+| 3D.2 | `VehicleLimitsEvaluatorTests.cs`（新規） | vehicleLimits 未定義回帰 / maxweight 超過 / maxheight 超過 / maxwidth 超過 / 単位サフィックス / hard-deny / 不正値スルー / バリデーション | 約 8 件 | **16 件** |
+| 3D.3 | `TruckProfileTests.cs`（新規） | Truck 同梱ロード / motorway 通行可 / footway 通行不可 / living_street 低速 / hgv=no / maxweight 違反 / maxheight 違反 / maxwidth 違反 / 難所評価 | 約 10 件 | **21 件** |
+| 3D.4 | `ExtractorMultiProfileTests.cs`（新規） | 4 プロファイル bake / 各セル評価値 / Truck × maxweight タグエッジ / Truck × hgv=no / Truck × living_street | 約 5 件 | **6 件** |
+| 既存 | `VehicleProfileTests.cs` / `ProfileBakerTests.cs` | Phase 1 同等動作維持（vehicleLimits 未定義時の no-op） | 既存 28 + 11 件 pass 維持 | **回帰なし** |
 
 **累計目標**: 3D 完了時 **624 + 約 31 = 約 655 件 pass**（実装時に微調整）
+**累計実測**: 3D 完了時 **624 + 60 = 684 件 pass**（目安 31 件 → 実装 60 件、4 サブ全てで網羅性重視で上回り）
 
 ---
 
-## 7. 着手前確認
+## 7. 完了状況
 
 - ✅ Phase 3 ステップ 3B 完了（commit `cd9f435`、624 件 pass）
 - ✅ `dotnet test` 624 件 pass 再確認済（2026-05-27、本計画書起草時）
 - ✅ 既存 `VehicleProfile` / `ProfileEvaluator` / Extractor 構造把握済
 - ✅ 親プロ（災害廃棄物処理シミュレーション）の Truck シナリオ調査済（積載量 10t のみ、物理寸法未定義）
 - ✅ ユーザー判断 Q1〜Q4 確定（§2.2、2026-05-27）
-- ⏳ 本計画書 v0.1 のユーザー承認 → 承認後 commit → 3D.1 着手
+- ✅ 計画書 v0.1 のユーザー承認（2026-05-27）→ commit `f87276d`
+- ✅ **3D.1 完了**（commit `f23f9fa`、+17 件、641 件 pass）
+- ✅ **3D.2 完了**（commit `95193df`、+16 件、657 件 pass）
+- ✅ **3D.3 完了**（commit `f1c79eb`、+21 件、678 件 pass）
+- ✅ **3D.4 + 3D 全体完了**（本 commit、+6 件、684 件 pass、設計書 §5 全 6 サブセクション肉付け）
 
-**ユーザー承認後の進め方**: 3A / 3B と同様、各サブステップ着手前に必要に応じて事前調査と判断を実施し、計画書を v0.2 / v0.3 と更新する。サブステップ完了毎に commit し、3D.4 完了時に最終 commit で設計書 §5 を肉付けする。
+**3D 達成度**:
+
+- REQ-PRF-003 (Bicycle) / REQ-PRF-004 (Truck=10t、日本道路法ベース) 達成
+- 公開 API 完全不変、Phase 1 既存 526 件 + Phase 3 累計 158 件 = **684 件 pass**
+- 計画書 R3 リスク（Truck 仕様の日本道路法解釈ミス）対処済：標準寸法を §2.2 Q3 で確定、JSON 外部化でユーザー独自カスタマイズ可能
+- Phase 2 `.odrg` フォーマット不変、EdgeFlags bit 14/15 予約温存
+- 次ステップ: 3C（ランタイム Itinero 依存削除）
 
 ---
 
@@ -324,3 +378,4 @@ ProfileEvaluator.Evaluate(osmTags):
 | 版 | 日付 | 内容 |
 | --- | --- | --- |
 | v0.1 | 2026-05-27 | 初版起草。3B 完了後の着手前事前調査（既存 VehicleProfile/ProfileEvaluator/Extractor 構造調査 + 親プロ Truck シナリオ調査）+ ユーザー判断 Q1〜Q4（vehicleLimits / Bicycle 15km/h+Truck 速度回避 / Truck 寸法 20t-3.8m-2.5m / 4 サブ分割）反映。サブステップ 3D.1〜3D.4 詳細記述、リスク T1〜T5、テスト設計サマリ、設計書 §5 反映方針を確定。 |
+| v0.2 | 2026-05-27 | 3D.1〜3D.4 全完了 + 設計書 §5 全肉付け。3D.1 Bicycle (+17、commit `f23f9fa`) / 3D.2 ProfileEvaluator vehicleLimits 拡張 (+16、commit `95193df`) / 3D.3 Truck (+21、commit `f1c79eb`) / 3D.4 Extractor + 統合テスト + 設計書 §5 反映 (+6、本 commit)。累計 624 → 684 件 pass、目安 31 件 → 実装 60 件（網羅性重視）。各サブステップ §4.X.4 実装結果サブセクション追記、§6 累計実測欄追加、§7 着手前確認 → 完了状況に書換。 |
