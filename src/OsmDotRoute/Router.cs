@@ -22,6 +22,10 @@ public sealed class Router
         ArgumentNullException.ThrowIfNull(routerDb);
         _routerDb = routerDb;
         _restrictions = restrictions;
+        // Phase 3 ステップ 3B.3 (T9=A): restrictions に IRoadGraph を注入して
+        // eager bake を有効化。同一 service の複数 Router 共有時は 2 回目以降 no-op、
+        // 別 routerDb への流用は InvalidOperationException。
+        restrictions?.AttachGraph(routerDb.Graph);
     }
 
     /// <summary>

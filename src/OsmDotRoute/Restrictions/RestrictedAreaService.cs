@@ -2,6 +2,8 @@ using OsmDotRoute.Geometry;
 using OsmDotRoute.Gml;
 using OsmDotRoute.Mesh;
 using OsmDotRoute.Profiles;
+using OsmDotRoute.Restrictions;
+using OsmDotRoute.Routing;
 
 namespace OsmDotRoute;
 
@@ -14,9 +16,112 @@ public sealed class RestrictedAreaService
     private readonly Dictionary<RestrictedAreaId, AreaEntry> _entries = new();
     private readonly SpatialIndex<ShapeRef> _index = new();
 
+    // Phase 3 ステップ 3B.3 で追加: IRoadGraph 注入 + eager bake キャッシュ
+    private IRoadGraph? _graph;
+    private RestrictedAreaEdgeCache? _cache;
+
     /// <summary>新規空のサービスを作成する。</summary>
     public RestrictedAreaService()
     {
+    }
+
+    /// <summary>
+    /// <see cref="IRoadGraph"/> が本サービスに注入済みかを返す（Phase 3 ステップ 3B.3、テスト・診断用）。
+    /// </summary>
+    internal bool IsGraphAttached => _graph != null;
+
+    /// <summary>
+    /// 動的制約のエッジ ID キャッシュ（Phase 3 ステップ 3B.3、3B.4 で <see cref="EdgeWeightCalculator"/> から参照）。
+    /// graph 未注入時は <c>null</c>。
+    /// </summary>
+    internal RestrictedAreaEdgeCache? Cache => _cache;
+
+    /// <summary>
+    /// <see cref="IRoadGraph"/> を本サービスにアタッチし、内部キャッシュを初期化する
+    /// （Phase 3 ステップ 3B.3、計画書 §4.3.2、ユーザー判断 T7=A / T9=A）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 通常は <see cref="Router(RouterDb, RestrictedAreaService)"/> コンストラクタが自動的に
+    /// 1 度だけ呼び出す（公開 API は不変、ユーザーは意識不要）。
+    /// </para>
+    /// <para>
+    /// 同一 <paramref name="graph"/> による再 attach は no-op（同一サービスを複数 <see cref="Router"/>
+    /// で共有可）。別 <paramref name="graph"/> による attach は <see cref="InvalidOperationException"/>
+    /// （誤動作防止、T7=A）。
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="graph"/> が <c>null</c></exception>
+    /// <exception cref="InvalidOperationException">既に別の <see cref="IRoadGraph"/> に attach 済</exception>
+    internal void AttachGraph(IRoadGraph graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        if (_graph != null)
+        {
+            if (ReferenceEquals(_graph, graph)) return;  // T7=A: 同一 graph → no-op
+            throw new InvalidOperationException(
+                "RestrictedAreaService は既に別の IRoadGraph に attach されています。");
+        }
+        _graph = graph;
+        _cache = new RestrictedAreaEdgeCache();
+        // 既存 _entries を全て再評価して bake
+        foreach (var kv in _entries)
+        {
+            BakeIntoCache(kv.Key, kv.Value);
+        }
+    }
+
+    /// <summary>
+    /// 指定制約をキャッシュに bake する（<see cref="AttachGraph"/> および <see cref="Register"/> から呼ぶ）。
+    /// shape ごとに <see cref="IRoadGraph.QueryEdgesByAabb"/> で候補エッジ取得 → 厳密判定 →
+    /// <see cref="RestrictedAreaEdgeCache"/> に格納。
+    /// </summary>
+    private void BakeIntoCache(RestrictedAreaId id, AreaEntry entry)
+    {
+        // _graph / _cache 確実に non-null (内部呼出規約: AttachGraph 済または Register 経由)
+        foreach (var shape in entry.Shapes)
+        {
+            foreach (var edgeId in _graph!.QueryEdgesByAabb(shape.Bounds))
+            {
+                if (!EdgeIntersectsShape(_graph, edgeId, shape)) continue;
+
+                if (entry.Area is BlockArea)
+                {
+                    _cache!.AddBlocked(id, edgeId);
+                }
+                else if (entry.Area is DifficultyArea diff)
+                {
+                    _cache!.AddDifficulty(id, diff, edgeId);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// エッジ全体（端点 + 中間シェイプ）が指定 <see cref="Shape"/> と交差するかを判定する
+    /// （<see cref="EvaluateConstraints"/> の <see cref="EdgeIntersectsAreaShapes"/> と同セマンティクス、bake 用）。
+    /// </summary>
+    private static bool EdgeIntersectsShape(IRoadGraph graph, uint edgeId, Shape shape)
+    {
+        var edge = graph.GetEdge(edgeId);
+        var from = graph.GetVertex(edge.From);
+        var to = graph.GetVertex(edge.To);
+
+        var prev = from;
+        for (int i = 0; i < edge.Shape.Count; i++)
+        {
+            var next = edge.Shape[i];
+            if (ShapeIntersectsSegment(shape, prev, next)) return true;
+            prev = next;
+        }
+        return ShapeIntersectsSegment(shape, prev, to);
+    }
+
+    private static bool ShapeIntersectsSegment(Shape shape, GeoCoordinate p1, GeoCoordinate p2)
+    {
+        if (!shape.Bounds.IntersectsSegment(p1, p2)) return false;
+        if (shape.Polygon is null) return true;  // メッシュ AABB は AABB 交差で確定
+        return PolygonIntersection.IntersectsSegment(shape.Polygon, p1, p2);
     }
 
     // --- ポリゴン指定 ---
@@ -269,6 +374,7 @@ public sealed class RestrictedAreaService
         if (_entries.Remove(id))
         {
             _index.RemoveAll(s => s.Id.Equals(id));
+            _cache?.RemoveArea(id);  // Phase 3 ステップ 3B.3 追加
         }
     }
 
@@ -290,6 +396,10 @@ public sealed class RestrictedAreaService
         {
             var idSet = new HashSet<RestrictedAreaId>(targets);
             _index.RemoveAll(s => idSet.Contains(s.Id));
+            if (_cache != null)  // Phase 3 ステップ 3B.3 追加
+            {
+                foreach (var id in targets) _cache.RemoveArea(id);
+            }
         }
     }
 
@@ -298,6 +408,7 @@ public sealed class RestrictedAreaService
     {
         _entries.Clear();
         _index.Clear();
+        _cache?.Clear();  // Phase 3 ステップ 3B.3 追加
     }
 
     // --- 一覧 ---
@@ -411,6 +522,11 @@ public sealed class RestrictedAreaService
         foreach (var s in shapes)
         {
             _index.Add(s.Bounds, new ShapeRef(id, area, s));
+        }
+        // Phase 3 ステップ 3B.3 追加: graph 注入済なら即時 bake
+        if (_cache != null)
+        {
+            BakeIntoCache(id, entry);
         }
     }
 
