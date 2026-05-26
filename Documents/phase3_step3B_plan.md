@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3B: 動的制約ホットパス高速化 計画書
 
-**ステータス**: ドラフト v0.5（v0.4 + 3B.2 完了 + 3B.3 着手前事前調査 + ユーザー判断 T7〜T9 確定、2026-05-27）
+**ステータス**: ドラフト v0.6（v0.5 + 3B.3 完了 + 3B.4 着手前事前調査 = 既存 API で要件充足、ユーザー判断不要、2026-05-27）
 **対応ステップ**: Phase 3 ステップ 3B（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 1 §18.3 解消）
 **対応要件**: REQ-NFR-002（制約 100 件下でも経路計算 ≤ 100ms 維持）、REQ-NFR-003（経路 1 本あたりアロケート削減）
 **関連文書**:
@@ -501,22 +501,94 @@ public Router(RouterDb routerDb, RestrictedAreaService? restrictions = null)
 
 ### 4.4 3B.4: `EdgeWeightCalculator` ホットパス置換
 
-**Done 基準**:
+#### 4.4.1 着手前事前調査結果（2026-05-27、ユーザー判断不要）
 
-- `IRoadGraphEdgeEnumerator` に `uint CurrentEdgeId` プロパティ追加（または既存 `EdgeId` プロパティが存在する場合はそれを使う、着手前確認）
-- `EdgeWeightCalculator.EvaluateConstraintFactor` シグネチャ更新: `(uint from, uint to, IReadOnlyList<GeoCoordinate> middleShape)` → `(uint edgeId, uint from, uint to, IReadOnlyList<GeoCoordinate> middleShape)`
-- graph 注入済時のホットパスは `cache.IsBlocked(edgeId)` + `cache.GetCombinedDifficultyFactor(edgeId)` の 2 回参照のみ
-- graph 未注入時は Phase 1 動作にフォールバック（`BuildFullShape` + `EvaluateConstraints`）
-- `EvaluateEdgeDurationSec` / `EvaluateEdgePartialDurationSec` の呼出側修正
-- `RestrictedAreaService` に `internal bool IsGraphAttached` + `internal RestrictedAreaEdgeCache Cache` プロパティ追加（テスト/EdgeWeightCalculator から見える）
-- Phase 1 既存テスト全 pass 維持（graph 注入のあり/なしで結果完全一致）
+**T10 = ユーザー判断不要**: `IRoadGraphEdgeEnumerator.EdgeId` プロパティは Phase 1/3A.3b で既に追加済 ([`IRoadGraphEdgeEnumerator.cs:13`](../src/OsmDotRoute/Routing/IRoadGraphEdgeEnumerator.cs#L13))。`EvaluateEdgeDurationSec(en)` 内で `en.EdgeId` を直接呼出可能、シグネチャ変更不要。
 
-**着手前事前調査の論点候補** (3B.4 着手時に確認):
-- T9. `IRoadGraphEdgeEnumerator` に `EdgeId` プロパティが既に存在するか確認 (Itinero 側で取得方法に差異あり)
-- T10. `EvaluateEdgePartialDurationSec` (スナップエッジ評価) でも `edgeId` を渡せるか
-- T11. `BuildFullShape` の削除可否: ホットパスから完全に消せるか、テスト/fallback 経路で残すか
+**T11 = ユーザー判断不要**: `RoadEdge.EdgeId` プロパティも既に存在し、`EvaluateEdgePartialDurationSec(RoadEdge edge, ...)` 内で `edge.EdgeId` を直接呼出可能。
 
-**commit メッセージ案**: `feat: Phase 3 ステップ 3B.4 EdgeWeightCalculator ホットパス置換 (BuildFullShape ホットパス除去、累計 NNN 件 pass)`
+**T12 = ユーザー判断不要**: `BuildFullShape` は graph 未注入時の fallback 経路 (Phase 1 動作互換性のため) で残置。Phase 1 既存テスト 36 件のうち、`EvaluateConstraints` を Service 経由で直接呼ぶケースが多数あり、fallback 経路の継続維持が必須。完全削除は 3C (Itinero 撤去 + Router 必須化) 後に再評価。
+
+**結論**: 既存 API ですべての要件が充足され、追加のユーザー判断は不要。3B.4 は `EdgeWeightCalculator.EvaluateConstraintFactor` の内部置換のみで完結する。
+
+#### 4.4.2 採用設計
+
+`EdgeWeightCalculator.EvaluateConstraintFactor` のシグネチャに `uint edgeId` 引数を 1 つ追加し、graph 注入時はキャッシュ参照のみ、未注入時は Phase 1 動作にフォールバック:
+
+```csharp
+// 既存シグネチャ:
+//   private double EvaluateConstraintFactor(uint from, uint to, IReadOnlyList<GeoCoordinate> middleShape)
+// 3B.4 新シグネチャ:
+private double EvaluateConstraintFactor(uint edgeId, uint from, uint to, IReadOnlyList<GeoCoordinate> middleShape)
+{
+    if (_restrictions is null) return 1.0;
+
+    // graph 注入済の場合はキャッシュ参照のみ (3B.4 ホットパス置換)
+    if (_restrictions.IsGraphAttached)
+    {
+        var cache = _restrictions.Cache!;
+        if (cache.IsBlocked(edgeId)) return double.PositiveInfinity;
+
+        var areas = cache.GetDifficultyAreas(edgeId);
+        if (areas.Count == 0) return 1.0;
+
+        double combined = 1.0;
+        foreach (var area in areas)
+        {
+            var ev = _evaluator.EvaluateDifficulty(area.DifficultyType);
+            if (!ev.CanPass) return double.PositiveInfinity;
+            combined *= ev.SpeedFactor;
+            if (combined <= 0.0) return double.PositiveInfinity;
+        }
+        return combined;
+    }
+
+    // graph 未注入時は Phase 1 動作にフォールバック (BuildFullShape + EvaluateConstraints)
+    var shape = BuildFullShape(from, to, middleShape);
+    return _restrictions.EvaluateConstraints(shape, _evaluator);
+}
+```
+
+呼出側修正（同ファイル内 2 箇所のみ、DijkstraEngine 変更なし）:
+
+```csharp
+// EvaluateEdgeDurationSec:
+//   旧: var factor = EvaluateConstraintFactor(en.From, en.To, en.Shape);
+//   新: var factor = EvaluateConstraintFactor(en.EdgeId, en.From, en.To, en.Shape);
+
+// EvaluateEdgePartialDurationSec:
+//   旧: var factor = EvaluateConstraintFactor(edge.From, edge.To, edge.Shape);
+//   新: var factor = EvaluateConstraintFactor(edge.EdgeId, edge.From, edge.To, edge.Shape);
+```
+
+#### 4.4.3 ホットパス効果
+
+graph 注入時のホットパス比較:
+
+| 項目 | Phase 1 (graph 未注入) | Phase 3 (graph 注入済、3B.4 後) |
+| --- | --- | --- |
+| `BuildFullShape` | `new List<GeoCoordinate>(N+2)` (毎エッジ alloc) | **不要** (キャッシュ参照のみ) |
+| `Aabb.FromCoordinates` | `IEnumerable<GeoCoordinate>` 全走査 | **不要** |
+| `new HashSet<RestrictedAreaId>()` | seenIds alloc | **不要** |
+| `_index.Query(edgeAabb)` | SpatialIndex 線形走査 (制約 100 件で 100 回 AABB) | **不要** |
+| `EdgeIntersectsAreaShapes` | シェイプ × Shape 二重ループ | **不要** |
+| `cache.IsBlocked(edgeId)` | - | `HashSet<uint>.Contains` (O(1)) |
+| `cache.GetDifficultyAreas(edgeId)` | - | `Dictionary<uint, List<DifficultyArea>>.TryGetValue` (O(1)) |
+| `evaluator.EvaluateDifficulty(type)` × N | エッジに該当する Difficulty 数 | エッジに該当する Difficulty 数 (Phase 1 と同等) |
+
+3B 効果の本命: 「`BuildFullShape` の毎エッジ List 新規 alloc」と「`_index.Query` の制約 100 件線形走査」の両方を排除。Phase 1 §18.4 = 77MB アロケート + Phase 1 §18.3 = 制約 100 件下の劣化率改善に貢献。
+
+#### 4.4.4 Done 基準
+
+- `EdgeWeightCalculator.EvaluateConstraintFactor` のシグネチャに `uint edgeId` 引数追加
+- graph 注入時は `_restrictions.Cache` 参照のみ、未注入時は Phase 1 動作にフォールバック
+- 呼出側 2 箇所修正（`EvaluateEdgeDurationSec` / `EvaluateEdgePartialDurationSec`、同ファイル内）
+- **DijkstraEngine は変更なし** (`EvaluateEdgeDurationSec` / `EvaluateEdgePartialDurationSec` のシグネチャ不変)
+- **新規テスト 0 件** (Phase 1 既存テスト 36 件で代替): graph 注入あり/なしで結果完全一致
+- 累計テスト **618 件 pass 維持** (件数増減なし)
+- Phase 1 既存 526 件 (Itinero 系 + Restricted 系) 全 pass 維持 = ホットパス置換後も Phase 1 セマンティクスと完全一致
+
+**commit メッセージ案**: `feat: Phase 3 ステップ 3B.4 EdgeWeightCalculator ホットパス置換 (BuildFullShape 排除、Phase 1 セマンティクス維持、618 件 pass)`
 
 ### 4.5 3B.5: Native + 制約パリティテスト + ベンチ改修 + 設計書 §4 反映
 
@@ -657,7 +729,13 @@ public Router(RouterDb routerDb, RestrictedAreaService? restrictions = null)
   - T7 = (A) 同一 graph なら no-op、別 graph なら `InvalidOperationException`
   - T8 = (A) graph 範囲外の制約形状は無視 (QueryEdgesByAabb 0 件 → cache 空)
   - T9 = (A) Router コンストラクタで自動 `restrictions?.AttachGraph(routerDb.Graph)` 呼出
-- [ ] **本ステップ計画書 v0.5 ユーザー承認**（次の確認ポイント）
+- [x] **本ステップ計画書 v0.5 ユーザー承認 (commit `e73bc26`)**
+- [x] **3B.3 完了 (commit `c789ee7`、618 件 pass、軽微逸脱なし、公開 API 完全不変)**
+- [x] **3B.4 着手前事前調査 = ユーザー判断不要（2026-05-27）**:
+  - T10/T11 = `IRoadGraphEdgeEnumerator.EdgeId` + `RoadEdge.EdgeId` が既存 (Phase 1/3A.3b で追加済)、シグネチャ変更不要
+  - T12 = `BuildFullShape` は graph 未注入 fallback で残置 (3C 後に再評価)
+  - → 計画書 v0.6 で §4.4 を確定化、新たなユーザー判断不要
+- [ ] **本ステップ計画書 v0.6 ユーザー承認**（次の確認ポイント）
 - [ ] 3B.1 着手前事前調査 → ユーザー判断（必要なら T1〜T3 等）→ 計画書 v0.2
 - [ ] 3B.1 完了 → ユーザー確認 → commit
 - [ ] 3B.2 着手前事前調査 → ユーザー判断（必要なら T4〜T5）→ 計画書 v0.3
@@ -680,3 +758,4 @@ public Router(RouterDb routerDb, RestrictedAreaService? restrictions = null)
 | v0.3 | 2026-05-27 | 3B.1 着手前事前調査 + ユーザー判断 T1〜T3 確定追記。§4.1 を 4.1.1 事前調査結果 / 4.1.2 採用設計 / 4.1.3 Done 基準 に分割、Cache クラスの最終 API を確定、単体テスト 7 件の内訳確定（602 件 pass 目標）、§7 着手前確認に T1〜T3 確定追加 |
 | v0.4 | 2026-05-27 | 3B.1 完了 (commit `8e92dd7`) を §7 反映、3B.2 着手前事前調査 + ユーザー判断 T4〜T6 確定追記。§4.2 を 4.2.1 事前調査結果 / 4.2.2 採用設計 / 4.2.3 Done 基準 に分割、`QueryEdgesByAabb(Aabb)` シグネチャ + Native R-tree 実装 + Itinero fallback 実装の最終形を確定、単体テスト 6 件の内訳確定（608 件 pass 目標） |
 | v0.5 | 2026-05-27 | 3B.2 完了 (commit `33778be`、軽微逸脱: Brute-force 真値ソース変更) を §7 反映、3B.3 着手前事前調査 + ユーザー判断 T7〜T9 確定追記。§4.3 を 4.3.1 事前調査結果 / 4.3.2 採用設計 / 4.3.3 Done 基準 に分割、`AttachGraph` + bake + Router 自動呼出の最終形を確定、単体テスト 10 件の内訳確定（618 件 pass 目標） |
+| v0.6 | 2026-05-27 | 3B.3 完了 (commit `c789ee7`、軽微逸脱なし、公開 API 不変) を §7 反映、3B.4 着手前事前調査 = ユーザー判断不要を §7 反映。§4.4 を 4.4.1 事前調査結果 / 4.4.2 採用設計 / 4.4.3 ホットパス効果 / 4.4.4 Done 基準 に分割、`EvaluateConstraintFactor` 内部置換の最終形を確定（618 件 pass 維持目標、新規テスト 0 件、Phase 1 既存 36 件で代替検証）|
