@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3B: 動的制約ホットパス高速化 計画書
 
-**ステータス**: ドラフト v0.3（v0.2 + 3B.1 着手前事前調査 + ユーザー判断 T1〜T3 確定、2026-05-27）
+**ステータス**: ドラフト v0.4（v0.3 + 3B.2 着手前事前調査 + ユーザー判断 T4〜T6 確定、2026-05-27）
 **対応ステップ**: Phase 3 ステップ 3B（[Phase 3 実装計画書 §6](phase3_implementation_plan.md)、Phase 1 §18.3 解消）
 **対応要件**: REQ-NFR-002（制約 100 件下でも経路計算 ≤ 100ms 維持）、REQ-NFR-003（経路 1 本あたりアロケート削減）
 **関連文書**:
@@ -267,21 +267,132 @@ internal sealed class RestrictedAreaEdgeCache
 
 ### 4.2 3B.2: `IRoadGraph.QueryEdgesByAabb` API 追加 + Native/Itinero 実装
 
-**Done 基準**:
+#### 4.2.1 着手前事前調査結果（2026-05-27、ユーザー判断 T4〜T6 確定）
+
+**T4 = (A) Aabb 公開**: 公開 API は Phase 1 既存型 `OsmDotRoute.Geometry.Aabb` (Lat-Lon 順) を採用。`NativeRoadGraph` 内部で `OdrgBbox` (Lon-Lat 順) に変換 (1 行)、`ItineroRoadGraph` fallback は `Aabb` のまま走査。REQ-API-003 (Itinero/内部実装型を公開 API に露出しない方針) と整合。
+
+**T5 = (A) IEnumerable<uint>**: `IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds)` シグネチャ。yield return ベース、`NativeRoadGraph` 内部で `uint[]` buffer growable リトライ + yield。bake は AddBlockArea 時の 1 回のみ（ホットパスではない）のため alloc 許容。呼出側は `foreach` シンプル、overrun handling 不要。
+
+**T6 = (A) ItineroRoadGraph 都度計算**: `GetEdge(e)` を毎エッジ呼び、シェイプ + 端点から AABB を都度計算して `queryBounds.Intersects` 判定。シンプル、3C で Itinero 撤去予定のため投資最小。性能は 3B-R4 として Phase 1 既存テスト実行時間で確認。
+
+**追加の重要発見** (事前調査で確定):
+- `Aabb` = `internal readonly record struct(GeoCoordinate SW, GeoCoordinate NE)`、`MinLatitude`/`MaxLatitude`/`MinLongitude`/`MaxLongitude` プロパティあり、`Intersects(Aabb)` メソッドあり
+- `OdrgBbox` = `internal readonly record struct(double MinLon, MinLat, MaxLon, MaxLat)` (3A.1 で新設)
+- `NativeRTreeQuery.Query` シグネチャ: `(nodes, rootIndex, edgeAabbs, in queryBox, resultBuffer) -> int (overrun 時 totalHits > buffer.Length)`
+- `NativeRoadGraph` には 3A.4 で `GetRTreeNodes()` / `RTreeRootIndex` / `GetEdgeAabbs()` の internal アクセサーあり、`QueryEdgesByAabb` から呼出可能
+- `ItineroRoadGraph` はエッジ AABB を持たない（毎回 `GetEdge(e)` でシェイプから計算）
+- `EdgeCount` は `long` (Itinero に合わせて)、`uint` 範囲を超える可能性は実用上ほぼないが `checked` で安全側
+
+#### 4.2.2 採用設計
+
+```csharp
+internal interface IRoadGraph : IDisposable
+{
+    // 既存 (Phase 1 / 3A.3b / 3A.3e)
+    uint VertexCount { get; }
+    long EdgeCount { get; }
+    GeoBounds GetBounds();
+    GeoCoordinate GetVertex(uint vertexId);
+    IRoadGraphEdgeEnumerator GetEdgeEnumerator(uint vertexId);
+    EdgeEvaluation EvaluateEdge(IRoadGraphEdgeEnumerator en, ProfileEvaluator evaluator);
+    EdgeEvaluation EvaluateEdge(RoadEdge edge, ProfileEvaluator evaluator);
+    RoadEdge GetEdge(uint edgeId);
+    ReadOnlySpan<GeoCoordinate> GetEdgeShape(uint edgeId);
+
+    // 3B.2 で追加
+    /// <summary>
+    /// 指定 AABB と交差するエッジ ID を列挙する（3B 動的制約 eager bake 用）。
+    /// </summary>
+    /// <remarks>
+    /// NativeRoadGraph: NativeRTreeQuery (3A.4) で R-tree クエリ、O(log E)。
+    /// ItineroRoadGraph: 全エッジ走査 fallback（GetEdge(e) でシェイプ + 端点から AABB 都度計算）。
+    /// 列挙順序は実装依存（呼出側は集合として扱う）、bake はホットパスではないため alloc 許容。
+    /// </remarks>
+    IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds);
+}
+```
+
+`NativeRoadGraph` 実装:
+
+```csharp
+public IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds)
+{
+    var qbox = new OdrgBbox(
+        queryBounds.MinLongitude,
+        queryBounds.MinLatitude,
+        queryBounds.MaxLongitude,
+        queryBounds.MaxLatitude);
+
+    uint[] buffer;
+    int hits;
+    int capacity = 1024;
+    do
+    {
+        buffer = new uint[capacity];
+        hits = NativeRTreeQuery.Query(GetRTreeNodes(), RTreeRootIndex, GetEdgeAabbs(), qbox, buffer);
+        capacity = hits;  // overrun の場合は次回 hits 件まで拡大
+    } while (hits > buffer.Length);
+
+    for (int i = 0; i < hits; i++) yield return buffer[i];
+}
+```
+
+`ItineroRoadGraph` 実装:
+
+```csharp
+public IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds)
+{
+    long count = EdgeCount;
+    for (uint e = 0; e < count; e++)
+    {
+        if (EdgeAabbIntersects(e, queryBounds))
+            yield return e;
+    }
+}
+
+private bool EdgeAabbIntersects(uint edgeId, Aabb query)
+{
+    var edge = GetEdge(edgeId);
+    var from = GetVertex(edge.From);
+    var to = GetVertex(edge.To);
+
+    double minLat = Math.Min(from.Latitude, to.Latitude);
+    double maxLat = Math.Max(from.Latitude, to.Latitude);
+    double minLon = Math.Min(from.Longitude, to.Longitude);
+    double maxLon = Math.Max(from.Longitude, to.Longitude);
+
+    foreach (var c in edge.Shape)
+    {
+        if (c.Latitude < minLat) minLat = c.Latitude;
+        if (c.Latitude > maxLat) maxLat = c.Latitude;
+        if (c.Longitude < minLon) minLon = c.Longitude;
+        if (c.Longitude > maxLon) maxLon = c.Longitude;
+    }
+
+    return !(maxLat < query.MinLatitude
+          || minLat > query.MaxLatitude
+          || maxLon < query.MinLongitude
+          || minLon > query.MaxLongitude);
+}
+```
+
+#### 4.2.3 Done 基準
 
 - `IRoadGraph` に `IEnumerable<uint> QueryEdgesByAabb(Aabb queryBounds)` 追加
-- `NativeRoadGraph` 実装: 内部で 3A.4 `NativeRTreeQuery.Query` を呼出し、`OdrgBbox` ⇄ `Aabb` 変換、buffer overrun は内部 `QueryWithGrowableBuffer` パターンで処理
-- `ItineroRoadGraph` 実装: 全エッジ走査 fallback（`for (uint e = 0; e < EdgeCount; e++) if (...) yield return e;`）
-- 単体テスト（仮 4〜6 件、着手前に最終確定）:
-  - NativeRoadGraph: ランダム N 個の AABB クエリで R-tree 結果 = Brute-force 結果 完全一致（3A.4 と同じ突合パターン、ただし Aabb 型での突合）
-  - ItineroRoadGraph: 全エッジ走査の正確性
-- 累計テスト + 4〜6 件、Phase 1 既存 526 件は変更なし
+- `NativeRoadGraph.QueryEdgesByAabb` 実装（R-tree クエリ + buffer growable）
+- `ItineroRoadGraph.QueryEdgesByAabb` 実装（全エッジ走査 + 都度 AABB 計算）
+- 単体テスト 6 件（着手前事前調査で内訳確定）:
+  1. `NativeRoadGraph_QueryEdgesByAabb_FullBounds_ReturnsAllEdges` — 全体 bounds でほぼ全エッジ返却（Brute-force 集合一致）
+  2. `NativeRoadGraph_QueryEdgesByAabb_OutOfBounds_ReturnsEmpty` — 範囲外 AABB で 0 件
+  3. `NativeRoadGraph_QueryEdgesByAabb_RandomTrials_MatchesBruteForce` — ランダム 20 個の AABB で R-tree 結果 = `OdrgReader` 真値 Brute-force 完全一致（3A.4 と同パターン、Aabb 型での突合）
+  4. `ItineroRoadGraph_QueryEdgesByAabb_FullBounds_ReturnsAllEdges` — 全体 bounds で全エッジ返却（GetBounds の AABB）
+  5. `ItineroRoadGraph_QueryEdgesByAabb_OutOfBounds_ReturnsEmpty` — 範囲外で 0 件
+  6. `ItineroRoadGraph_QueryEdgesByAabb_SmallBox_OnlyIntersectingEdges` — 局所 bbox で Brute-force と一致（同じロジックの自己整合検証、Itinero 突合は ID 独立採番により不可、3A 同パターン）
+- 累計テスト 602 + 6 = **608 件 pass**、Phase 1 既存 526 件 + Phase 3 累計テスト維持
+- ビルド 0 Warning / 0 Error
+- ItineroRoadGraph テストは `TestPaths.ParentDefaultRouterDb` 存在時のみ実行（Phase 1 既存パターン踏襲、CI 環境では `EnsureTestData` で skip）
 
-**着手前事前調査の論点候補** (3B.2 着手時に確認):
-- T4. `Aabb` (Lat-Lon) と `OdrgBbox` (Lon-Lat) の変換方向: 3A.4 R-tree クエリは `OdrgBbox` を受けるため、`Aabb → OdrgBbox` 変換が必要
-- T5. `IEnumerable<uint>` の yield return vs `ReadOnlyMemory<uint>` などの効率的な API: 3B では eager bake の add 時のみ呼ばれるためホットパスではない、yield return で OK か
-
-**commit メッセージ案**: `feat: Phase 3 ステップ 3B.2 IRoadGraph.QueryEdgesByAabb 追加 + Native/Itinero 実装 (単体 N 件、累計 NNN 件 pass)`
+**commit メッセージ案**: `feat: Phase 3 ステップ 3B.2 IRoadGraph.QueryEdgesByAabb 追加 + Native/Itinero 実装 (単体 6 件、608 件 pass)`
 
 ### 4.3 3B.3: `RestrictedAreaService.AttachGraph` + eager bake 統合
 
@@ -454,7 +565,13 @@ internal sealed class RestrictedAreaEdgeCache
   - T1 = (A) 都度評価 (ホットパスで evaluator.EvaluateDifficulty を呼ぶ、Phase 1 セマンティクス維持)
   - T2 = (A) Block 重複は OtherContains 走査で削除整合性 (O(K×M)、シンプル、メモリ増なし)
   - T3 = (A) Difficulty 重複は List から RemoveAll で削除整合性
-- [ ] **本ステップ計画書 v0.3 ユーザー承認**（次の確認ポイント）
+- [x] **本ステップ計画書 v0.3 ユーザー承認 (commit `cab741a`)**
+- [x] **3B.1 完了 (commit `8e92dd7`、602 件 pass、軽微逸脱なし)**
+- [x] **3B.2 着手前事前調査 + ユーザー判断 T4〜T6 確定（2026-05-27）**:
+  - T4 = (A) Aabb (Lat-Lon) 公開、NativeRoadGraph 内部で OdrgBbox に変換
+  - T5 = (A) IEnumerable<uint> yield return、内部で buffer growable
+  - T6 = (A) ItineroRoadGraph fallback は GetEdge(e) で都度 AABB 計算
+- [ ] **本ステップ計画書 v0.4 ユーザー承認**（次の確認ポイント）
 - [ ] 3B.1 着手前事前調査 → ユーザー判断（必要なら T1〜T3 等）→ 計画書 v0.2
 - [ ] 3B.1 完了 → ユーザー確認 → commit
 - [ ] 3B.2 着手前事前調査 → ユーザー判断（必要なら T4〜T5）→ 計画書 v0.3
@@ -475,3 +592,4 @@ internal sealed class RestrictedAreaEdgeCache
 | v0.1 | 2026-05-27 | 初版起草（着手前事前調査 + ユーザー判断 Q1〜Q4 確定、3A 全体完了直後） |
 | v0.2 | 2026-05-27 | 3B 効果測定方針 Q5〜Q7 確定追記。§1 Done 判定 9 追加、§2.4 Q5〜Q7 追記、§4.5 を A/B/C 3 サブパート構成に拡張（A 統合テスト / B `RouteWithConstraintsBenchmark` 3 モード改修 + ベンチ実測 / C 設計書 §4 反映）、§5 リスク 3B-R8 / 3B-R9 追加、§6 テスト件数表更新、§7 着手前確認に Q5〜Q7 確定追加 |
 | v0.3 | 2026-05-27 | 3B.1 着手前事前調査 + ユーザー判断 T1〜T3 確定追記。§4.1 を 4.1.1 事前調査結果 / 4.1.2 採用設計 / 4.1.3 Done 基準 に分割、Cache クラスの最終 API を確定、単体テスト 7 件の内訳確定（602 件 pass 目標）、§7 着手前確認に T1〜T3 確定追加 |
+| v0.4 | 2026-05-27 | 3B.1 完了 (commit `8e92dd7`) を §7 反映、3B.2 着手前事前調査 + ユーザー判断 T4〜T6 確定追記。§4.2 を 4.2.1 事前調査結果 / 4.2.2 採用設計 / 4.2.3 Done 基準 に分割、`QueryEdgesByAabb(Aabb)` シグネチャ + Native R-tree 実装 + Itinero fallback 実装の最終形を確定、単体テスト 6 件の内訳確定（608 件 pass 目標） |
