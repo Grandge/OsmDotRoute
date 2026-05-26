@@ -79,7 +79,7 @@ internal sealed class EdgeWeightCalculator
         var baseDuration = DurationSec(en.DistanceM, eval.SpeedKmh);
         if (double.IsPositiveInfinity(baseDuration)) return baseDuration;
 
-        var factor = EvaluateConstraintFactor(en.From, en.To, en.Shape);
+        var factor = EvaluateConstraintFactor(en.EdgeId, en.From, en.To, en.Shape);
         if (double.IsPositiveInfinity(factor)) return double.PositiveInfinity;
         return baseDuration / factor;
     }
@@ -94,7 +94,7 @@ internal sealed class EdgeWeightCalculator
         var baseDuration = DurationSec(partialDistanceM, eval.SpeedKmh);
         if (double.IsPositiveInfinity(baseDuration)) return baseDuration;
 
-        var factor = EvaluateConstraintFactor(edge.From, edge.To, edge.Shape);
+        var factor = EvaluateConstraintFactor(edge.EdgeId, edge.From, edge.To, edge.Shape);
         if (double.IsPositiveInfinity(factor)) return double.PositiveInfinity;
         return baseDuration / factor;
     }
@@ -103,9 +103,43 @@ internal sealed class EdgeWeightCalculator
     /// 制約サービスが未設定／登録 0 件の場合は 1.0、制約交差時は <see cref="double.PositiveInfinity"/>。
     /// それ以外は結合 speedFactor を返す。
     /// </summary>
-    private double EvaluateConstraintFactor(uint from, uint to, IReadOnlyList<GeoCoordinate> middleShape)
+    /// <remarks>
+    /// <para>
+    /// Phase 3 ステップ 3B.4: graph 注入済の場合は <see cref="OsmDotRoute.Restrictions.RestrictedAreaEdgeCache"/>
+    /// 参照のみに圧縮（HashSet/Dictionary 各 1 発、計画書 §4.4.2）。<see cref="BuildFullShape"/> + <c>_index.Query</c> +
+    /// <c>EdgeIntersectsAreaShapes</c> の毎エッジ alloc / 線形走査 / 二重ループはホットパスから除去される
+    /// （Phase 1 §18.4 + §18.3 改善の本命）。
+    /// </para>
+    /// <para>
+    /// graph 未注入時 (Service 単体テスト等) は Phase 1 動作にフォールバック。<see cref="BuildFullShape"/> も
+    /// 未注入経路で引き続き使用されるため、3B.4 では削除せず温存 (3C で Itinero 撤去 + Router 必須化後に再評価)。
+    /// </para>
+    /// </remarks>
+    private double EvaluateConstraintFactor(uint edgeId, uint from, uint to, IReadOnlyList<GeoCoordinate> middleShape)
     {
         if (_restrictions is null) return 1.0;
+
+        // graph 注入済の場合はキャッシュ参照のみ (3B.4 ホットパス置換)
+        if (_restrictions.IsGraphAttached)
+        {
+            var cache = _restrictions.Cache!;
+            if (cache.IsBlocked(edgeId)) return double.PositiveInfinity;
+
+            var areas = cache.GetDifficultyAreas(edgeId);
+            if (areas.Count == 0) return 1.0;
+
+            double combined = 1.0;
+            foreach (var area in areas)
+            {
+                var ev = _evaluator.EvaluateDifficulty(area.DifficultyType);
+                if (!ev.CanPass) return double.PositiveInfinity;
+                combined *= ev.SpeedFactor;
+                if (combined <= 0.0) return double.PositiveInfinity;
+            }
+            return combined;
+        }
+
+        // graph 未注入時は Phase 1 動作にフォールバック
         var shape = BuildFullShape(from, to, middleShape);
         return _restrictions.EvaluateConstraints(shape, _evaluator);
     }
