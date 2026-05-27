@@ -92,8 +92,8 @@ public sealed class NativeRouterIntegrationTests : IClassFixture<NativeRouterDbF
         var (from, to) = _fixture.MediumPair;
         var route = _fixture.Router.Calculate(_fixture.Car, from, to);
         Assert.NotNull(route);
-        Assert.True(route!.Shape.Count > 0);
-        var dist = GeoMath.HaversineMeters(from, route.Shape[0]);
+        Assert.True(route!.Shape.Length > 0);
+        var dist = GeoMath.HaversineMeters(from, route.Shape.Span[0]);
         Assert.InRange(dist, 0.0, 600.0);
     }
 
@@ -103,8 +103,8 @@ public sealed class NativeRouterIntegrationTests : IClassFixture<NativeRouterDbF
         var (from, to) = _fixture.MediumPair;
         var route = _fixture.Router.Calculate(_fixture.Car, from, to);
         Assert.NotNull(route);
-        Assert.True(route!.Shape.Count > 0);
-        var dist = GeoMath.HaversineMeters(to, route.Shape[^1]);
+        Assert.True(route!.Shape.Length > 0);
+        var dist = GeoMath.HaversineMeters(to, route.Shape.Span[^1]);
         Assert.InRange(dist, 0.0, 600.0);
     }
 
@@ -125,7 +125,7 @@ public sealed class NativeRouterIntegrationTests : IClassFixture<NativeRouterDbF
         var (from, to) = _fixture.MediumPair;
         var route = _fixture.Router.Calculate(_fixture.Car, from, to);
         Assert.NotNull(route);
-        Assert.True(route!.Shape.Count > 0);
+        Assert.True(route!.Shape.Length > 0);
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public sealed class NativeRouterIntegrationTests : IClassFixture<NativeRouterDbF
         Assert.NotNull(r1);
         Assert.NotNull(r2);
         Assert.Equal(r1!.TotalDistanceM, r2!.TotalDistanceM);
-        Assert.Equal(r1.Shape.Count, r2.Shape.Count);
+        Assert.Equal(r1.Shape.Length, r2.Shape.Length);
     }
 
     [Fact]
@@ -160,13 +160,14 @@ public sealed class NativeRouterIntegrationTests : IClassFixture<NativeRouterDbF
         var (from, to) = _fixture.MediumPair;
         var route = _fixture.Router.Calculate(_fixture.Car, from, to);
         Assert.NotNull(route);
-        Assert.True(route!.Shape.Count >= 2,
-            $"中距離経路で Shape 点数が {route.Shape.Count} 件 (>= 2 期待)");
+        var shape = route!.Shape.Span;
+        Assert.True(shape.Length >= 2,
+            $"中距離経路で Shape 点数が {shape.Length} 件 (>= 2 期待)");
 
         double sumJump = 0.0;
-        for (int i = 0; i < route.Shape.Count - 1; i++)
+        for (int i = 0; i < shape.Length - 1; i++)
         {
-            sumJump += GeoMath.HaversineMeters(route.Shape[i], route.Shape[i + 1]);
+            sumJump += GeoMath.HaversineMeters(shape[i], shape[i + 1]);
         }
         // Shape の隣接点 Haversine 合計 ≈ TotalDistanceM (DistanceM は .odrg 焼成時の Haversine 積算)
         // スナップ部分シェイプの含み方で多少の差異が出るため ±20% 許容

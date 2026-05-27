@@ -12,10 +12,11 @@ public static class GeoJsonConverter
     public static GeoJsonLineString ToLineString(OsmRoute route)
     {
         ArgumentNullException.ThrowIfNull(route);
-        var coords = new double[route.Shape.Count][];
-        for (var i = 0; i < route.Shape.Count; i++)
+        var shape = route.Shape.Span;
+        var coords = new double[shape.Length][];
+        for (var i = 0; i < shape.Length; i++)
         {
-            var c = route.Shape[i];
+            var c = shape[i];
             coords[i] = new[] { c.Longitude, c.Latitude };
         }
         return new GeoJsonLineString("LineString", coords);

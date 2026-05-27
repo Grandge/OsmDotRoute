@@ -1,11 +1,12 @@
+using OsmDotRoute.Native;
 using OsmDotRoute.Routing;
 
 namespace OsmDotRoute;
 
 /// <summary>
-/// 経路計算用のグラフデータ（REQ-MAP-001）。
-/// Phase 1 では <c>OsmDotRoute.Itinero.ItineroRouterDbLoader.LoadFromFile</c> から内部的に生成される。
-/// 公開 API に Itinero 型は露出させない（REQ-API-003）。
+/// 経路計算用のグラフデータ（REQ-MAP-001 / REQ-MAP-009）。
+/// Phase 3 ステップ 3C.1 以降は <see cref="LoadFromOdrg"/> から <c>.odrg</c> ファイルを直接ロードする（Itinero 非依存）。
+/// 公開 API に内部実装型を露出させない（REQ-API-003）。
 /// </summary>
 public sealed class RouterDb
 {
@@ -18,6 +19,33 @@ public sealed class RouterDb
         ArgumentNullException.ThrowIfNull(snapper);
         _graph = graph;
         _snapper = snapper;
+    }
+
+    /// <summary>
+    /// <c>.odrg</c> ファイル（OsmDotRoute Native Graph、Phase 2 グラフ形式仕様書 v0.2）を読み込み、
+    /// <see cref="RouterDb"/> を生成する（Phase 3 ステップ 3C.1、REQ-MAP-009）。
+    /// 内部で <see cref="NativeRoadGraph"/>（MMF + Span ゼロコピー読込）と
+    /// <see cref="NativeRoadSnapper"/>（R-tree クエリ）を構築する。
+    /// </summary>
+    /// <param name="odrgPath"><c>.odrg</c> ファイルパス</param>
+    /// <returns>ロードされた <see cref="RouterDb"/></returns>
+    /// <exception cref="ArgumentException"><paramref name="odrgPath"/> が <c>null</c> または空白</exception>
+    /// <exception cref="FileNotFoundException">ファイルが存在しない</exception>
+    /// <exception cref="OsmDotRoute.Internal.Odrg.OdrgFormatException">ファイル形式が不正</exception>
+    public static RouterDb LoadFromOdrg(string odrgPath)
+    {
+        if (string.IsNullOrWhiteSpace(odrgPath))
+        {
+            throw new ArgumentException("ファイルパスを指定してください。", nameof(odrgPath));
+        }
+        if (!File.Exists(odrgPath))
+        {
+            throw new FileNotFoundException(".odrg ファイルが見つかりません。", odrgPath);
+        }
+
+        var graph = new NativeRoadGraph(odrgPath);
+        var snapper = new NativeRoadSnapper(graph);
+        return new RouterDb(graph, snapper);
     }
 
     /// <summary>

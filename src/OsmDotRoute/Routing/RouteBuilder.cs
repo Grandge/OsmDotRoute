@@ -35,7 +35,7 @@ internal sealed class RouteBuilder
         if (result.SameEdge)
         {
             shape.Add(targetSnap.Location);
-            return new Route(result.TotalDistanceM, result.TotalDurationSec, shape);
+            return new Route(result.TotalDistanceM, result.TotalDurationSec, shape.ToArray().AsMemory());
         }
 
         // VertexPath: [sourceEndpoint, v1, v2, ..., targetEndpoint]
@@ -47,7 +47,7 @@ internal sealed class RouteBuilder
         {
             // 想定外（SameEdge=false なら少なくとも 1 頂点はある）。スナップ点のみで返す。
             shape.Add(targetSnap.Location);
-            return new Route(result.TotalDistanceM, result.TotalDurationSec, shape);
+            return new Route(result.TotalDistanceM, result.TotalDurationSec, shape.ToArray().AsMemory());
         }
 
         // ソース端点
@@ -85,6 +85,6 @@ internal sealed class RouteBuilder
 
         shape.Add(targetSnap.Location);
 
-        return new Route(result.TotalDistanceM, result.TotalDurationSec, shape);
+        return new Route(result.TotalDistanceM, result.TotalDurationSec, shape.ToArray().AsMemory());
     }
 }

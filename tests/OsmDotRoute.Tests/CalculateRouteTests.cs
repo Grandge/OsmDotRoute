@@ -141,7 +141,7 @@ public class CalculateRouteTests
         Assert.NotNull(route);
         Assert.True(route!.TotalDistanceM > 0);
         Assert.True(route.TotalDurationSec > 0);
-        Assert.True(route.Shape.Count >= 2);
+        Assert.True(route.Shape.Length >= 2);
     }
 
     [Fact]
@@ -164,10 +164,11 @@ public class CalculateRouteTests
         Assert.NotNull(snappedTo);
 
         // シェイプ先頭はスナップ後の起点座標、末尾はスナップ後の終点座標
-        Assert.Equal(snappedFrom!.Value.Latitude, route!.Shape[0].Latitude, precision: 5);
-        Assert.Equal(snappedFrom.Value.Longitude, route.Shape[0].Longitude, precision: 5);
-        Assert.Equal(snappedTo!.Value.Latitude, route.Shape[^1].Latitude, precision: 5);
-        Assert.Equal(snappedTo.Value.Longitude, route.Shape[^1].Longitude, precision: 5);
+        var routeShape = route!.Shape.Span;
+        Assert.Equal(snappedFrom!.Value.Latitude, routeShape[0].Latitude, precision: 5);
+        Assert.Equal(snappedFrom.Value.Longitude, routeShape[0].Longitude, precision: 5);
+        Assert.Equal(snappedTo!.Value.Latitude, routeShape[^1].Latitude, precision: 5);
+        Assert.Equal(snappedTo.Value.Longitude, routeShape[^1].Longitude, precision: 5);
     }
 
     private static void EnsureTestData()

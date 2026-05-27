@@ -43,12 +43,14 @@ public sealed class NativeRouterWithRestrictionsTests : IClassFixture<NativeRout
     }
 
     /// <summary>中距離経路の Shape 全体を包む大ポリゴン (Difficulty で全エッジ係数適用)。</summary>
-    private GeoPolygon MakePolygonCoveringRoute(IReadOnlyList<GeoCoordinate> shape, double marginDeg = 0.005)
+    private GeoPolygon MakePolygonCoveringRoute(ReadOnlyMemory<GeoCoordinate> shape, double marginDeg = 0.005)
     {
+        var span = shape.Span;
         double minLat = double.PositiveInfinity, maxLat = double.NegativeInfinity;
         double minLon = double.PositiveInfinity, maxLon = double.NegativeInfinity;
-        foreach (var c in shape)
+        for (int i = 0; i < span.Length; i++)
         {
+            var c = span[i];
             if (c.Latitude < minLat) minLat = c.Latitude;
             if (c.Latitude > maxLat) maxLat = c.Latitude;
             if (c.Longitude < minLon) minLon = c.Longitude;

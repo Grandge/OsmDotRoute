@@ -190,7 +190,7 @@ public class RestrictedRoutingTests
         {
             var car = router.Calculate(VehicleProfile.Car, from, to);
             var ped = router.Calculate(VehicleProfile.Pedestrian, from, to);
-            if (car is not null && ped is not null && car.Shape.Count >= 4 && ped.Shape.Count >= 4)
+            if (car is not null && ped is not null && car.Shape.Length >= 4 && ped.Shape.Length >= 4)
             {
                 return new BaselineContext(routerDb, from, to, car, ped);
             }
@@ -200,12 +200,21 @@ public class RestrictedRoutingTests
     }
 
     /// <summary>シェイプ全体を margin 度だけ広げた外接矩形ポリゴンを作る。</summary>
-    private static GeoPolygon MakePolygonCoveringShape(IReadOnlyList<GeoCoordinate> shape, double marginDeg)
+    private static GeoPolygon MakePolygonCoveringShape(ReadOnlyMemory<GeoCoordinate> shape, double marginDeg)
     {
-        var minLat = shape.Min(c => c.Latitude) - marginDeg;
-        var maxLat = shape.Max(c => c.Latitude) + marginDeg;
-        var minLon = shape.Min(c => c.Longitude) - marginDeg;
-        var maxLon = shape.Max(c => c.Longitude) + marginDeg;
+        var span = shape.Span;
+        double minLat = double.MaxValue, maxLat = double.MinValue;
+        double minLon = double.MaxValue, maxLon = double.MinValue;
+        for (int i = 0; i < span.Length; i++)
+        {
+            var c = span[i];
+            if (c.Latitude < minLat) minLat = c.Latitude;
+            if (c.Latitude > maxLat) maxLat = c.Latitude;
+            if (c.Longitude < minLon) minLon = c.Longitude;
+            if (c.Longitude > maxLon) maxLon = c.Longitude;
+        }
+        minLat -= marginDeg; maxLat += marginDeg;
+        minLon -= marginDeg; maxLon += marginDeg;
         return new GeoPolygon(new[]
         {
             new GeoCoordinate(minLat, minLon),
@@ -217,10 +226,11 @@ public class RestrictedRoutingTests
     }
 
     /// <summary>シェイプ中央付近を覆う小さなポリゴン（≈30m 四方）。局所遮断テスト用。</summary>
-    private static GeoPolygon MakeSmallPolygonAroundShapeMidpoint(IReadOnlyList<GeoCoordinate> shape)
+    private static GeoPolygon MakeSmallPolygonAroundShapeMidpoint(ReadOnlyMemory<GeoCoordinate> shape)
     {
-        var midIdx = shape.Count / 2;
-        var c = shape[midIdx];
+        var span = shape.Span;
+        var midIdx = span.Length / 2;
+        var c = span[midIdx];
         const double d = 0.0003;       // ≒ 30〜33m
         return new GeoPolygon(new[]
         {
@@ -233,13 +243,15 @@ public class RestrictedRoutingTests
     }
 
     /// <summary>2 つのシェイプが頂点単位で（許容誤差 1e-6 度）一致するか。</summary>
-    private static bool HasSameShape(IReadOnlyList<GeoCoordinate> a, IReadOnlyList<GeoCoordinate> b)
+    private static bool HasSameShape(ReadOnlyMemory<GeoCoordinate> a, ReadOnlyMemory<GeoCoordinate> b)
     {
-        if (a.Count != b.Count) return false;
-        for (var i = 0; i < a.Count; i++)
+        if (a.Length != b.Length) return false;
+        var sa = a.Span;
+        var sb = b.Span;
+        for (var i = 0; i < sa.Length; i++)
         {
-            if (Math.Abs(a[i].Latitude - b[i].Latitude) > 1e-6) return false;
-            if (Math.Abs(a[i].Longitude - b[i].Longitude) > 1e-6) return false;
+            if (Math.Abs(sa[i].Latitude - sb[i].Latitude) > 1e-6) return false;
+            if (Math.Abs(sa[i].Longitude - sb[i].Longitude) > 1e-6) return false;
         }
         return true;
     }
