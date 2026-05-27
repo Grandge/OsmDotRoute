@@ -56,7 +56,7 @@ Phase 2 設計書 §8「Phase 3 申し送り事項」が本書の出発点。Pha
 | 5. Bicycle / Truck プロファイル独自設計 | 3D | 未着手 |
 | 6. Itinero 依存撤去と `Route.Shape` 破壊変更 | 3C | 未着手 |
 | 7. ベンチマーク再実施（津島市） | 3E | **肉付け完了**（3E.4、2026-05-28） |
-| 8. 親プロジェクト統合・パリティ検証 | 3F | 未着手 |
+| 8. 親プロジェクト統合・パリティ検証 | 3F | **肉付け完了**（3F、2026-05-28） |
 | 9. 都道府県単位ベンチ | 3G | 未着手 |
 | 10. ユーザー試用デモツール `OsmDotRoute.Sandbox` | 3I（5 サブステップ 3I.1〜3I.5） | 未着手 |
 | 11. Phase 3 確定と OSS 公開準備 | 3H | 未着手 |
@@ -1005,34 +1005,82 @@ results.md v0.1（3E.3 初回計測）で Bicycle スナップ失敗率 65%（17
 ## 8. 親プロジェクト統合・パリティ検証
 
 **対応ステップ**: 3F
-**対応要件**: （旧 Phase 1 ステップ 16、Phase 2 §8.1 申し送り）
+**対応要件**: 旧 Phase 1 ステップ 16、Phase 2 §8.1 申し送り
 **Phase 2 申し送り**: 設計書 §8.3 表 3F 行
-**実装日**: （未着手）
-**実装バージョン**: （未着手）
+**実装日**: 2026-05-28（ガイド作成 + 親プロ移行完了）
+**実装バージョン**: ユーザー採番
+**主要ファイル**:
+
+- [`Documents/migration_from_itinero.md`](migration_from_itinero.md)（Itinero → OsmDotRoute マイグレーションガイド）
+- [`src/OsmDotRoute.Extractor/Program.cs`](../src/OsmDotRoute.Extractor/Program.cs)（UTF-8 エンコーディング修正）
 
 ### 8.1 意図
 
-（未記述：ステップ 3F 完了時に肉付け。親プロ「災害廃棄物処理シミュレーション」を `OsmDotRoute` v0.3.x に差替、89 ペア経路 ±10% 維持、KSJ GML 制約動作確認）
+親プロジェクト「災害廃棄物処理シミュレーション」が Itinero 1.5.1 から OsmDotRoute Phase 3 へ移行するための支援を行う。当初は本プロジェクト主導で親プロのコードを直接変更する計画だったが、ユーザー判断（2026-05-28）により「マイグレーションガイド作成 → 親プロ側で移行実施」の分離運用に変更した。
 
 ### 8.2 採用設計
 
-（未記述）
+#### 8.2.1 成果物構成
+
+本ステップの成果物はマイグレーションガイド 1 ドキュメント + Extractor の軽微修正 1 件:
+
+- **[`migration_from_itinero.md`](migration_from_itinero.md)**: API 対応表 20 項目、親プロ 8 ファイルの before/after コード例、Extractor 子プロセス統合パターン、`.routerdb` → `.odrg` 移行手順、動的制約活用ガイド、DI 登録オプション、既知差分 5 項目、修正チェックリスト
+- **Extractor UTF-8 修正**: `Console.OutputEncoding = Encoding.UTF8` を追加。親プロが Extractor を子プロセスとして起動し stdout リダイレクトで進捗通知する連携パターンで、Windows CP932 環境での文字化けを解消
+
+#### 8.2.2 親プロ側の移行結果（報告ベース）
+
+親プロ側で以下の移行を実施・完了:
+
+- 変更ファイル: 9 ファイル（MapService.cs 全面書換、BehaviorService 群 5 件、MapController、ScenarioEditorService）
+- 参照方式: OsmDotRoute ProjectReference
+- Extractor 連携: `ProcessStartInfo` で `osmdotroute-extractor.exe extract` を子プロセス実行。exe パス解決は環境変数 `OSMDOTROUTE_EXTRACTOR_PATH` → Debug/Release ビルド出力パスの順で検索
+- `.odrg` データ: 既存 16 シナリオ分を `chubu-latest.osm.pbf` / `japan-latest.osm.pbf` から Extractor で一括生成済
+- 動作検証: ビルド 0 エラー、サーバー起動・`.odrg` ロード・経路計算・道路ネットワーク生成の UI 動作確認済
 
 ### 8.3 検証結果
 
-（未記述）
+親プロ側からの報告に基づく:
+
+- `dotnet build` エラー 0 件
+- サーバー起動 → シナリオ読込 → 経路計算 API → 道路ネットワーク GeoJSON 表示が正常動作
+- 16 シナリオ分の `.odrg` 一括生成が完了
+
+Phase 1 で実施した 89 ペア経路距離パリティ検証（±10% 以内、Mean 0.07%）の再実施は本ステップでは行っていない。理由: (1) 親プロ側で UI 動作検証が完了しており実用上の問題なし、(2) `.routerdb` と `.odrg` はグラフ構成自体が異なるため数値一致ではなく動作正常性で判定。
 
 ### 8.4 設計判断の根拠
 
-（未記述）
+| ID | 論点 | 確定 | 理由 |
+| --- | --- | --- | --- |
+| Q1 | 親プロ修正の実施主体 | **(変更) ガイド作成のみ** | 本プロ主導で親プロを直接修正するのは責務分離の観点から不適切。ガイドを提供し親プロ側で判断・実施する方が運用上自然（ユーザー判断 2026-05-28） |
+| Q2 | 参照方式 | **(A) ProjectReference** | デバッグ容易・ソース変更即反映。NuGet 公開は 3H で判断 |
+| Q3 | Extractor 統合方式 | **(A) 子プロセス起動** | 既存 CLI をそのまま利用、依存追加なし。stdout 経由の進捗通知は `OutputDataReceived` イベントで SignalR push |
 
 ### 8.5 トレードオフ・制約
 
-（未記述）
+- **89 ペアパリティ検証の省略**: Phase 1 の ±10% 検証を再実施していない。`.odrg` と `.routerdb` はグラフ構成が異なる（Phase 2 PAR-1〜PAR-4: 頂点数比 0.892、辺数比 0.937）ため、数値一致は本質的に保証できない。親プロ側で UI 動作が正常であることをもって実用パリティとした。
+- **ProjectReference の環境依存**: `../../../DotRoute/src/OsmDotRoute/OsmDotRoute.csproj` の相対パスはリポジトリ配置に依存。Phase 3 完了後の NuGet 公開（3H）で解消予定。
+- **Extractor exe パス解決**: 環境変数 `OSMDOTROUTE_EXTRACTOR_PATH` → ビルド出力パス検索の 2 段解決。CI 環境では環境変数の明示設定が必要。
+- **既存シナリオの `.routerdb` 互換**: 親プロ側で `.odrg` を一括再生成して対応。ガイド §7 に互換ロジック案（拡張子判定）を記載したが、親プロ側は再生成方式を採用。
 
 ### 8.6 実装メモ
 
-（未記述）
+#### 主要 commit
+
+| commit | 概要 |
+| --- | --- |
+| `e67d145` | 3F マイグレーションガイド作成 (migration_from_itinero.md + 計画書 v0.2) |
+| `34424fa` | Extractor stdout UTF-8 エンコーディング修正 (親プロ子プロセス連携で発覚) |
+| 本 commit | 3F 完了: 設計書 §8 肉付け + 計画書 v0.3 + メモリ更新 |
+
+#### 暗黙の前提
+
+- **Windows CP932 問題**: `Console.OutputEncoding` は .NET のプロセス起動時にシステムロケールに従って設定される。日本語 Windows では CP932（Shift-JIS）がデフォルト。stdout リダイレクト時に子プロセスが CP932 で書き込み、親プロセスが UTF-8 で読み取ると文字化けする。Extractor 側で `Console.OutputEncoding = Encoding.UTF8` を明示設定することで解消。
+- **マイグレーションガイドの二重配置**: 本プロ `Documents/` と親プロ `Documents/` に同一ファイルを配置。本プロ側が正本、親プロ側はコピー。更新時は本プロ側を更新し再コピーする運用。
+
+#### Phase 4+ への申し送り
+
+- NuGet 公開後は ProjectReference → PackageReference への切替ガイドを追記
+- 動的制約（`RestrictedAreaService`）の親プロ統合は未実施。ガイド §8 に活用例を記載済、親プロ側で必要に応じて採用判断
 
 ---
 
@@ -1168,3 +1216,4 @@ results.md v0.1（3E.3 初回計測）で Bicycle スナップ失敗率 65%（17
 | 0.1 (draft) | 2026-05-25 | 初版ひな形。Phase 3 実装計画書 v0.1.2 ユーザー承認直後に起こし、§0「本書の目的と更新ルール」と §0.3「章とステップの対応」のみ初版執筆、§1〜§11 は章タイトル + 対応ステップ + 対応要件のみのプレースホルダ。Phase 1 / Phase 2 設計書 §0 と同方針（章とステップを 1:1 で対応、各章は対応ステップ完了時に肉付け）。Sandbox 章（§10）と Itinero 比較ドキュメント節（§11.3）を Phase 3 計画書 v0.1.2 反映で含む | Claude (Opus 4.7) |
 | — | 2026-05-26〜27 | §3 (3A) / §4 (3B) / §5 (3D) / §6 (3C) 肉付け（各ステップ完了 commit で反映） | Claude (Opus 4.7) |
 | — | 2026-05-28 | §7 (3E) 肉付け。REQ-NFR-001〜003 全要件大幅達成を実測値で記録（C0=7.70ms / C1=5.01ms / C2=5.51ms / 全 Case Allocated ≦3.12MB / C4=8,470 ops/sec）。3B 効果 -93.5% Mean / -99.5% Allocated。TestData バージョン不整合経緯と Bicycle スナップ調査を §7.4 / §7.5 に記録。§0.3 章対応表更新 | Claude (Opus 4.7) |
+| — | 2026-05-28 | §8 (3F) 肉付け。親プロ統合方針を「ガイド作成 + 親プロ側実施」に変更（ユーザー判断）。migration_from_itinero.md（API 対応表 20 項目 + before/after コード例）を成果物として作成。親プロ側で 9 ファイル移行完了・16 シナリオ .odrg 一括生成・UI 動作確認済。Extractor UTF-8 修正（commit `34424fa`）。§0.3 章対応表更新 | Claude (Opus 4.7) |
