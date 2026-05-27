@@ -33,3 +33,6 @@ BenchmarkDotNet.Artifacts/
 # Local config
 appsettings.local.json
 *.local.json
+
+# Claude Code working files
+.claude/

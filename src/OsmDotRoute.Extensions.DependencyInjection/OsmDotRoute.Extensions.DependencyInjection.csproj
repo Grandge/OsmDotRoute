@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OsmDotRoute\OsmDotRoute.csproj" />
-    <ProjectReference Include="..\OsmDotRoute.Itinero\OsmDotRoute.Itinero.csproj" />
   </ItemGroup>
 
   <ItemGroup>
