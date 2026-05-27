@@ -665,35 +665,177 @@ osmdotroute-extractor extract \
 
 ## 6. Itinero 依存撤去と `Route.Shape` 破壊変更
 
-**対応ステップ**: 3C
-**対応要件**: REQ-MAP-006, REQ-MAP-009, REQ-DEP-003
+**対応ステップ**: 3C (3C.1〜3C.5)
+**対応要件**: REQ-MAP-006（ランタイム Itinero 依存削除）、REQ-MAP-009（.odrg ロード）、REQ-DEP-003（外部 NuGet 依存削除）
 **Phase 2 申し送り**: 設計書 §8.3 表 3C 行
-**実装日**: （未着手）
-**実装バージョン**: （未着手）
+**実装日**: 2026-05-27（3C.1〜3C.5 同日完了）
+**実装バージョン**: ユーザー採番
+**主要ファイル**:
+
+- [`src/OsmDotRoute/RouterDb.cs`](../src/OsmDotRoute/RouterDb.cs)（`LoadFromOdrg` public static factory 追加）
+- [`src/OsmDotRoute/Route.cs`](../src/OsmDotRoute/Route.cs)（`Shape` 型 `IReadOnlyList<GeoCoordinate>` → `ReadOnlyMemory<GeoCoordinate>` 破壊変更）
+- [`src/OsmDotRoute/Routing/RouteBuilder.cs`](../src/OsmDotRoute/Routing/RouteBuilder.cs)（`shape.ToArray().AsMemory()` への変換）
+- [`src/OsmDotRoute.Extensions.DependencyInjection/`](../src/OsmDotRoute.Extensions.DependencyInjection/)（`AddOsmDotRoute(odrgPath)` 破壊変更、`OsmDotRoute.Itinero` ProjectReference 削除）
+- [`samples/MapVerifier/MapVerifier.Server/Endpoints/LoadEndpoints.cs`](../samples/MapVerifier/MapVerifier.Server/Endpoints/LoadEndpoints.cs)（`RouterDb.LoadFromOdrg` 経由に書換）
+- **削除**: `src/OsmDotRoute.Itinero/` 全 5 ファイル + csproj、`tests/OsmDotRoute.Tests/ItineroAdapterTests.cs`、`tests/OsmDotRoute.Tests/ItineroRoadGraphQueryEdgesByAabbTests.cs`、`tests/OsmDotRoute.Tests/Extractor/OdrgVsRouterDbParityTests.cs`、`tests/OsmDotRoute.Tests/ProfileParityTests.cs`、`tests/OsmDotRoute.Tests/Pbf/PbfReaderIntegrationTests.cs`、`tests/OsmDotRoute.Benchmarks/{MemoryProbe,ParityVerifier,Benchmarks/ItineroBaselineBenchmark,Benchmarks/RouterDbLoadBenchmark}.cs`
 
 ### 6.1 意図
 
-（未記述：ステップ 3C 完了時に肉付け。`OsmDotRoute.Itinero` プロジェクト撤去、`MapService.LoadFromOdrg` 統一、`Route.Shape` `IReadOnlyList<GeoCoordinate>` → `ReadOnlyMemory<GeoCoordinate>` 破壊変更）
+REQ-MAP-006（ランタイム Itinero 依存削除）、REQ-MAP-009（.odrg 直接ロード）、REQ-DEP-003（外部 NuGet 依存削除）を Phase 3 段階で完全達成する。Phase 1 で導入された Itinero 1.5.1 / Itinero.IO.Osm 1.5.1 / OsmSharp NuGet 依存および `OsmDotRoute.Itinero` アダプタープロジェクトを**完全撤去**し、ランタイムを Native 系統（`NativeRoadGraph` + `NativeRoadSnapper` + `.odrg`）のみに統一する。
+
+同時に Phase 2 §5.5-8 確定済の `Route.Shape` 破壊変更（`IReadOnlyList<GeoCoordinate>` → `ReadOnlyMemory<GeoCoordinate>`）を実施し、Phase 1 §18.4「経路 1 本あたり 77 MB アロケート」削減の最終段階を完了させる。
 
 ### 6.2 採用設計
 
-（未記述）
+#### 6.2.1 撤去前後のランタイム参照グラフ
+
+```text
+[撤去前 = Phase 3 ステップ 3D 完了時点]
+ユーザーコード
+  ↓ NuGet
+OsmDotRoute                ← Itinero NuGet 非依存（元から）
+OsmDotRoute.Itinero        ← Itinero 1.5.1 / Itinero.IO.Osm 1.5.1 NuGet 依存
+  ├─ ItineroRoadGraph (IRoadGraph 実装)
+  ├─ ItineroSnapper (IRoadSnapper 実装)
+  ├─ ItineroEdgeEnumeratorAdapter
+  ├─ ItineroRouterDbLoader  (.routerdb → OsmDotRoute.RouterDb)
+  └─ ItineroRoadGraphTestExtensions
+OsmDotRoute.Extensions.DependencyInjection
+  └─ AddOsmDotRoute(routerDbPath)  → ItineroRouterDbLoader.LoadFromFile
+
+[撤去後 = Phase 3 ステップ 3C 完了時点]
+ユーザーコード
+  ↓ NuGet
+OsmDotRoute                ← System.* + 自前 OsmDotRoute.Pbf のみ依存（REQ-DEP-003 達成）
+  ├─ RouterDb.LoadFromOdrg(string odrgPath)  ← public static factory
+  ├─ NativeRoadGraph (IRoadGraph 実装、MMF + Span ゼロコピー)
+  └─ NativeRoadSnapper (IRoadSnapper 実装、R-tree)
+OsmDotRoute.Extensions.DependencyInjection
+  └─ AddOsmDotRoute(odrgPath)  → RouterDb.LoadFromOdrg
+samples/MapVerifier/MapVerifier.Server
+  └─ /api/load (内部で .odrg ロード) + /api/load-odrg / /api/road-network-odrg のみ
+
+(OsmDotRoute.Itinero プロジェクトは sln/csproj/コードから完全消滅)
+```
+
+#### 6.2.2 主要 API 変更
+
+| 変更 | 旧 | 新 | 影響 |
+| --- | --- | --- | --- |
+| RouterDb factory | （internal `new RouterDb(IRoadGraph, IRoadSnapper)`） | `public static RouterDb LoadFromOdrg(string odrgPath)` | **追加**（既存 internal 維持） |
+| Route.Shape 型 | `IReadOnlyList<GeoCoordinate>` | `ReadOnlyMemory<GeoCoordinate>` | **破壊変更**（Phase 2 §5.5-8 確定済） |
+| DI 登録 | `AddOsmDotRoute(string routerDbPath)` | `AddOsmDotRoute(string odrgPath)` | **破壊変更**（パラメータ名 + 挙動が `.odrg` 経由に） |
+| `OsmDotRouteOptions` | `RouterDbPath` | `OdrgPath` | **破壊変更**（プロパティ名リネーム） |
+| `ItineroRouterDbLoader` | `LoadFromFile` / `FromItineroRouterDb` public static | **完全削除** | 親プロ修正必要（3F で対応） |
+| `OsmDotRoute.Itinero.*` | アダプタクラス 5 種 | **完全削除** | プロジェクトごと消滅 |
+
+#### 6.2.3 Route.Shape `ReadOnlyMemory<T>` 化のライフタイム設計
+
+`NativeRoadGraph.GetEdgeShape(edgeId) -> ReadOnlySpan<GeoCoordinate>` はキャッシュ配列への参照を返す（3A.3e で実装済）。`Route.Shape` を `ReadOnlyMemory<GeoCoordinate>` 化する際の選択肢：
+
+- **(α) Native の Span をそのまま保持**: `MemoryManager<T>` 経由で延命。`NativeRoadGraph.Dispose` 後の Span 参照は不定動作
+- **(β) Route 構築時に新規 `GeoCoordinate[]` 配列を確保 + コピー** ← **採用**
+
+**採用根拠 (β)**:
+
+- Route 構築時の 1 経路 1 回 alloc に抑制 → 性能目標 5 MB 内で十分
+- Native graph の Dispose タイミングと Route のライフタイムを独立化
+- Phase 1 §18.4 = 77 MB の主因は Dijkstra 辺展開時の毎回 alloc で 3B (`EdgeWeightCalculator.EvaluateConstraintFactor` の `BuildFullShape` 排除) で既に解消済。Route 構築時の 1 回 alloc は性能上問題なし
+
+#### 6.2.4 MapVerifier `.odrg` only モード
+
+- `MapVerifier.Server.csproj` から `OsmDotRoute.Itinero` ProjectReference 削除
+- `/api/load` エンドポイント: `ItineroRouterDbLoader.LoadFromFile` → `RouterDb.LoadFromOdrg` に置換
+  （DTO `RouterDbPath` 名は後方互換のため維持、実態は `.odrg` パス）
+- `OdrgFormatException` は OsmDotRoute コアで internal 定義のため `catch (Exception ex) when (ex.GetType().Name == "OdrgFormatException")` で対応（Phase 4+ で public 化検討）
+- `/api/load-odrg` / `/api/road-network-odrg` は Phase 2 既存実装のまま残置
 
 ### 6.3 設計判断の根拠
 
-（未記述）
+3C 期間中に着手前事前調査でユーザー確認した設計判断は以下のとおり：
+
+| ID | 論点 | 確定 | 理由 |
+| --- | --- | --- | --- |
+| Q1 | RouterDb ロード経路 + 新規 Public API 設計（`MapService` 実態不在発見） | **(A) `RouterDb.LoadFromOdrg` static + `AddOsmDotRoute(odrgPath)`** | Phase 3 計画書 §3.4 / §5.5-26 の「MapService.LoadFromRouterDb / LoadFromOsmPbf」は実態不在。`MapService` を新設するより既存 `RouterDb` 公開度緩和の方が clean。`AddOsmDotRoute(odrgPath)` も破壊変更で統一。`MapService` クラス新設案 (B) は重複気味、DI のみ案 (C) はテスト・シングルスクリプトで不便 |
+| Q2 | MapVerifier モード | **(A) `.odrg` only に切替** | MapVerifier は検証ツールでありユーザー向け SaaS ではない、`samples/Data/tsushima.odrg` 同梱が Phase 2 で完了、Itinero 比較は Phase 1/2 のテスト群で代替可能。別 Exe 分離案 (B) はコード量招致 |
+| Q3 | Phase 1 既存 Itinero 系経路テスト戦略 | **(A) `.odrg`（津島市）ベースに全書換** | テスト件数維持 + Native fixture 共有で .odrg ロードコスト最小化。Itinero 比較セマンティクスは Native 系既存テスト (3A.6 16 件 / 3B.5 6 件) で実質カバー済。丸ごと削除案 (B) はテスト資産大量喪失、別 csproj 残置案 (C) は計画書 §3.4「完全撤去」方針と矛盾 |
+| Q4 | サブ分割粒度 | **(A) 5 サブ** (3C.1 LoadFromOdrg + Route.Shape / 3C.2 テスト全書換 / 3C.3 DI / 3C.4 MapVerifier+Itinero 撤去 / 3C.5 ベンチ整理+設計書反映) | 3A (6 サブ) / 3B (5 サブ) 並み細分化。影響範囲広いため各サブで `dotnet test` 全 pass を維持しながら段階進行 |
 
 ### 6.4 トレードオフ・制約
 
-（未記述）
+- **Phase 1 既存 526 件全 pass 維持原則の意図的解消**: 3A/3B/3D で死守してきた「Phase 1 既存 526 件全 pass」原則は 3C で意図的に解消。Phase 1 系経路テストは Itinero 経由で `default.routerdb`（親プロ座標、東京周辺）をロードしていたため、Itinero 撤去で**テストデータ自体を `.odrg`（津島市座標）に切替**する必要があった。これは Phase 3 計画書 §3.4 で予期されていた破壊変更。
+- **Phase 1 比較セマンティクスの喪失**: Phase 1 系の「Itinero `Router.Calculate` との総距離 ±10% 一致」「Itinero `Vehicle.Car.Fastest()` との通行可否 100% 一致」セマンティクスは廃止。これは経路計算の正確性検証として有用だったが、Itinero 撤去で物理的に不可能。経路計算正常動作は Native 系 (3A.6 16 件 + 3B.5 6 件 + 3C.2 書換後の Phase 1 系テスト) でカバー。
+- **`OdrgFormatException` の internal**: 公開 API である `RouterDb.LoadFromOdrg` の XML doc に `<exception cref="OsmDotRoute.Internal.Odrg.OdrgFormatException">` を記載しているが、internal 型のため外部から catch 不可。MapVerifier では `catch (Exception ex) when (ex.GetType().Name == "OdrgFormatException")` のハック的対応。**Phase 4+ で public 化検討**（`OsmDotRoute` namespace に移動 + public 化が望ましい）。
+- **親プロ統合への波及（3F で対応）**: `ItineroRouterDbLoader` 完全削除と `Route.Shape` 破壊変更により、親プロ「災害廃棄物処理シミュレーション」のコード修正が必須。メモリ [[project_phase3_parent_integration_scan]] = 「親プロ Itinero 直接呼出 3 ファイル + Route.Shape 利用 5 箇所」既に把握済、3F で一斉修正。
+- **テスト座標切替の見積もり違い**: 津島市 .odrg（27k 頂点 / 38k エッジ）は default.routerdb（43k 頂点）より小規模で、`RestrictedRoutingTests` の制約 polygon margin を 0.002 度 → 0.01 度に拡大する必要があった（経路全体を覆うため）。3C.2 着手時に判明、即修正。
+- **ベンチマーク Itinero 比較値の喪失**: Phase 1 ベンチ結果との直接比較は phase1_benchmark_results.md 既出値を参照する形になる。3E で本番ベンチ実施時に Phase 1 値と並べて記録予定。
 
 ### 6.5 検証方法
 
-（未記述）
+#### 6.5.1 テスト件数推移（3C 全期間）
+
+| サブ | 完了 commit | 件数増減 | 累計 | 主な変更 |
+| --- | --- | --- | --- | --- |
+| 3C.1 | `7c3876f` | +6 | 690 | `RouterDbLoadFromOdrgTests.cs` 新規 (LoadFromOdrg / E2E) |
+| 3C.2 | `debc66a` | -10 | 680 | Itinero 比較系テスト 2 ファイル削除 (ProfileParityTests / OdrgVsRouterDbParityTests)、`CalculateRouteTests` / `RoadNetworkGeoJsonTests` で Itinero 直接比較テスト 2 件削除、座標切替に伴う `RestrictedRoutingTests` 1 件削除 (BlockArea overrides DifficultyArea の補助検証) |
+| 3C.3 | `4ba2c2f` | +5 | 685 | `DependencyInjectionTests.cs` 新規 (AddOsmDotRoute / null / 空白 / options 経由 / 不正設定) |
+| 3C.4 | `c02dc8e` | -13 | 672 | Itinero 専用テスト 2 ファイル削除 + `PbfReaderIntegrationTests.cs` 削除 (OsmSharp 比較、Itinero.IO.Osm transitive 失効) |
+| 3C.5 | （本ステップ） | 0 | 672 | 設計書 §6 / 計画書 v0.2 / メモリ更新のみ、テスト追加なし |
+| **合計** | — | **-12** | **684 → 672** | Phase 1 比較系テストの戦略的廃止 |
+
+#### 6.5.2 Itinero NuGet 依存ゼロ確認
+
+```bash
+# 本体コード + テスト + ベンチ + sample の全 csproj で Itinero PackageReference を grep
+grep -r "PackageReference Include=\"Itinero\"" --include="*.csproj"
+# → 0 件 (完全消滅)
+
+# 「Itinero」言及は 21 ファイル残存するが、全てコメント / XML doc 内の歴史的言及
+# (Itinero との比較経緯、Fastest 補正 0.75 の根拠、破壊変更の経緯など)
+# ライブラリ機能には影響なし
+```
+
+#### 6.5.3 ビルド検証
+
+```bash
+dotnet build OsmDotRoute.sln
+# 0 Warning(s) / 0 Error(s)
+```
+
+依存ツリー:
+
+- `OsmDotRoute` コア: System.\* のみ
+- `OsmDotRoute.Pbf`: System.\* のみ（自前 PBF パーサー、Phase 2 完成）
+- `OsmDotRoute.Extractor`: System.\* + `System.CommandLine` v3 preview
+- `OsmDotRoute.Extensions.DependencyInjection`: System.\* + `Microsoft.Extensions.DependencyInjection.Abstractions`
 
 ### 6.6 実装メモ
 
-（未記述）
+#### 主要 commit（時系列）
+
+| commit | 概要 |
+| --- | --- |
+| `53ab277` | 3C 計画書 v0.1（5 サブ分割、ユーザー判断 Q1-Q4 確定） |
+| `7c3876f` | 3C.1: `RouterDb.LoadFromOdrg` + `Route.Shape` ReadOnlyMemory 化、内部呼出箇所 9 ファイル修正 (+6 件、690 件 pass) |
+| `debc66a` | 3C.2: Phase 1 系経路テスト 5 ファイル全書換 (.odrg ベース、`NativeRouterDbFixture` 共有)、ProfileParityTests / OdrgVsRouterDbParityTests 削除 (-10 件、680 件 pass) |
+| `4ba2c2f` | 3C.3: `AddOsmDotRoute(odrgPath)` 破壊変更、`OsmDotRouteOptions.OdrgPath` リネーム、`Extensions.DependencyInjection` から Itinero ProjectReference 削除、新規 DI テスト 5 件 (+5 件、685 件 pass) |
+| `c02dc8e` | 3C.4: `OsmDotRoute.Itinero` プロジェクト物理削除 (5 .cs + csproj + sln + 関連 ProjectReference)、Itinero 専用テスト 2 ファイル削除、ベンチ Itinero モード削除、MapVerifier `.odrg` only モード切替 (-13 件、672 件 pass) |
+| 本 commit | 3C.5 + 3C 完了: 設計書 §6 全 6 サブセクション肉付け + 計画書 v0.2 (5 サブ完了 + §7 完了状況 + §8 改訂履歴) + メモリ更新 |
+
+#### 暗黙の前提・引っかかりポイント
+
+- **`OdrgFormatException` の internal**: `RouterDb.LoadFromOdrg` の XML doc に記載しているが MapVerifier では型直接 catch 不可、`GetType().Name` 照合で対応。Phase 4+ で public 化検討（`OsmDotRoute` namespace 直下に移動が望ましい）
+- **`Route.Shape` の `.Length` / `.Span[i]` パターン**: 既存テストは `.Count` / `[i]` を使っていたため一斉置換が必要。`IReadOnlyList<T>` ベースのヘルパ (`MakePolygonCoveringShape` 等) は `ReadOnlyMemory<T>` 受け取りに書換、内部は `.Span` 経由でループ
+- **`RestrictedRoutingTests` の polygon margin 拡大**: default.routerdb 時代の `marginDeg: 0.002` (約 220m) は津島市 MediumPair (~1km) 経路を覆えなかった → `0.01` (約 1.1km) に拡大
+- **テスト座標切替で `RestrictedAreaService` の AttachGraph 共有**: `NativeRouterDbFixture` は `_fixture.RouterDb` を共有するが、各テストで `new RestrictedAreaService()` + `new Router(_fixture.RouterDb, restrictions)` するため、複数 `RestrictedAreaService` が同じ graph に attach (3B.3 T7=A セマンティクスで OK)
+- **MapVerifier フロント側修正は範囲外**: `request.RouterDbPath` DTO 名を後方互換のため維持したため、フロント側 (`MapVerifier.Web`) は無修正でビルド可能。3I で Sandbox 着手時に MapVerifier フロントも整理予定
+
+#### Phase 4+ への申し送り
+
+- **`OdrgFormatException` の public 化**: `OsmDotRoute.Internal.Odrg.OdrgFormatException` → `OsmDotRoute.OdrgFormatException` に移動 + public 化、MapVerifier の hack 削除
+- **`RoadEdge.Shape` の `ReadOnlyMemory<T>` 化**: 現状は `IReadOnlyList<GeoCoordinate>` のまま（破壊変更対象外）。Phase 4+ で Route.Shape と同等化を検討
+- **MapVerifier の DTO 名整理**: `request.RouterDbPath` → `request.OdrgPath` リネームは Phase 4+ でフロントと一緒に対応
+- **Itinero 比較セマンティクスの再評価**: Phase 1 で確立した Itinero との数値一致は OSS 公開時の信頼性指標として有用。Phase 3 完了時の `comparison_with_itinero.md` (§3.9.1) で Phase 1 実測値を引用する形でカバー
 
 ---
 
