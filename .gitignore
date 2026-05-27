@@ -29,6 +29,9 @@ BenchmarkDotNet.Artifacts/
 *.osm.pbf
 *.routerdb
 *.dotroute  # 将来の独自フォーマット用
+samples/Data/aichi.odrg
+samples/Data/tokyo.odrg
+samples/Data/pbf/
 
 # Local config
 appsettings.local.json

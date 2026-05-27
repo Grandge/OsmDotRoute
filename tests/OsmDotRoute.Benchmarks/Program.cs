@@ -24,6 +24,12 @@ if (args.Length > 0 && args[0] == "--bicycle-snap-probe")
     return;
 }
 
+if (args.Length > 0 && args[0] == "--prefecture-bench")
+{
+    PrefectureBench.Run(args.Skip(1).ToArray());
+    return;
+}
+
 var config = ManualConfig.CreateMinimumViable()
     .AddDiagnoser(MemoryDiagnoser.Default)
     .WithOptions(ConfigOptions.JoinSummary | ConfigOptions.DisableLogFile);

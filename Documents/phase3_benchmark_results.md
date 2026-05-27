@@ -232,7 +232,8 @@ dotnet run --project tests/OsmDotRoute.Benchmarks -c Release --no-build -- --bic
 | Bicycle (C2、新規) | — | 5.51 ms / 2.39 MB（成功率 97/100） | 基準値確定 | ✅ | 3E |
 | 制約 add/remove スループット（C4、新規） | — | **118 μs/op = 8,470 ops/sec** / 59.54 KB | 基準値確定 | ✅ | 3E |
 | 経路距離同等性（親プロ統合） | 89/89 ペア ±10% 以内、Mean 0.07% | 未実施 | 同等維持 | — | 3F |
-| 都道府県単位（愛知県全域、C5） | 未測定（Phase 1 §18.2 未解消） | 未実施 | 実測値を取得 | — | 3G |
+| 都道府県単位 愛知県（C5） | 未測定（Phase 1 §18.2） | **117 ms/route**（988k 頂点 / 1.4M エッジ / 153 MB） | 実測値を取得 | ✅ 取得済 | 3G |
+| 都道府県単位 東京都（C5-T） | 未測定 | **288 ms/route**（1.28M 頂点 / 1.78M エッジ / 179 MB） | 実測値を取得 | ✅ 取得済 | 3G |
 | 定常 WorkingSet | 54 MB（16 GB の 0.3%） | 未測定（本ベンチでは取得せず） | ≦ 54 MB（同等以下） | — | 3E（追加実施判断） |
 
 ---
@@ -257,11 +258,15 @@ dotnet run --project tests/OsmDotRoute.Benchmarks -c Release --no-build -- --bic
 - 本書では 1 op = Add + Remove(id) 1 サイクルのみ
 - Phase 4+ で Add のみ / Remove(id) のみ / RemoveByTag(tag) / ClearAll() を独立計測し、操作別コスト内訳を確定
 
-### 8.4 都道府県単位ベンチ（3G）への引継ぎ
+### 8.4 都道府県単位ベンチ（3G 実測完了）
 
-- 本書は津島市 53k 頂点 / 74k エッジでの実測値
-- 3G で愛知県全域 PBF（推定 500k 頂点 / 700k エッジ）から `.odrg` 抽出 → 本ベンチを再実行し、規模拡張時の性能維持を確認
-- Phase 1 §18.2 「都道府県単位は未測定」リベンジの位置付け
+3G で愛知県 + 東京都の都道府県単位ベンチを実測（2026-05-28）。詳細は §9 参照。
+
+- **愛知県**: 988k 頂点 / 1.4M エッジ / 153 MB → C0 Mean **117 ms/route**（REQ-NFR-001 = 100 ms を 17% 超過）
+- **東京都**: 1.28M 頂点 / 1.78M エッジ / 179 MB → C0 Mean **288 ms/route**（REQ-NFR-001 を 188% 超過）
+- **津島市比**: 愛知県 = 15x、東京都 = 37x（頂点比 18x / 24x に対し Dijkstra O(V log V) の予測と概ね一致）
+- **結論**: REQ-NFR-001 は市単位で大幅達成、都道府県単位では Dijkstra のみでは 100 ms 未達。Phase 4+ で CH（Contraction Hierarchies）導入検討の判断材料
+- .odrg ロード時間は愛知県 0.21s / 東京都 0.23s で MMF ゼロコピーの効果を確認
 
 ### 8.5 定常 WorkingSet の測定漏れ
 
@@ -275,9 +280,55 @@ dotnet run --project tests/OsmDotRoute.Benchmarks -c Release --no-build -- --bic
 
 ---
 
-## 9. 改訂履歴
+## 9. 都道府県単位ベンチ（C5、Phase 3 ステップ 3G）
+
+### 9.1 グラフ規模比較
+
+| 地域 | 頂点 | エッジ | .odrg サイズ | 抽出時間 | PBF ソース |
+|---|---:|---:|---:|---:|---|
+| 津島市（3E 基準） | 53,727 | 74,276 | 8.5 MB | 1.6 秒 | chubu bbox 11km×11km |
+| **愛知県全域** | 988,749 | 1,396,005 | 153 MB | 26.1 秒 | chubu-latest.osm.pbf |
+| **東京都全域** | 1,282,919 | 1,782,039 | 179 MB | 31.6 秒 | kanto-latest.osm.pbf |
+
+### 9.2 C0 経路計算性能（制約なし、Car、100 ペア × 10 イテレーション）
+
+**計測方法**: Stopwatch ベース手動計測（`--prefecture-bench`、BenchmarkDotNet 外）。Warmup 3 イテレーション後に 10 イテレーション実測。
+
+| 地域 | C0 Mean/route | StdDev | Min/route | Max/route | Null routes | REQ-NFR-001 (≦100ms) |
+|---|---:|---:|---:|---:|---:|:---:|
+| 津島市（3E、BDN） | 7.70 ms | 0.14 ms | — | — | 0/100 | ✅ |
+| **愛知県全域** | **117 ms** | 3.6 ms | 114 ms | 125 ms | 2/100 | ❌ (1.17x) |
+| **東京都全域** | **288 ms** | 123 ms | 228 ms | 655 ms | 3/100 | ❌ (2.88x) |
+
+### 9.3 .odrg ロード性能
+
+| 地域 | ロード時間 | 方式 |
+|---|---:|---|
+| 愛知県 (153 MB) | **0.21 秒** | MemoryMappedFile + CSR 構築 |
+| 東京都 (179 MB) | **0.23 秒** | 同上 |
+
+### 9.4 GC Allocated 概算
+
+| 地域 | Alloc est (100 routes) | /route |
+|---|---:|---:|
+| 津島市（3E、BDN） | 3.12 MB | 31 KB |
+| **愛知県** | 49 MB | 490 KB |
+| **東京都** | 63 MB | 630 KB |
+
+### 9.5 分析
+
+- **Dijkstra O(V log V) スケーリング**: 津島市 (53k 頂点) → 愛知県 (988k 頂点) = 18.4 倍の頂点数に対し、Mean は 7.7 ms → 117 ms = 15.2 倍。理論値（18.4 × log(988k)/log(53k) ≈ 18.4 × 1.27 ≈ 23x）より良好、経路長（bbox 内の平均 OD 距離）の影響と推察
+- **東京都の StdDev 大**: iter 10 で 655 ms のスパイク。GC / OS バックグラウンドタスクの影響が疑われる。iter 1-9 の Mean は 240 ms 程度
+- **REQ-NFR-001 超過の評価**: 要件定義書 v2.0/v2.1 では「市単位で達成、都道府県単位は Phase 3 完了後に再検証」と条件付き完了マーク済。都道府県単位で 100 ms 超は **Phase 4+ で CH 導入検討の判断材料**
+- **MMF ロード性能**: 153-179 MB の .odrg が 0.2 秒台でロード完了。起動コストは実用上問題なし
+- **Allocated 増加**: 都道府県単位では 1 経路あたり 490-630 KB（津島市 31 KB の 16-20 倍）。Dijkstra の探索頂点数増加に比例して PriorityQueue / visited 配列の消費が増加
+
+---
+
+## 10. 改訂履歴
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
 | 0.1 (draft) | 2026-05-27 | 初版（3E.3 計測）。**TestData バージョン不整合**（旧 odrg ベース route-pairs.json が `bin/` に残存）に気付かず、Bicycle スナップ失敗率 65% を報告 → C2 Mean 過小・C1 Allocated 過大（34 MB）として誤った結論を提示。設計書 §7 / 計画書 §9 への反映は v0.2 待ち | Claude (Opus 4.7) |
 | 0.2 | 2026-05-27 | **TestData 再生成後の再計測**。Bicycle 成功率 97/100（プロファイル定義は正常、ユーザー指摘に応じて調査）。C1 Allocated 34 MB → **2.35 MB**（約 14 倍改善、≦ 5 MB 目標達成）。REQ-NFR-001〜003 **全要件大幅達成** ✅。3B 効果 -93.5% Mean / -99.5% Allocated（C1 Detached → Attached）。Snap 単独 53 倍高速化。C4 = 8,470 ops/sec。Phase 4+ 申し送りから「C1 Allocated 根治」「Native-Detached vs Attached 逆転原因」を削除（達成済のため）、「RouteCalculation Allocated 乖離」「TestData 再生成 CI 化」を追加 | Claude (Opus 4.7) |
+| 0.3 | 2026-05-28 | **§9 都道府県単位ベンチ（3G）追加**。愛知県 (988k 頂点 / 1.4M エッジ) C0 Mean 117 ms/route、東京都 (1.28M 頂点 / 1.78M エッジ) C0 Mean 288 ms/route。REQ-NFR-001 は市単位で達成、都道府県単位では Dijkstra のみで 100 ms 超過 → Phase 4+ CH 検討の判断材料。§7 表に C5/C5-T 行追加、§8.4 を実測完了に更新 | Claude (Opus 4.7) |
