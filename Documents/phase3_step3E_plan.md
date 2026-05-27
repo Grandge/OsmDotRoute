@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3E: ベンチマーク再実施（津島市 C0〜C4）計画書
 
-**ステータス**: ドラフト v0.1（着手前、2026-05-27）
+**ステータス**: v0.2（3E 全体完了、2026-05-28）
 **対応ステップ**: Phase 3 ステップ 3E（[Phase 3 実装計画書 §3.5 / §6 / §9](phase3_implementation_plan.md)）
 **対応要件**: REQ-NFR-001（経路計算性能維持）、REQ-NFR-002（制約 100 件下の劣化率 ≦ 1.5x）、REQ-NFR-003（経路 1 本あたりアロケート削減）
 **関連文書**:
@@ -380,10 +380,10 @@ public class RestrictionThroughputBenchmark
 
 | サブステップ | 状態 | 完了 commit | 主要成果 |
 | --- | --- | --- | --- |
-| 3E.1 | 未着手 | — | RouteWithConstraintsBenchmark Case を C0/C1/C2 化 + Bicycle 切替 + --bicycle-snap-probe |
-| 3E.2 | 未着手 | — | RestrictionThroughputBenchmark 新規（C4） |
-| 3E.3 | 未着手 | — | 本番 job 全シナリオ実測 + phase3_benchmark_results.md v0.1 |
-| 3E.4 | 未着手 | — | 設計書 §7 肉付け + 計画書 §9 表更新 + 3E 完了総括 |
+| 3E.1 | **完了** | `28614de` | RouteWithConstraintsBenchmark C0/C1/C2 化 + Bicycle 切替 + odrg 4 プロファイル再生成 + `--bicycle-snap-probe` 診断（672 件 pass 維持） |
+| 3E.2 | **完了** | `9a85d6b` | RestrictionThroughputBenchmark 新規実装（C4 制約 add/remove スループット、672 件 pass 維持） |
+| 3E.3 | **完了** | `155ded5` | 本番 job 全シナリオ実測 + phase3_benchmark_results.md v0.2 確定。v0.1 で TestData バージョン不整合判明 → v0.2 で再計測。REQ-NFR-001/002/003 全要件大幅達成 |
+| 3E.4 | **完了** | （本 commit） | 設計書 §7 全 6 サブ肉付け + 計画書 §9 実測値反映 + 計画書 v0.2 bump + 3E 完了総括 |
 
 ---
 
@@ -429,3 +429,4 @@ public class RestrictionThroughputBenchmark
 | 版 | 日付 | 内容 | 担当 |
 | --- | --- | --- | --- |
 | 0.1 (draft) | 2026-05-27 | 初版。Phase 3 ステップ 3E（ベンチマーク再実施）の 4 サブ分割（3E.1 既存ベンチ拡張 / 3E.2 C4 新規 / 3E.3 本番計測 + results.md / 3E.4 設計書 §7 + 計画書 §9 + 完了総括）。ユーザー判断 Q1=mixed-100 / Q2=既存 Car ペア流用 + 失敗率記録 / Q3=1 op = Add + Remove(id) / Q4=4 サブ確定。Phase 1 比較は [phase1_benchmark_results.md](phase1_benchmark_results.md) を固定参照（3C.4 で Itinero 環境完全撤去のため再現不可）。RouterDb 規模差（Phase 1 = 43k vs Phase 3 = 27k 頂点）は脚注で明示。本ステップは本体テストに触れず 672 件 pass 維持。リスク R1〜R7 整理 | Claude (Opus 4.7) |
+| 0.2 | 2026-05-28 | **3E 全体完了**。§5 完了状況に 3E.1〜3E.4 実装結果を追記。3E.1: RouteWithConstraintsBenchmark C0/C1/C2 化 + odrg 4 プロファイル再生成。3E.2: RestrictionThroughputBenchmark 新規。3E.3: 本番 job 実測 + results.md v0.2 確定（v0.1 TestData 不整合修正）。3E.4: 設計書 §7 全 6 サブ肉付け + 計画書 §9 実測値反映。REQ-NFR-001/002/003 全要件大幅達成（C0=7.70ms / C1=5.01ms / C1/C0=0.65x / 全 Case Allocated ≦3.12MB / C4=8,470 ops/sec）。672 件 pass 維持 | Claude (Opus 4.7) |

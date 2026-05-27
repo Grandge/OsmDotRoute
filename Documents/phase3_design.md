@@ -13,7 +13,7 @@
 - [Phase 2 グラフ形式仕様書](phase2_graph_format_spec.md)（v0.2、`.odrg` 確定仕様）
 - [Phase 1 設計書](phase1_design.md)（v0.21、§18「制約事項と既知の課題」が Phase 3 ベンチ目標の出発点）
 - [Phase 1 ベンチマーク結果](phase1_benchmark_results.md)（Phase 3 性能基準値）
-- 将来：`phase3_benchmark_results.md`（ステップ 3E 完了時に起こす）
+- [Phase 3 ベンチマーク結果](phase3_benchmark_results.md)（v0.2、ステップ 3E.3 完了時に起こし、3E.4 で §7 へ反映）
 - 将来：`comparison_with_itinero.md`（ステップ 3H 完了時に起こす、計画書 §3.9.1 構成案）
 
 ---
@@ -55,7 +55,7 @@ Phase 2 設計書 §8「Phase 3 申し送り事項」が本書の出発点。Pha
 | 4. 動的制約ホットパス（交差エッジキャッシュ） | 3B | 未着手 |
 | 5. Bicycle / Truck プロファイル独自設計 | 3D | 未着手 |
 | 6. Itinero 依存撤去と `Route.Shape` 破壊変更 | 3C | 未着手 |
-| 7. ベンチマーク再実施（津島市） | 3E | 未着手 |
+| 7. ベンチマーク再実施（津島市） | 3E | **肉付け完了**（3E.4、2026-05-28） |
 | 8. 親プロジェクト統合・パリティ検証 | 3F | 未着手 |
 | 9. 都道府県単位ベンチ | 3G | 未着手 |
 | 10. ユーザー試用デモツール `OsmDotRoute.Sandbox` | 3I（5 サブステップ 3I.1〜3I.5） | 未着手 |
@@ -841,35 +841,164 @@ dotnet build OsmDotRoute.sln
 
 ## 7. ベンチマーク再実施（津島市）
 
-**対応ステップ**: 3E
-**対応要件**: REQ-NFR-001〜003
+**対応ステップ**: 3E (3E.1〜3E.4)
+**対応要件**: REQ-NFR-001（経路計算性能維持）、REQ-NFR-002（制約 100 件下劣化率 ≦ 1.5x）、REQ-NFR-003（経路 1 本あたりアロケート削減）
 **Phase 2 申し送り**: 設計書 §8.3 表 3E 行（Phase 1 §18.3 / §18.4 解消実測）
-**実装日**: （未着手）
-**実装バージョン**: （未着手）
+**実装日**: 2026-05-27（3E.1〜3E.3）〜 2026-05-28（3E.4 完了）
+**実装バージョン**: ユーザー採番
+**主要ファイル**:
+
+- [`tests/OsmDotRoute.Benchmarks/Benchmarks/RouteWithConstraintsBenchmark.cs`](../tests/OsmDotRoute.Benchmarks/Benchmarks/RouteWithConstraintsBenchmark.cs)（3E.1 で C0/C1/C2 ParamCase 化 + Bicycle 切替）
+- [`tests/OsmDotRoute.Benchmarks/Benchmarks/RestrictionThroughputBenchmark.cs`](../tests/OsmDotRoute.Benchmarks/Benchmarks/RestrictionThroughputBenchmark.cs)（3E.2 新規、C4 制約 add/remove スループット）
+- [`tests/OsmDotRoute.Benchmarks/Program.cs`](../tests/OsmDotRoute.Benchmarks/Program.cs)（`--bicycle-snap-probe` 診断コマンド追加）
+- [`Documents/phase3_benchmark_results.md`](phase3_benchmark_results.md)（3E.3 で v0.1 生成、v0.2 で TestData 再生成後の再計測確定）
 
 ### 7.1 意図
 
-（未記述：ステップ 3E 完了時に肉付け。C0〜C4 シナリオ、Phase 1 基準値 33ms / 51ms / 77MB との比較、目標 ≦33ms / ≦1.1×C0 / ≦5MB）
+Phase 3 ステップ 3A（NativeRoadGraph MMF + Span ゼロコピー）・3B（動的制約 eager bake キャッシュ）・3C（Itinero 完全撤去 + `Route.Shape` ReadOnlyMemory 化）・3D（Bicycle / Truck プロファイル同梱）の**累積効果**を、Phase 1 ベンチマーク基準値（[`phase1_benchmark_results.md`](phase1_benchmark_results.md)）と並べて定量検証する。
+
+具体的には以下 3 点を本番統計値（BenchmarkDotNet DefaultJob、iteration 10 以上）で確認する：
+
+1. **Phase 1 §18.3 解消**: 制約 100 件下の劣化率が Phase 1 の 1.43x（C0 比）から Phase 3 目標の ≦ 1.1x に改善されたか
+2. **Phase 1 §18.4 解消**: 経路 1 本あたりアロケートが Phase 1 の 77 MB から Phase 3 目標の ≦ 5 MB に削減されたか
+3. **REQ-NFR-001 維持**: 経路計算性能（C0 制約なし）が Phase 1 の 33 ms を下回るか（≦ 100 ms 要件）
+
+加えて Phase 3 新規シナリオとして Bicycle 経路性能（C2）と制約 add/remove スループット（C4）の基準値を確定する。
 
 ### 7.2 採用設計
 
-（未記述）
+#### 7.2.1 ベンチマーク構成（5 シナリオ × 2 モード）
+
+| Case | Profile | 制約 | データソース | 説明 |
+| --- | --- | --- | --- | --- |
+| C0 | Car | なし | route-pairs.json (100 ペア) | 制約なし baseline |
+| C1 | Car | mixed-100 | restrictions-mixed-100.json (block 50 + difficulty 50) | Phase 1 C3 相当、3B 効果本命 |
+| C2 | Bicycle | mixed-100 | 同上 | Phase 3 新規、既存 Car ペア流用（成功率 97/100） |
+| C3 | — | — | — | C0/C1/C2 の Allocated を Phase 1 = 77 MB と比較するサブセクション |
+| C4 | — | — | restrictions-mixed-100.json の block 系 50 件をリサイクル | 1 op = AddBlockArea + Remove(id)、Phase 1 未測定の新規 |
+
+**Mode**（RouteWithConstraintsBenchmark のみ）:
+
+- `Native-Detached`: NativeRoadGraph + RestrictedAreaService、AttachGraph **未実行**（3B 前相当、Phase 1 fallback パス）
+- `Native-Attached`: 同上、AttachGraph 実行済（3B eager bake キャッシュ動作、本命）
+
+#### 7.2.2 TestData 流用方針
+
+既存 TestData（シード固定、決定論的）をそのまま流用：
+
+- `route-pairs.json`（100 ペア、seed=20260520、新 odrg ベースで Car スナップ成功）
+- `restrictions-mixed-100.json`（block 50 + difficulty 50、seed=20260521）
+- `restrictions-block-100.json`（block 100、seed=20260522、本ステップでは使用せず）
+
+#### 7.2.3 Phase 1 環境再現を試みない理由
+
+3C.4 で Itinero 完全撤去済のため、Phase 1 ベンチ環境（Itinero 1.5.1 + `default.routerdb` 43k 頂点）の再現は物理的に不可能。Phase 1 数値は [`phase1_benchmark_results.md`](phase1_benchmark_results.md) を固定参照し、比率比較（C0 vs C1 の倍率、Allocated の桁オーダー）を中心に評価する。
+
+#### 7.2.4 計測グラフの規模差
+
+| 項目 | Phase 1（`default.routerdb`） | Phase 3（`tsushima.odrg` v0.3） |
+| --- | --- | --- |
+| ファイルサイズ | 19.4 MB（RouterDb 形式） | 8.48 MB（.odrg 形式、4 プロファイル bake） |
+| Vertices | 43,685 | 53,727（cycleway/footway 等を Bicycle/Truck 用に含む） |
+| Edges | 57,331 | 74,276 |
+| bbox | ≒ 11km × 11km | ≒ 21km × 15km（約 2.6 倍） |
+
+Phase 3 は頂点数 1.2 倍増・bbox 2.6 倍拡大にもかかわらず高速化を達成（§7.3 参照）。
 
 ### 7.3 検証結果
 
-（未記述。詳細は別文書 `phase3_benchmark_results.md` に記録予定）
+詳細は [`phase3_benchmark_results.md`](phase3_benchmark_results.md) v0.2 に記録。以下は主要数値の要約。
+
+#### 7.3.1 経路計算性能 (C0/C1/C2)
+
+| Case | Mode | Profile | Mean | StdDev | Allocated |
+| --- | --- | --- | ---: | ---: | ---: |
+| C0 | Native-Attached | Car | **7.70 ms** | 0.14 ms | **3.12 MB** |
+| C1 | Native-Attached | Car | **5.01 ms** | 0.27 ms | **2.35 MB** |
+| C2 | Native-Attached | Bicycle | **5.51 ms** | 0.23 ms | **2.39 MB** |
+
+#### 7.3.2 3B 効果（Native-Detached → Native-Attached）
+
+| Case | Detached → Attached | Mean 改善 | Allocated 改善 |
+| --- | --- | --- | --- |
+| C0 | 7.89 ms → 7.70 ms | -2.4%（制約 0 件で効果なし、期待通り） | -0.3% |
+| C1 | 76.97 ms → 5.01 ms | **-93.5%、約 15 倍高速化** ⭐ | **-99.5%**（476 MB → 2.35 MB） |
+| C2 | 91.34 ms → 5.51 ms | **-94.0%** | -78.2% |
+
+#### 7.3.3 Phase 1 比較
+
+| 指標 | Phase 1 | Phase 3 (Native-Attached) | 改善 |
+| --- | --- | --- | --- |
+| C0 Mean | 33 ms | **7.70 ms** | 約 4-5 倍高速 |
+| C1 / C0 劣化率 | 1.43x | **0.65x**（むしろ高速化） | ≦ 1.1x 目標を大幅達成 |
+| C0 Allocated | 77 MB | **3.12 MB** | 約 25 倍削減 |
+| Snap 単独 | 1.78 ms | **33.4 μs** | 約 53 倍高速 |
+
+#### 7.3.4 C4 制約 add/remove スループット（Phase 3 新規）
+
+| Operation | Mean | Allocated | ops/sec |
+| --- | --- | --- | --- |
+| AddBlockArea + Remove(id) 1 サイクル | **118 μs** | 59.54 KB | **約 8,470 ops/sec** |
+
+#### 7.3.5 REQ-NFR-001〜003 判定
+
+| 要件 | 目標 | 実測 | 判定 |
+| --- | --- | --- | :---: |
+| REQ-NFR-001 | ≦ 100 ms | 全 Case ≦ 8 ms | ✅ 大幅達成 |
+| REQ-NFR-002 | C1/C0 ≦ 1.5x | C1/C0 = **0.65x** | ✅ 大幅達成 |
+| REQ-NFR-003 | ≦ 5 MB | 全 Case ≦ 3.12 MB | ✅ 全 Case 達成 |
 
 ### 7.4 設計判断の根拠
 
-（未記述）
+3E 計画書 v0.1 着手前にユーザー判断 Q1〜Q4 を確定：
+
+| ID | 論点 | 確定 | 理由 |
+| --- | --- | --- | --- |
+| Q1 | C1 制約パターン | **(A) mixed-100** | Phase 1 C3 相当（block 50 + difficulty 50）、3B 効果のホットパス検証本命。Phase 1 で C0 比 1.43x = 51 ms と測定された本命ケース。block-only-100 は津島市 11km×11km での完全分断問題が残るため 3G 都道府県単位ベンチに延期 |
+| Q2 | Bicycle 100 ペア | **(A) 既存 Car ペア流用 + 失敗率記録** | Car と Bicycle で同一ペアなので速度・アロケート差を直接比較可能。失敗率は results.md §3.3 に明示記録。別 seed 生成案はレポート構成が複雑化するため不採用 |
+| Q3 | C4 単位 | **(A) 1 op = AddBlockArea + Remove(id) 1 サイクル** | eager bake コストと cache RemoveArea コストの和を一括観測する最も素直な解釈。Add のみ / Remove のみの分離測定は Phase 4+ |
+| Q4 | サブ分割粒度 | **(A) 4 サブ** | 3E.1 既存ベンチ拡張 / 3E.2 C4 新規 / 3E.3 本番計測 + results.md / 3E.4 設計書 §7 + 計画書 §9 + 完了総括。3A-3D と同じ段階進行で各サブ完了時に `dotnet test` 672 件 pass 維持 |
+
+**Bicycle スナップ調査経緯**（§7.5 と関連）:
+
+results.md v0.1（3E.3 初回計測）で Bicycle スナップ失敗率 65%（17/100 ペア失敗）を報告 → ユーザー指摘「日本では高速道路以外は通行可のため失敗率は低いはず」→ 調査の結果 **TestData バージョン不整合**（旧 odrg 27k 頂点ベースの route-pairs.json が `bin/Release/net9.0/TestData/` に残存）と判明 → `--generate-data` + `dotnet build`（CopyToOutputDirectory 発火）で TestData を新 odrg 53k 頂点ベースに更新 → v0.2 で Bicycle 成功率 **97/100** に訂正、プロファイル定義は正常と確認。
 
 ### 7.5 トレードオフ・制約
 
-（未記述）
+- **RouterDb 規模差による Phase 1 直接比較の限界**: Phase 1 = `default.routerdb`（43k 頂点 / 57k エッジ / bbox 11km×11km）と Phase 3 = `tsushima.odrg` v0.3（53k 頂点 / 74k エッジ / bbox 21km×15km）は抽出元 PBF / 範囲 / bake プロファイル数が異なる。Mean 値の直接比較には限界があるため、比率比較（C1/C0 倍率、Allocated 桁オーダー、3B 効果 Detached→Attached 改善率）を中心に評価した。
+- **TestData バージョン依存**: `--generate-data` 後に `dotnet build` を実行しないと `bin/Release/net9.0/TestData/` に古い TestData が残る（`CopyToOutputDirectory="PreserveNewest"` の発火条件）。odrg を更新した場合は必ず `--generate-data` → `dotnet build` の 2 ステップが必要。results.md v0.1 → v0.2 の訂正が必要になった直接原因。Phase 4+ で TestData CI 自動再生成を検討（results.md §8.6）。
+- **Bicycle 失敗ペアの Mean への混入**: C2 は Car 同一ペアで Bicycle Calculate を実行するため、スナップ失敗 1 件 + 経路発見失敗 2 件の計 3 件が null 応答として混入。null 応答の Calculate 所要時間はスナップのみで経路探索なし（Dijkstra 不走行）のため Mean が若干低めに出る可能性がある。ただし失敗 3/100 = 3% で影響は限定的。
+- **RouteCalculationBenchmark の Allocated 乖離**: RouteCalculationBenchmark（独立、制約なし）= 42.97 MB と RouteWithConstraintsBenchmark C0 Native-Attached（同条件）= 3.12 MB で約 14 倍乖離。BenchmarkDotNet の GC 計測タイミング差が疑われるが原因未特定。本書では C0 Native-Attached の 3.12 MB を採用。Phase 4+ で要因調査。
+- **iteration 増による実行時間**: DefaultJob（iteration 10+）で全シナリオ実行に約 10 分。`--job short`（iteration 3）の 3B.5 桁オーダー確認値と本番値は一致（-93.5%）したため、本番 job で統計的信頼性が向上した一方で CI 組込みには実行時間制限の考慮が必要。
+- **C4 の単一サイクル測定限界**: 1 op = Add + Remove の合算のため、Add 単独コスト・Remove 単独コストの内訳は不明。Phase 4+ で分離測定を検討（results.md §8.3）。
 
 ### 7.6 実装メモ
 
-（未記述）
+#### 主要 commit（時系列）
+
+| commit | 概要 |
+| --- | --- |
+| `f4c0abd` | 3E 計画書 v0.1（4 サブ分割、Q1〜Q4 ユーザー判断確定） |
+| `28614de` | 3E.1: RouteWithConstraintsBenchmark C0/C1/C2 化 + Bicycle 切替 + odrg 4 プロファイル再生成 + `--bicycle-snap-probe` 診断（672 件 pass 維持） |
+| `9a85d6b` | 3E.2: RestrictionThroughputBenchmark 新規実装（C4、672 件 pass 維持） |
+| `20a7507` | 3E.3: phase3_benchmark_results.md v0.1（本番 job 実測完了、TestData 不整合により一部数値に誤り） |
+| `155ded5` | 3E.3: TestData バージョン不整合修正 + 再計測（results.md v0.2 確定、REQ-NFR-001/002/003 全要件大幅達成） |
+| 本 commit | 3E.4 + 3E 完了: 設計書 §7 肉付け + 計画書 §9 実測値反映 + 計画書 v0.2 + 3E 完了総括 |
+
+#### 暗黙の前提・引っかかりポイント
+
+- **`CopyToOutputDirectory="PreserveNewest"` の発火タイミング**: csproj の `<Content Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />` は `dotnet build` 時にのみ発火。`--generate-data` で `tests/OsmDotRoute.Benchmarks/TestData/`（ソース側）を更新しても、`dotnet run --no-build` では `bin/Release/net9.0/TestData/`（実行時参照）は古いまま。results.md v0.1 の Bicycle 失敗率 65% はこの不整合が原因。
+- **AttachGraph 自動化**: `Router(routerDb, restrictions)` コンストラクタ内で `restrictions?.AttachGraph(routerDb.Graph)` が自動呼出される（3B.3 T9=A 確定）。ベンチの Native-Attached モードでは `new Router(routerDb, service)` 一発で AttachGraph まで完了。Native-Detached モードでは `new Router(routerDb, service, autoAttachGraph: false)` internal コンストラクタで Phase 1 fallback を再現。
+- **BenchmarkDotNet 子プロセスの `AppContext.BaseDirectory`**: BenchmarkDotNet は計測対象を子プロセスで実行するため、`AppContext.BaseDirectory` がベンチ中間ディレクトリに変わる。TestData の相対パスは利用不可、`BenchmarkAssets.TsushimaOdrgPath` は絶対パス直書き。
+- **新 odrg (tsushima.odrg v0.3) の 4 プロファイル bake**: 3E.1 で `--profiles car,pedestrian,bicycle,truck` を指定して 53,727 頂点 / 74,276 エッジ / 8.48 MB の odrg を再生成。旧 odrg（27k 頂点 / 38k エッジ / 3.55 MB / 2 プロファイル）とはサイズ・頂点数が大幅に異なるため、TestData も同時に再生成が必須。
+
+#### Phase 4+ への申し送り
+
+- **TestData CI 自動再生成**: odrg 更新時に `--generate-data` + `dotnet build` を CI で自動実行し、TestData バージョン不整合を防止（results.md §8.6）
+- **C4 Add/Remove 分離測定**: Add 単独 / Remove(id) 単独 / RemoveByTag(tag) / ClearAll() の操作別コスト内訳を Phase 4+ で確定（results.md §8.3）
+- **都道府県単位ベンチ (3G) への引継ぎ**: 本書は津島市 53k 頂点 / 74k エッジでの実測値。3G で愛知県全域（推定 500k 頂点 / 700k エッジ）の `.odrg` で再実行し、規模拡張時の性能維持を確認
+- **RouteCalculationBenchmark の Allocated 乖離要因調査**: MemoryDiagnoser の内部仕様を Phase 4+ で調査
+- **定常 WorkingSet の測定**: Phase 1 では `--memory-probe` で 54 MB を実測したが、本ベンチでは省略。3F または 3G で定常 WorkingSet を取得
 
 ---
 
@@ -1037,3 +1166,5 @@ dotnet build OsmDotRoute.sln
 | 版 | 日付 | 内容 | 担当 |
 | --- | --- | --- | --- |
 | 0.1 (draft) | 2026-05-25 | 初版ひな形。Phase 3 実装計画書 v0.1.2 ユーザー承認直後に起こし、§0「本書の目的と更新ルール」と §0.3「章とステップの対応」のみ初版執筆、§1〜§11 は章タイトル + 対応ステップ + 対応要件のみのプレースホルダ。Phase 1 / Phase 2 設計書 §0 と同方針（章とステップを 1:1 で対応、各章は対応ステップ完了時に肉付け）。Sandbox 章（§10）と Itinero 比較ドキュメント節（§11.3）を Phase 3 計画書 v0.1.2 反映で含む | Claude (Opus 4.7) |
+| — | 2026-05-26〜27 | §3 (3A) / §4 (3B) / §5 (3D) / §6 (3C) 肉付け（各ステップ完了 commit で反映） | Claude (Opus 4.7) |
+| — | 2026-05-28 | §7 (3E) 肉付け。REQ-NFR-001〜003 全要件大幅達成を実測値で記録（C0=7.70ms / C1=5.01ms / C2=5.51ms / 全 Case Allocated ≦3.12MB / C4=8,470 ops/sec）。3B 効果 -93.5% Mean / -99.5% Allocated。TestData バージョン不整合経緯と Bicycle スナップ調査を §7.4 / §7.5 に記録。§0.3 章対応表更新 | Claude (Opus 4.7) |
