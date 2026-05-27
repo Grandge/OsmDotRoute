@@ -7,8 +7,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{285B79B6-4FA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmDotRoute", "src\OsmDotRoute\OsmDotRoute.csproj", "{F57DFE18-1F3C-42DC-9286-59D5D3E93627}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmDotRoute.Itinero", "src\OsmDotRoute.Itinero\OsmDotRoute.Itinero.csproj", "{7D97B7CD-2346-4604-B7A1-17BE1D8B1065}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{55DA6B30-D175-403B-A09E-D503F71E376E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmDotRoute.Tests", "tests\OsmDotRoute.Tests\OsmDotRoute.Tests.csproj", "{6499919D-D170-47AC-89F9-FE433A77E57B}"
@@ -32,18 +30,11 @@ Global
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{F57DFE18-1F3C-42DC-9286-59D5D3E93627}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F57DFE18-1F3C-42DC-9286-59D5D3E93627}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F57DFE18-1F3C-42DC-9286-59D5D3E93627}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F57DFE18-1F3C-42DC-9286-59D5D3E93627}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7D97B7CD-2346-4604-B7A1-17BE1D8B1065}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7D97B7CD-2346-4604-B7A1-17BE1D8B1065}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7D97B7CD-2346-4604-B7A1-17BE1D8B1065}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7D97B7CD-2346-4604-B7A1-17BE1D8B1065}.Release|Any CPU.Build.0 = Release|Any CPU
 		{6499919D-D170-47AC-89F9-FE433A77E57B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{6499919D-D170-47AC-89F9-FE433A77E57B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6499919D-D170-47AC-89F9-FE433A77E57B}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -73,9 +64,11 @@ Global
 		{8A1B0F5C-3E27-4D80-B6A2-9C2F5E1AC901}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8A1B0F5C-3E27-4D80-B6A2-9C2F5E1AC901}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F57DFE18-1F3C-42DC-9286-59D5D3E93627} = {285B79B6-4FA5-4371-A001-EA0AE19AE614}
-		{7D97B7CD-2346-4604-B7A1-17BE1D8B1065} = {285B79B6-4FA5-4371-A001-EA0AE19AE614}
 		{6499919D-D170-47AC-89F9-FE433A77E57B} = {55DA6B30-D175-403B-A09E-D503F71E376E}
 		{54477095-7DFE-4A24-8888-B450B4F34E2B} = {55DA6B30-D175-403B-A09E-D503F71E376E}
 		{5587C5CD-45DE-4B33-A50B-4E76471B172A} = {B70E02BC-4815-423D-874F-FB364E7ADBEC}

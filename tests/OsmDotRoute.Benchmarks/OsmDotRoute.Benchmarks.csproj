@@ -2,13 +2,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OsmDotRoute\OsmDotRoute.csproj" />
-    <ProjectReference Include="..\..\src\OsmDotRoute.Itinero\OsmDotRoute.Itinero.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageReference Include="Itinero" Version="1.5.1" />
-    <PackageReference Include="Itinero.IO.Osm" Version="1.5.1" />
   </ItemGroup>
 
   <PropertyGroup>

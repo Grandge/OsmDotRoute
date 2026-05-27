@@ -1,10 +1,13 @@
 using MapVerifier.Server.Contracts;
 using MapVerifier.Server.Services;
 using OsmDotRoute;
-using OsmDotRoute.Itinero;
 
 namespace MapVerifier.Server.Endpoints;
 
+/// <summary>
+/// .odrg ロード経路 (Phase 3 ステップ 3C.4 で Itinero RouterDb から .odrg に切替)。
+/// DTO の <c>routerDbPath</c> フィールド名は後方互換のため維持しているが、実態は .odrg ファイルパス。
+/// </summary>
 public static class LoadEndpoints
 {
     public static void MapLoadEndpoints(this IEndpointRouteBuilder app)
@@ -13,12 +16,12 @@ public static class LoadEndpoints
         {
             if (request is null || string.IsNullOrWhiteSpace(request.RouterDbPath))
             {
-                return Results.BadRequest(new ErrorResponse("missing_path", "routerDbPath を指定してください。"));
+                return Results.BadRequest(new ErrorResponse("missing_path", "routerDbPath (.odrg ファイルパス) を指定してください。"));
             }
 
             try
             {
-                var routerDb = ItineroRouterDbLoader.LoadFromFile(request.RouterDbPath);
+                var routerDb = RouterDb.LoadFromOdrg(request.RouterDbPath);
                 var router = new Router(routerDb, restrictions);
                 state.Set(routerDb, router, request.RouterDbPath);
                 return Results.Ok(BuildStats(routerDb));
@@ -30,6 +33,12 @@ public static class LoadEndpoints
             catch (FileNotFoundException ex)
             {
                 return Results.BadRequest(new ErrorResponse("file_not_found", ex.Message));
+            }
+            catch (Exception ex) when (ex.GetType().Name == "OdrgFormatException")
+            {
+                // OdrgFormatException は OsmDotRoute コアで internal 定義のため型直接 catch 不可
+                // (Phase 4+ で public 化検討、現状はクラス名照合で対応)
+                return Results.BadRequest(new ErrorResponse("invalid_format", ex.Message));
             }
         });
 

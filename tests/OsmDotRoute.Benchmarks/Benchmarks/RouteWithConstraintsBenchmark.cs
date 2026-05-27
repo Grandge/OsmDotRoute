@@ -10,11 +10,9 @@ namespace OsmDotRoute.Benchmarks.Benchmarks;
 /// <remarks>
 /// <para>
 /// Phase 1 計画書 §3.4 の 5 ケース（C0〜C4）を <see cref="Case"/> で切替。
-/// Phase 3 ステップ 3B.5-B (計画書 §4.5-B、ユーザー判断 T15/T16=(A)) で 3 モード分岐を追加:
+/// Phase 3 ステップ 3C.4 で Itinero モード削除、Native-Detached / Native-Attached の 2 モードに整理:
 /// </para>
 /// <list type="bullet">
-///   <item><c>"Itinero"</c>: 親プロ default.routerdb + <see cref="OsmDotRoute.Itinero.ItineroRoadGraph"/>
-///         (Phase 1 動作、参考値、RouterDb 規模差あり)</item>
 ///   <item><c>"Native-Detached"</c>: 津島市 .odrg + <see cref="NativeRoadGraph"/> + AttachGraph **未実行**
 ///         (3B 前相当、graph 未注入の Phase 1 動作フォールバック)</item>
 ///   <item><c>"Native-Attached"</c>: 津島市 .odrg + <see cref="NativeRoadGraph"/> + AttachGraph 実行済
@@ -36,10 +34,9 @@ public class RouteWithConstraintsBenchmark
     private int _index;
 
     /// <summary>
-    /// Phase 3 ステップ 3B.5-B モード切替。Native-Detached/Native-Attached が 3B 効果計測の本命、
-    /// Itinero は参考値（RouterDb 規模差あり、3E で詳細）。
+    /// Native-Detached / Native-Attached モード切替（3B 効果計測の本命）。
     /// </summary>
-    [Params("Itinero", "Native-Detached", "Native-Attached")]
+    [Params("Native-Detached", "Native-Attached")]
     public string Mode { get; set; } = "Native-Attached";
 
     /// <summary>
@@ -68,10 +65,6 @@ public class RouteWithConstraintsBenchmark
 
         switch (Mode)
         {
-            case "Itinero":
-                _routerDb = BenchmarkAssets.LoadOsmDotRouterDb();
-                _router = new Router(_routerDb, restrictions);  // 既存パス (Itinero は IsGraphAttached=true でも全エッジ走査 fallback)
-                break;
             case "Native-Detached":
                 (_routerDb, _nativeGraph) = BenchmarkAssets.LoadNativeRouterDb();
                 _router = new Router(_routerDb, restrictions, autoAttachGraph: false);  // 3B 前相当: AttachGraph スキップ → Phase 1 fallback

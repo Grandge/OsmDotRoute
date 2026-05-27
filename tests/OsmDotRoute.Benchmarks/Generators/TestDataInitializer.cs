@@ -46,34 +46,41 @@ internal static class TestDataInitializer
         var mixedPath = Path.Combine(srcDir, "restrictions-mixed-100.json");
         var blockPath = Path.Combine(srcDir, "restrictions-block-100.json");
 
-        Console.WriteLine($"RouterDb 読込: {BenchmarkAssets.RouterDbPath}");
-        var routerDb = BenchmarkAssets.LoadOsmDotRouterDb();
-        var stats = routerDb.GetStatistics();
-        var bounds = new MapBounds(stats.SouthWest, stats.NorthEast);
-        Console.WriteLine($"  Vertices: {stats.VertexCount:N0}, Edges: {stats.EdgeCount:N0}");
-        Console.WriteLine($"  Bounds: ({stats.SouthWest.Latitude:F4}, {stats.SouthWest.Longitude:F4}) - ({stats.NorthEast.Latitude:F4}, {stats.NorthEast.Longitude:F4})");
+        Console.WriteLine($"RouterDb 読込: {BenchmarkAssets.TsushimaOdrgPath}");
+        var (routerDb, graph) = BenchmarkAssets.LoadNativeRouterDb();
+        try
+        {
+            var stats = routerDb.GetStatistics();
+            var bounds = new MapBounds(stats.SouthWest, stats.NorthEast);
+            Console.WriteLine($"  Vertices: {stats.VertexCount:N0}, Edges: {stats.EdgeCount:N0}");
+            Console.WriteLine($"  Bounds: ({stats.SouthWest.Latitude:F4}, {stats.SouthWest.Longitude:F4}) - ({stats.NorthEast.Latitude:F4}, {stats.NorthEast.Longitude:F4})");
 
-        // route-pairs.json
-        Console.WriteLine("起終点ペア生成中（100 件）...");
-        var profile = VehicleProfile.Car;
-        var router = new Router(routerDb);
-        var pairs = RoutePairGenerator.Generate(router, profile, bounds, RoutePairSeed);
-        File.WriteAllText(routePairsPath, JsonSerializer.Serialize(pairs, JsonOptions));
-        Console.WriteLine($"  → {routePairsPath} ({pairs.Pairs.Count} ペア)");
+            // route-pairs.json
+            Console.WriteLine("起終点ペア生成中（100 件）...");
+            var profile = VehicleProfile.Car;
+            var router = new Router(routerDb);
+            var pairs = RoutePairGenerator.Generate(router, profile, bounds, RoutePairSeed);
+            File.WriteAllText(routePairsPath, JsonSerializer.Serialize(pairs, JsonOptions));
+            Console.WriteLine($"  → {routePairsPath} ({pairs.Pairs.Count} ペア)");
 
-        // restrictions-mixed-100.json
-        Console.WriteLine("混合制約生成中（100 件）...");
-        var mixed = RestrictionGenerator.GenerateMixed(bounds, MixedSeed);
-        File.WriteAllText(mixedPath, JsonSerializer.Serialize(mixed, JsonOptions));
-        Console.WriteLine($"  → {mixedPath} ({mixed.Areas.Count} 件)");
+            // restrictions-mixed-100.json
+            Console.WriteLine("混合制約生成中（100 件）...");
+            var mixed = RestrictionGenerator.GenerateMixed(bounds, MixedSeed);
+            File.WriteAllText(mixedPath, JsonSerializer.Serialize(mixed, JsonOptions));
+            Console.WriteLine($"  → {mixedPath} ({mixed.Areas.Count} 件)");
 
-        // restrictions-block-100.json
-        Console.WriteLine("BlockOnly 制約生成中（100 件）...");
-        var blockOnly = RestrictionGenerator.GenerateBlockOnly(bounds, BlockSeed);
-        File.WriteAllText(blockPath, JsonSerializer.Serialize(blockOnly, JsonOptions));
-        Console.WriteLine($"  → {blockPath} ({blockOnly.Areas.Count} 件)");
+            // restrictions-block-100.json
+            Console.WriteLine("BlockOnly 制約生成中（100 件）...");
+            var blockOnly = RestrictionGenerator.GenerateBlockOnly(bounds, BlockSeed);
+            File.WriteAllText(blockPath, JsonSerializer.Serialize(blockOnly, JsonOptions));
+            Console.WriteLine($"  → {blockPath} ({blockOnly.Areas.Count} 件)");
 
-        return new GeneratedPaths(routePairsPath, mixedPath, blockPath);
+            return new GeneratedPaths(routePairsPath, mixedPath, blockPath);
+        }
+        finally
+        {
+            graph.Dispose();
+        }
     }
 
     public static RoutePairsFile LoadRoutePairs()

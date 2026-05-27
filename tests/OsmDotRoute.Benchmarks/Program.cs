@@ -14,18 +14,6 @@ if (args.Length > 0 && args[0] == "--generate-data")
     return;
 }
 
-if (args.Length > 0 && args[0] == "--memory-probe")
-{
-    MemoryProbe.RunAll();
-    return;
-}
-
-if (args.Length > 0 && args[0] == "--verify-parity")
-{
-    ParityVerifier.Run();
-    return;
-}
-
 var config = ManualConfig.CreateMinimumViable()
     .AddDiagnoser(MemoryDiagnoser.Default)
     .WithOptions(ConfigOptions.JoinSummary | ConfigOptions.DisableLogFile);
