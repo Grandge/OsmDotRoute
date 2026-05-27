@@ -8,6 +8,9 @@ using OsmDotRoute;
 using OsmDotRoute.Extractor.Cli;
 using OsmDotRoute.Extractor.Pipeline;
 
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+Console.InputEncoding = System.Text.Encoding.UTF8;
+
 var rootCommand = new RootCommand(
     "OsmDotRoute Extractor — OSM PBF から .odrg バイナリグラフを抽出する CLI。" +
     " 詳細: Documents/phase2_graph_format_spec.md v0.2 を参照。")
