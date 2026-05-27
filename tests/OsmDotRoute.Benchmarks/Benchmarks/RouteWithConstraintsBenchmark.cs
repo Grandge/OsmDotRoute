@@ -5,12 +5,20 @@ using OsmDotRoute.Native;
 namespace OsmDotRoute.Benchmarks.Benchmarks;
 
 /// <summary>
-/// 制約下の経路計算性能（REQ-NFR-002 + Phase 3 ステップ 3B 効果測定）。
+/// 制約下の経路計算性能（REQ-NFR-002 + Phase 3 ステップ 3B 効果測定 + ステップ 3E ベンチ再実施）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// Phase 1 計画書 §3.4 の 5 ケース（C0〜C4）を <see cref="Case"/> で切替。
-/// Phase 3 ステップ 3C.4 で Itinero モード削除、Native-Detached / Native-Attached の 2 モードに整理:
+/// Phase 3 計画書 §3.5 の 3 ケース（C0/C1/C2）を <see cref="Case"/> で切替。
+/// Phase 3 ステップ 3E.1 で C0/C1/C2 にリナンバし、Bicycle 切替を追加:
+/// </para>
+/// <list type="bullet">
+///   <item><c>"C0"</c>: 制約なし + Car (baseline)</item>
+///   <item><c>"C1"</c>: mixed-100 + Car (Phase 1 C3 相当、3B 効果本命)</item>
+///   <item><c>"C2"</c>: mixed-100 + Bicycle (Phase 3 新規)</item>
+/// </list>
+/// <para>
+/// Mode は Native-Detached / Native-Attached 2 通り:
 /// </para>
 /// <list type="bullet">
 ///   <item><c>"Native-Detached"</c>: 津島市 .odrg + <see cref="NativeRoadGraph"/> + AttachGraph **未実行**
@@ -40,26 +48,23 @@ public class RouteWithConstraintsBenchmark
     public string Mode { get; set; } = "Native-Attached";
 
     /// <summary>
-    /// C0: 制約なし / C1: 混合 10 件 / C2: 混合 50 件 / C3: 混合 100 件 / C4: Block-only 100 件。
-    /// 3B.5-B では C0 (baseline) と C3 (3B 効果本命) を実測対象とする。
+    /// Phase 3 計画書 §3.5 のシナリオ:
+    /// C0 = 制約なし + Car / C1 = mixed-100 + Car / C2 = mixed-100 + Bicycle。
     /// </summary>
-    [Params("C0", "C3")]
+    [Params("C0", "C1", "C2")]
     public string Case { get; set; } = "C0";
 
     [GlobalSetup]
     public void Setup()
     {
-        _profile = VehicleProfile.Car;
         _pairs = [.. TestDataInitializer.LoadRoutePairs().Pairs];
         _index = 0;
 
-        RestrictedAreaService? restrictions = Case switch
+        (_profile, RestrictedAreaService? restrictions) = Case switch
         {
-            "C0" => null,
-            "C1" => BuildMixed(10),
-            "C2" => BuildMixed(50),
-            "C3" => BuildMixed(100),
-            "C4" => BuildBlockOnly(100),
+            "C0" => (VehicleProfile.Car, (RestrictedAreaService?)null),
+            "C1" => (VehicleProfile.Car, BuildMixed(100)),
+            "C2" => (VehicleProfile.Bicycle, BuildMixed(100)),
             _ => throw new InvalidOperationException($"未知の Case: {Case}"),
         };
 

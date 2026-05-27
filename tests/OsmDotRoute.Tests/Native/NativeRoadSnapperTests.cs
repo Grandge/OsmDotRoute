@@ -1,4 +1,5 @@
 using OsmDotRoute;
+using OsmDotRoute.Extractor.Pipeline;
 using OsmDotRoute.Geometry;
 using OsmDotRoute.Native;
 using OsmDotRoute.Tests.TestData;
@@ -174,7 +175,7 @@ public sealed class NativeRoadSnapperTests : IClassFixture<NativeAndOdrgReaderFi
     }
 
     [Fact]
-    public void Snap_QueryAtFromVertex_OffsetIsNearZero()
+    public void Snap_QueryAtFromVertex_OffsetIsNearEndpoint()
     {
         var snapper = new NativeRoadSnapper(_fixture.Graph);
         var (edgeId, _) = FindCarPassableEdgeMidpoint();
@@ -183,11 +184,16 @@ public sealed class NativeRoadSnapperTests : IClassFixture<NativeAndOdrgReaderFi
 
         var result = snapper.Snap(_fixture.Car.Name, from, searchDistanceM: 500f);
         Assert.NotNull(result);
-        Assert.InRange(result.Value.Offset, 0, 100);  // Offset ≈ 0 (誤差幅 100 = 全体 65535 の 0.15%)
+        // OSM では vertex は複数エッジで共有されるため、snap される edge は一意に決まらない。
+        // 元エッジが選ばれれば Offset ≈ 0、別エッジの端点 vertex が共有なら Offset ≈ 0 か 65535。
+        // いずれにせよ vertex 直上で snap した結果は端点近傍 (誤差幅 100 = 全体の 0.15%)。
+        var offset = result.Value.Offset;
+        Assert.True(offset < 100 || offset > 65435,
+            $"vertex 上の snap は端点近傍 (0 か 65535) 期待だが Offset = {offset}");
     }
 
     [Fact]
-    public void Snap_QueryAtToVertex_OffsetIsNearMax()
+    public void Snap_QueryAtToVertex_OffsetIsNearEndpoint()
     {
         var snapper = new NativeRoadSnapper(_fixture.Graph);
         var (edgeId, _) = FindCarPassableEdgeMidpoint();
@@ -196,7 +202,10 @@ public sealed class NativeRoadSnapperTests : IClassFixture<NativeAndOdrgReaderFi
 
         var result = snapper.Snap(_fixture.Car.Name, to, searchDistanceM: 500f);
         Assert.NotNull(result);
-        Assert.InRange(result.Value.Offset, 65435, 65535);  // Offset ≈ 65535
+        // From 側と同じ理由で端点近傍 (0 か 65535) を許容
+        var offset = result.Value.Offset;
+        Assert.True(offset < 100 || offset > 65435,
+            $"vertex 上の snap は端点近傍 (0 か 65535) 期待だが Offset = {offset}");
     }
 
     [Fact]
@@ -211,9 +220,14 @@ public sealed class NativeRoadSnapperTests : IClassFixture<NativeAndOdrgReaderFi
     }
 
     /// <summary>
-    /// 車プロファイルで通行可能かつ中間シェイプが少なくとも From-To 直結ですむ単純エッジを探し、
+    /// 車プロファイルで通行可能かつ中間シェイプが少なくとも From-To 直結ですむ単純エッジで、
+    /// **中点 10m 以内に他の Car 通行可能エッジが存在しない孤立エッジ** を探し、
     /// (エッジ ID, From-To 中点) を返す。テスト用ヘルパ。
     /// </summary>
+    /// <remarks>
+    /// Phase 3 ステップ 3E.1 で「孤立」フィルタを追加 (tsushima.odrg を 4 プロファイル bake で再生成した結果、
+    /// cycleway / footway が並走する Car 通行可能エッジで Snap が並走道路に吸われる事象を回避)。
+    /// </remarks>
     private (uint EdgeId, GeoCoordinate Midpoint) FindCarPassableEdgeMidpoint()
     {
         var truth = _fixture.Truth;
@@ -226,14 +240,61 @@ public sealed class NativeRoadSnapperTests : IClassFixture<NativeAndOdrgReaderFi
             if (!carEntries[(int)e].CanPass) continue;
             var edge = _fixture.Graph.ReadEdge(e);
             if (edge.FromVertexId == edge.ToVertexId) continue;  // 自己ループ除外
+            // 中間シェイプ 0 件 (純粋な From-To 直線エッジ) に絞る
+            // → From-To 中点 = エッジ実中央 を保証し、PointToSegment 距離計算の予測可能性を担保
+            if (_fixture.Graph.GetEdgeShape(e).Length > 0) continue;
             var from = _fixture.Graph.GetVertex(edge.FromVertexId);
             var to = _fixture.Graph.GetVertex(edge.ToVertexId);
-            // 直線距離 5m 以上のエッジに絞る (テスト安定化)
-            if (GeoMath.HaversineMeters(from, to) < 5.0) continue;
+            // 直線距離 50m 以上のエッジに絞る (短い断片で並走道路に挟まれるケースを排除)
+            if (GeoMath.HaversineMeters(from, to) < 50.0) continue;
 
-            return (e, Interpolate(from, to, 0.5));
+            var midpoint = Interpolate(from, to, 0.5);
+            if (IsIsolatedAt(midpoint, e, carEntries, thresholdM: 10.0))
+            {
+                return (e, midpoint);
+            }
         }
-        throw new InvalidOperationException("通行可能な単純エッジが見つからない");
+        throw new InvalidOperationException("孤立した直線 Car 通行可能エッジが見つからない");
+    }
+
+    /// <summary>
+    /// <paramref name="point"/> の <paramref name="thresholdM"/> メートル以内に
+    /// <paramref name="excludeEdgeId"/> 以外の Car 通行可能エッジが存在しないかを判定する。
+    /// </summary>
+    private bool IsIsolatedAt(
+        GeoCoordinate point,
+        uint excludeEdgeId,
+        BakedProfileEntry[] carEntries,
+        double thresholdM)
+    {
+        for (uint e = 0; e < _fixture.Graph.EdgeCount; e++)
+        {
+            if (e == excludeEdgeId) continue;
+            if (!carEntries[(int)e].CanPass) continue;
+            var fullShape = BuildFullShape(_fixture.Graph, e);
+            // bbox プリフィルタ: いずれかの頂点が ±thresholdM bbox 内
+            var (dLat, dLon) = GeoMath.MetersToBboxDegrees(thresholdM, point.Latitude);
+            double minLat = point.Latitude - dLat, maxLat = point.Latitude + dLat;
+            double minLon = point.Longitude - dLon, maxLon = point.Longitude + dLon;
+            bool nearBbox = false;
+            for (int i = 0; i < fullShape.Length; i++)
+            {
+                if (fullShape[i].Latitude >= minLat && fullShape[i].Latitude <= maxLat &&
+                    fullShape[i].Longitude >= minLon && fullShape[i].Longitude <= maxLon)
+                {
+                    nearBbox = true;
+                    break;
+                }
+            }
+            if (!nearBbox) continue;
+
+            for (int s = 0; s < fullShape.Length - 1; s++)
+            {
+                var (d, _, _) = GeoMath.PointToSegment(point, fullShape[s], fullShape[s + 1]);
+                if (d < thresholdM) return false;  // 並走道路あり
+            }
+        }
+        return true;  // 孤立
     }
 
     private static GeoCoordinate Interpolate(GeoCoordinate a, GeoCoordinate b, double t) =>
