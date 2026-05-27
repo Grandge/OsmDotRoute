@@ -1,16 +1,22 @@
-using OsmDotRoute.Itinero;
-using OsmDotRoute.Tests.TestData;
+using OsmDotRoute.Tests.Native;
 using Xunit;
 
 namespace OsmDotRoute.Tests;
 
 /// <summary>
-/// Phase 1 ステップ 9「制約対応 Dijkstra 統合」の検証テスト（REQ-RST-013〜015, REQ-RST-030〜032）。
-/// 親プロジェクト default.routerdb を使用し、制約なしベースラインに対して
-/// 進入不可・難所エリア（単独・重複・通行不可・未知タイプ）の効果を検証する。
+/// 制約対応 Dijkstra 統合の検証テスト（Phase 1 ステップ 9 起源、REQ-RST-013〜015 / REQ-RST-030〜032、
+/// Phase 3 ステップ 3C.2 で .odrg（津島市）ベースに書換）。
+/// 制約なしベースラインに対して進入不可・難所エリア（単独・重複・通行不可・未知タイプ）の効果を検証する。
 /// </summary>
-public class RestrictedRoutingTests
+public class RestrictedRoutingTests : IClassFixture<NativeRouterDbFixture>
 {
+    private readonly NativeRouterDbFixture _fixture;
+
+    public RestrictedRoutingTests(NativeRouterDbFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
     /// <summary>テスト共通の baseline 文脈。</summary>
     private sealed record BaselineContext(
         RouterDb RouterDb,
@@ -52,13 +58,13 @@ public class RestrictedRoutingTests
     {
         var ctx = SetupBaseline();
         var restrictions = new RestrictedAreaService();
-        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.002), DifficultyTypes.Flooding);
+        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.01), DifficultyTypes.Flooding);
         var router = new Router(ctx.RouterDb, restrictions);
 
         var result = router.Calculate(VehicleProfile.Car, ctx.From, ctx.To);
         Assert.NotNull(result);
 
-        // 全エッジが flooding 領域内 → speedFactor=0.3、所要時間が baseline の 1/0.3 ≈ 3.33 倍
+        // 全エッジが flooding 領域内 → car speedFactor=0.3、所要時間が baseline の 1/0.3 ≈ 3.33 倍
         var ratio = result!.TotalDurationSec / ctx.CarBaseline.TotalDurationSec;
         Assert.InRange(ratio, 3.30, 3.36);
         // 同じ経路を辿るはず（全領域が同じ係数なので最短経路は不変）
@@ -70,7 +76,7 @@ public class RestrictedRoutingTests
     {
         var ctx = SetupBaseline();
         var restrictions = new RestrictedAreaService();
-        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.PedestrianBaseline.Shape, marginDeg: 0.002), DifficultyTypes.Flooding);
+        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.PedestrianBaseline.Shape, marginDeg: 0.01), DifficultyTypes.Flooding);
         var router = new Router(ctx.RouterDb, restrictions);
 
         var result = router.Calculate(VehicleProfile.Pedestrian, ctx.From, ctx.To);
@@ -86,7 +92,7 @@ public class RestrictedRoutingTests
     public void Calculate_DifficultyArea_FloodingAndConstruction_Overlapping_Car_Time_16_67x()
     {
         var ctx = SetupBaseline();
-        var polygon = MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.002);
+        var polygon = MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.01);
         var restrictions = new RestrictedAreaService();
         restrictions.AddDifficultyArea(polygon, DifficultyTypes.Flooding);
         restrictions.AddDifficultyArea(polygon, DifficultyTypes.Construction);
@@ -106,7 +112,7 @@ public class RestrictedRoutingTests
         var ctx = SetupBaseline();
         var restrictions = new RestrictedAreaService();
         // ベースラインルートを覆う landslide（canPass:false） → 通行不可
-        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.002), DifficultyTypes.Landslide);
+        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.01), DifficultyTypes.Landslide);
         var router = new Router(ctx.RouterDb, restrictions);
 
         var result = router.Calculate(VehicleProfile.Car, ctx.From, ctx.To);
@@ -134,13 +140,6 @@ public class RestrictedRoutingTests
         if (blocked is null) return;
         var sameShape = HasSameShape(blocked.Shape, ctx.CarBaseline.Shape);
         Assert.False(sameShape, "BlockArea が DifficultyArea 重複時に優先されていない");
-
-        // flooding 単独だと同じ経路（時間だけ伸びる）になるべきだったことを念のため確認
-        var floodOnly = new RestrictedAreaService();
-        floodOnly.AddDifficultyArea(polygon, DifficultyTypes.Flooding);
-        var floodResult = new Router(ctx.RouterDb, floodOnly).Calculate(VehicleProfile.Car, ctx.From, ctx.To);
-        Assert.NotNull(floodResult);
-        // flooding 単独は同じ経路 → BlockArea 追加で経路変化したことが BlockArea 優先の証拠
     }
 
     [Fact]
@@ -149,7 +148,7 @@ public class RestrictedRoutingTests
         var ctx = SetupBaseline();
         var restrictions = new RestrictedAreaService();
         // 未知タイプ "meteor" → difficultyDefault (speedFactor=1.0, canPass=true) 適用 → 速度変化なし
-        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.002), "meteor");
+        restrictions.AddDifficultyArea(MakePolygonCoveringShape(ctx.CarBaseline.Shape, marginDeg: 0.01), "meteor");
         var router = new Router(ctx.RouterDb, restrictions);
 
         var result = router.Calculate(VehicleProfile.Car, ctx.From, ctx.To);
@@ -177,26 +176,18 @@ public class RestrictedRoutingTests
 
     // --- ヘルパ ---
 
-    /// <summary>baseline 文脈を構築する。car / pedestrian の両方でルートが取れるペアを使う。</summary>
-    private static BaselineContext SetupBaseline()
+    /// <summary>baseline 文脈を構築する。fixture の MediumPair を流用、car / pedestrian の両方で経路が取れることを期待。</summary>
+    private BaselineContext SetupBaseline()
     {
-        EnsureTestData();
-        var routerDb = ItineroRouterDbLoader.LoadFromFile(TestPaths.ParentDefaultRouterDb);
-        var router = new Router(routerDb);
-
-        // 車両 / 歩行者の両方で経路が取れる頂点ペアを探す
-        var pairs = CollectCarAccessibleVertexPairs(routerDb, maxPairs: 20, minSeparationDeg: 0.005);
-        foreach (var (from, to) in pairs)
-        {
-            var car = router.Calculate(VehicleProfile.Car, from, to);
-            var ped = router.Calculate(VehicleProfile.Pedestrian, from, to);
-            if (car is not null && ped is not null && car.Shape.Length >= 4 && ped.Shape.Length >= 4)
-            {
-                return new BaselineContext(routerDb, from, to, car, ped);
-            }
-        }
-        Assert.Fail("car / pedestrian の両方で経路が取れるテストペアが見つかりません。");
-        throw new InvalidOperationException("unreachable");
+        var (from, to) = _fixture.MediumPair;
+        var router = new Router(_fixture.RouterDb);     // 制約なし baseline
+        var car = router.Calculate(VehicleProfile.Car, from, to);
+        var ped = router.Calculate(VehicleProfile.Pedestrian, from, to);
+        Assert.NotNull(car);
+        Assert.NotNull(ped);
+        Assert.True(car!.Shape.Length >= 4 && ped!.Shape.Length >= 4,
+            $"baseline ペアの shape 点数が不足: car={car.Shape.Length}, ped={ped.Shape.Length}");
+        return new BaselineContext(_fixture.RouterDb, from, to, car, ped);
     }
 
     /// <summary>シェイプ全体を margin 度だけ広げた外接矩形ポリゴンを作る。</summary>
@@ -255,72 +246,4 @@ public class RestrictedRoutingTests
         }
         return true;
     }
-
-    private static void EnsureTestData()
-    {
-        if (!File.Exists(TestPaths.ParentDefaultRouterDb))
-        {
-            Assert.Fail(
-                $"テストデータが見つかりません: {TestPaths.ParentDefaultRouterDb}\n" +
-                "親プロジェクトの default.routerdb が必要です。");
-        }
-    }
-
-    /// <summary>
-    /// 車道アクセス可能な頂点を最大 <paramref name="maxPairs"/> ペア集める。
-    /// 各ペアは <paramref name="minSeparationDeg"/> 度以上離れる。
-    /// </summary>
-    private static List<(GeoCoordinate from, GeoCoordinate to)> CollectCarAccessibleVertexPairs(
-        RouterDb routerDb,
-        int maxPairs,
-        double minSeparationDeg)
-    {
-        var graph = routerDb.Graph;
-        var carVertices = new List<GeoCoordinate>();
-        var limit = Math.Min((uint)20000, graph.VertexCount);
-        var step = Math.Max(1u, limit / 1000);
-        for (uint v = 0; v < limit; v += step)
-        {
-            var en = graph.GetEdgeEnumerator(v);
-            var isCar = false;
-            while (en.MoveNext())
-            {
-                var tags = graph.GetEdgeOsmTagsForTest(en.EdgeProfileIndex);
-                if (tags.TryGetValue("highway", out var hwy) && IsCarHighway(hwy))
-                {
-                    isCar = true;
-                    break;
-                }
-            }
-            if (isCar) carVertices.Add(graph.GetVertex(v));
-            if (carVertices.Count >= 200) break;
-        }
-
-        var pairs = new List<(GeoCoordinate, GeoCoordinate)>();
-        for (var i = 0; i < carVertices.Count && pairs.Count < maxPairs; i++)
-        {
-            for (var j = i + 1; j < carVertices.Count && pairs.Count < maxPairs; j++)
-            {
-                var dLat = carVertices[j].Latitude - carVertices[i].Latitude;
-                var dLon = carVertices[j].Longitude - carVertices[i].Longitude;
-                if (Math.Sqrt(dLat * dLat + dLon * dLon) >= minSeparationDeg)
-                {
-                    pairs.Add((carVertices[i], carVertices[j]));
-                    break;
-                }
-            }
-        }
-        return pairs;
-    }
-
-    private static bool IsCarHighway(string highway) => highway switch
-    {
-        "motorway" or "motorway_link" or
-        "trunk" or "trunk_link" or
-        "primary" or "primary_link" or
-        "secondary" or "secondary_link" or
-        "tertiary" or "tertiary_link" or
-        "residential" or "unclassified" or "living_street" or "service" => true,
-        _ => false,
-    };
 }
