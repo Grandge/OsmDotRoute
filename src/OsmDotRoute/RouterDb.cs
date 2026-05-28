@@ -5,7 +5,7 @@ namespace OsmDotRoute;
 
 /// <summary>
 /// 経路計算用のグラフデータ（REQ-MAP-001 / REQ-MAP-009）。
-/// Phase 3 ステップ 3C.1 以降は <see cref="LoadFromOdrg"/> から <c>.odrg</c> ファイルを直接ロードする（Itinero 非依存）。
+/// Phase 3 ステップ 3C.1 以降は <see cref="LoadFromOdrg(string)"/> から <c>.odrg</c> ファイルを直接ロードする（Itinero 非依存）。
 /// 公開 API に内部実装型を露出させない（REQ-API-003）。
 /// </summary>
 public sealed class RouterDb
@@ -44,6 +44,28 @@ public sealed class RouterDb
         }
 
         var graph = new NativeRoadGraph(odrgPath);
+        var snapper = new NativeRoadSnapper(graph);
+        return new RouterDb(graph, snapper);
+    }
+
+    /// <summary>
+    /// メモリ上の <c>.odrg</c> バイト列（fetch 済みデータなど）を読み込み、<see cref="RouterDb"/> を生成する
+    /// （Phase 3 ステップ 3J.2、ブラウザ WASM など <see cref="System.IO.MemoryMappedFiles.MemoryMappedFile"/> が
+    /// 使えない環境向け）。内部で <see cref="NativeRoadGraph"/>（ピン留めバッファ + Span ゼロコピー読込）と
+    /// <see cref="NativeRoadSnapper"/> を構築する。ファイル版 <see cref="LoadFromOdrg(string)"/> と同一の結果を返す。
+    /// </summary>
+    /// <param name="odrgData"><c>.odrg</c> 全体のバイト列（非空）</param>
+    /// <returns>ロードされた <see cref="RouterDb"/></returns>
+    /// <exception cref="ArgumentException"><paramref name="odrgData"/> が空</exception>
+    /// <exception cref="OsmDotRoute.Internal.Odrg.OdrgFormatException">ファイル形式が不正</exception>
+    public static RouterDb LoadFromOdrg(ReadOnlyMemory<byte> odrgData)
+    {
+        if (odrgData.IsEmpty)
+        {
+            throw new ArgumentException(".odrg データが空です。", nameof(odrgData));
+        }
+
+        var graph = new NativeRoadGraph(odrgData);
         var snapper = new NativeRoadSnapper(graph);
         return new RouterDb(graph, snapper);
     }

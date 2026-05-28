@@ -70,12 +70,27 @@ internal sealed class NativeRoadGraph : IRoadGraph
     /// </summary>
     /// <exception cref="OdrgFormatException"><c>.odrg</c> 形式不正。</exception>
     public NativeRoadGraph(string odrgPath)
+        : this(OdrgMmfHandle.Open(odrgPath))
     {
-        ArgumentException.ThrowIfNullOrEmpty(odrgPath);
-        _mmf = OdrgMmfHandle.Open(odrgPath);
+    }
+
+    /// <summary>
+    /// マネージドバイト列（fetch 済み <c>.odrg</c> など）から道路グラフを構築する
+    /// （Phase 3 ステップ 3J.2、ブラウザ WASM など MMF が使えない環境向け）。
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="odrgData"/> が空。</exception>
+    /// <exception cref="OdrgFormatException"><c>.odrg</c> 形式不正。</exception>
+    public NativeRoadGraph(ReadOnlyMemory<byte> odrgData)
+        : this(OdrgMmfHandle.CreateFromMemory(odrgData))
+    {
+    }
+
+    private NativeRoadGraph(OdrgMmfHandle handle)
+    {
+        _mmf = handle;
         try
         {
-            _directory = OdrgSectionDirectory.Read(_mmf.ViewHandle, _mmf.ViewLength);
+            _directory = OdrgSectionDirectory.Parse(_mmf.GetRawSpan(0, checked((int)_mmf.ViewLength)));
 
             var header = _directory.Header;
             _vertexCount = checked((uint)header.VertexCount);

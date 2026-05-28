@@ -23,7 +23,7 @@ public sealed class RouterDbLoadFromOdrgTests
     [Fact]
     public void LoadFromOdrg_NullPath_ThrowsArgumentException()
     {
-        Assert.Throws<ArgumentException>(() => RouterDb.LoadFromOdrg(null!));
+        Assert.Throws<ArgumentException>(() => RouterDb.LoadFromOdrg((string)null!));
     }
 
     [Fact]
