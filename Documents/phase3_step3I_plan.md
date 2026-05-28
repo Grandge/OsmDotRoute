@@ -1,6 +1,6 @@
 # Phase 3 ステップ 3I: Sandbox ユーザー試用デモツール 計画書
 
-**ステータス**: v0.1（初版、2026-05-28）
+**ステータス**: v0.2（3I 全完了、2026-05-28）
 **対応ステップ**: Phase 3 ステップ 3I（[Phase 3 実装計画書 §3.8 / §6](phase3_implementation_plan.md)）
 **対応要件**: REQ-INT-001〜003（API 設計）、REQ-LIC-004（ODbL 表記）
 **関連文書**:
@@ -317,3 +317,4 @@ Geofabrik Japan extracts のパス規則: `https://download.geofabrik.de/asia/ja
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
 | 0.1 | 2026-05-28 | 初版。§5.5-30〜34 全件ユーザー確定、React + MapLibre GL 構成確定、5 サブステップ分割、Geofabrik 地方ブロック単位に修正 | Claude (Opus 4.7) |
+| 0.2 | 2026-05-28 | **3I 全完了**（commit bbe3af1 / 793050e / bc3c38f、676 件 pass）。実装中の追加対応: 保存先永続化 / bbox 頂点ドラッグ / 既存 PBF・odrg ブラウズ / プロファイル反映 / .odrg v0.3 RequestedBbox 拡張 + マイグレーション。ズーム閾値自動非表示は未実装（手動 ON/OFF + サーバー 10,000 セル上限で代替、Phase 4+）。GML は Sandbox 非対応。設計書 §10 肉付け完了 | Claude (Opus 4.7) |
