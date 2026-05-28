@@ -1,0 +1,76 @@
+name: Sandbox WASM (GitHub Pages)
+
+# Phase 3 ステップ 3J.6。React 流用 + コア WASM 化の単一静的サイト（Sandbox.Wasm + Sandbox/Web）を
+# ビルドし、GitHub Pages 用 artifact として検証する。
+#
+# J-C: 実際の gh-pages デプロイは Phase 3 確定（3H）+ REQ-PKG-002（非公開リポジトリ）解除と同時に
+#      有効化する。それまでは deploy ジョブを `if: false` で無効化し、build/artifact 生成までを行う。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/OsmDotRoute/**'
+      - 'samples/Sandbox.Wasm/**'
+      - 'samples/Sandbox/Web/**'
+      - '.github/workflows/sandbox-wasm-pages.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sandbox-wasm-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install wasm-tools workload
+        run: dotnet workload install wasm-tools
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: samples/Sandbox/Web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: samples/Sandbox/Web
+        run: npm ci
+
+      - name: Build WASM static site
+        working-directory: samples/Sandbox/Web
+        env:
+          # GitHub Pages プロジェクトサイトのサブパス（例: /OsmDotRoute/）。vite.config.ts が base に反映する。
+          SANDBOX_BASE: /${{ github.event.repository.name }}/
+        run: npm run build:wasm
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: samples/Sandbox/Web/dist
+
+  # J-C: gh-pages 公開は 3H で REQ-PKG-002 解除と同時に `if: true` へ変更して有効化する。
+  deploy:
+    needs: build
+    if: false
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

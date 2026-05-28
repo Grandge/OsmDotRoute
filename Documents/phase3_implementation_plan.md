@@ -467,7 +467,7 @@ OsmDotRoute.Itinero              ← 削除
 | 3F | 親プロジェクト統合・パリティ検証（旧 Phase 1 ステップ 16、`OsmDotRoute` v0.3.x へ差替、`Route.Shape` 破壊変更対応、89 ペア経路結果 ±10% 以内、KSJ GML 制約動作確認） | — | 未着手 |
 | 3G | 都道府県単位ベンチ（Phase 1 §18.2 リベンジ、愛知県全域 PBF から `.odrg` 抽出、経路計算スループット実測、`.odrg` サイズ実測） | — | 未着手 |
 | 3I | **ユーザー試用デモツール `OsmDotRoute.Sandbox` 新設**（5 サブステップ 3I.1〜3I.5：プロジェクト雛形 → PBF DL + bbox → `.odrg` 抽出統合 → ルート探査 UI → メッシュ / ポリゴン制約付与。`samples/Sandbox/Server` + `samples/Sandbox/Web` 新設、MapVerifier 構成踏襲、ローカル限定運用） | （§3.8 新規） | 未着手 |
-| 3J | **GitHub Pages デモ（Blazor WASM）**（Sandbox のサブセット機能を Blazor WebAssembly 化。事前ビルド `.odrg` 同梱、経路計算 + メッシュ/ポリゴン制約をブラウザ内実行。PBF DL / Extractor は対象外。GitHub Actions → `gh-pages` デプロイ） | （§3.9 新規） | 未着手 |
+| 3J | **GitHub Pages デモ（React 流用 + コア WASM 化）**（Sandbox のサブセットをブラウザ内実行。原計画の Blazor 前提は React 実態に合わせ修正。事前ビルド `.odrg` 同梱、経路計算 + メッシュ/ポリゴン制約 + Re-Route をブラウザ内実行。PBF DL / Extractor は対象外。GitHub Actions で artifact 化、gh-pages デプロイは 3H へ。詳細は [`phase3_step3J_plan.md`](phase3_step3J_plan.md)） | （§3.9 新規） | **完了**（2026-05-29、682 件 pass） |
 | 3H | ユーザー検証・Phase 3 確定（OSS 公開準備：README / LICENSE / CI 整備、ODbL ガイドライン、**`Documents/comparison_with_itinero.md` 執筆 + README リンク（§3.10.1 構成案）**、**Sandbox 起動方法を README にクイックスタートとして掲載**、エッジフラグ運用観察結果記録、Phase 3 v0.3.0 タグ判断、REQ-PKG-002 解除判断） | REQ-PKG-003, REQ-LIC-004 | 未着手 |
 
 各ステップ完了時に **ユーザー報告 → 承認 → 次ステップ着手** のサイクルを厳守（CLAUDE.md ルール、Phase 1 / Phase 2 と同様）。
