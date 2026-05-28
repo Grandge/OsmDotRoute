@@ -34,6 +34,9 @@ samples/Data/tokyo.odrg
 samples/Data/pbf/
 # Sandbox.Wasm にビルド時コピーされる .odrg（実体は samples/Data/tsushima.odrg）
 samples/Sandbox.Wasm/wwwroot/data/
+# WASM 成果物を React 静的サイトへ取り込む際のコピー先（build:wasm が生成）
+samples/Sandbox/Web/public/_framework/
+samples/Sandbox/Web/public/data/
 
 # Local config
 appsettings.local.json
@@ -43,6 +46,8 @@ appsettings.local.json
 node_modules/
 samples/Sandbox/Web/vite.config.d.ts
 samples/Sandbox/Web/vite.config.js
+# Vite ビルド成果物
+dist/
 
 # Claude Code working files
 .claude/

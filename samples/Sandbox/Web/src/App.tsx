@@ -3,6 +3,7 @@ import type maplibregl from 'maplibre-gl';
 import { MapView, type MapViewHandle } from './components/MapView';
 import { DownloadPanel } from './components/DownloadPanel';
 import { ExtractPanel } from './components/ExtractPanel';
+import { PresetPanel } from './components/PresetPanel';
 import { RoutePanel, type PickMode } from './components/RoutePanel';
 import { MeshGridPanel } from './components/MeshGridPanel';
 import { PolygonEditorPanel } from './components/PolygonEditorPanel';
@@ -13,6 +14,10 @@ import {
   type VersionResponse, type ExtractCompleteEvent, type StatsResponse, type RouteResponse,
 } from './api/client';
 import { WEB_VERSION } from './version';
+
+// J-4a: --mode wasm でビルドした静的サイトはブラウザ内 WASM エンジンで動作する。
+// その場合 PBF ダウンロード / 抽出は不可のため該当パネルを隠し、事前ビルド .odrg プルダウンを出す。
+const isWasm = import.meta.env.MODE === 'wasm';
 
 export function App() {
   const mapRef = useRef<MapViewHandle>(null);
@@ -211,28 +216,34 @@ export function App() {
           <h2 style={{ margin: 0, fontSize: 16 }}>OsmDotRoute Sandbox</h2>
           <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
             Web {WEB_VERSION}
-            {version && <> / Server {version.version}</>}
-            {error && <span style={{ color: '#dc2626' }}> (server error)</span>}
+            {isWasm ? <> / WASM (in-browser)</> : version && <> / Server {version.version}</>}
+            {error && <span style={{ color: '#dc2626' }}> ({isWasm ? 'wasm' : 'server'} error)</span>}
           </div>
         </div>
 
-        <DownloadPanel
-          onPbfReady={handlePbfReady}
-          bbox={bbox}
-          onStartBboxDraw={handleStartBboxDraw}
-          onClearBbox={handleClearBbox}
-          onBboxManualChange={handleBboxManualChange}
-          onCacheDirChanged={setCacheDir}
-        />
+        {isWasm ? (
+          <PresetPanel onLoaded={handleLoaded} />
+        ) : (
+          <>
+            <DownloadPanel
+              onPbfReady={handlePbfReady}
+              bbox={bbox}
+              onStartBboxDraw={handleStartBboxDraw}
+              onClearBbox={handleClearBbox}
+              onBboxManualChange={handleBboxManualChange}
+              onCacheDirChanged={setCacheDir}
+            />
 
-        <ExtractPanel
-          pbfPath={pbfPath}
-          bbox={bbox}
-          availableProfiles={availableProfiles}
-          onExtracted={handleExtracted}
-          onLoaded={handleLoaded}
-          cacheDir={cacheDir}
-        />
+            <ExtractPanel
+              pbfPath={pbfPath}
+              bbox={bbox}
+              availableProfiles={availableProfiles}
+              onExtracted={handleExtracted}
+              onLoaded={handleLoaded}
+              cacheDir={cacheDir}
+            />
+          </>
+        )}
 
         <RoutePanel
           graphLoaded={graphLoaded}

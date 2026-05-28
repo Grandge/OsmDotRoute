@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:wasm": "node scripts/prepare-wasm.mjs && tsc -b && vite build --mode wasm",
     "preview": "vite preview"
   },
   "dependencies": {
