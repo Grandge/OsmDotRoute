@@ -18,7 +18,10 @@ internal static class OdrgFormat
     public const int BakedProfileNameTableEntrySize = 8;
 
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 0;
+    public const ushort VersionMinor = 1;
+
+    /// <summary>VersionMinor=1 以降で要求 bbox（オフセット 88-119）が定義される。</summary>
+    public const ushort VersionMinorRequestedBbox = 1;
 
     public const uint EdgeFlagBytes = 2;  // ushort EdgeFlags
 

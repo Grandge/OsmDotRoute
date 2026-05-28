@@ -17,7 +17,12 @@ internal readonly record struct OdrgHeader(
     uint ProfileCount,
     uint EdgeFlagBytes,
     ulong SectionTableOffset,
-    uint SectionCount);
+    uint SectionCount,
+    Aabb RequestedBbox)
+{
+    /// <summary>VersionMinor=1 以降で <see cref="RequestedBbox"/> が明示的に書き込まれる。</summary>
+    public bool HasRequestedBbox => VersionMinor >= OdrgFormat.VersionMinorRequestedBbox;
+}
 
 /// <summary>
 /// セクションテーブルエントリ（仕様書 §2）。

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { panelStyle } from './styles';
 import { FileBrowserDialog } from './FileBrowserDialog';
 import { extractOdrg, loadOdrg, type ExtractCompleteEvent, type StatsResponse } from '../api/client';
@@ -6,6 +6,7 @@ import { extractOdrg, loadOdrg, type ExtractCompleteEvent, type StatsResponse } 
 interface Props {
   pbfPath: string | null;
   bbox: [number, number, number, number] | null;
+  availableProfiles: string[];
   onExtracted: (result: ExtractCompleteEvent) => void;
   onLoaded: (stats: StatsResponse) => void;
   cacheDir: string;
@@ -13,8 +14,15 @@ interface Props {
 
 const PROFILES = ['car', 'pedestrian', 'bicycle', 'truck'] as const;
 
-export function ExtractPanel({ pbfPath, bbox, onExtracted, onLoaded, cacheDir }: Props) {
+export function ExtractPanel({ pbfPath, bbox, availableProfiles, onExtracted, onLoaded, cacheDir }: Props) {
   const [selectedProfiles, setSelectedProfiles] = useState<Set<string>>(new Set(['car', 'pedestrian']));
+
+  // ロード済み .odrg のプロファイルセットをチェックボックスに反映
+  useEffect(() => {
+    if (availableProfiles.length > 0) {
+      setSelectedProfiles(new Set(availableProfiles));
+    }
+  }, [availableProfiles]);
   const [extracting, setExtracting] = useState(false);
   const [phase, setPhase] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +80,7 @@ export function ExtractPanel({ pbfPath, bbox, onExtracted, onLoaded, cacheDir }:
         edgeCount: stats.edgeCount,
         fileSizeBytes: 0,
         extractSeconds: 0,
+        profileNames: stats.profileNames,
       });
       onLoaded(stats);
     } catch (e: unknown) {

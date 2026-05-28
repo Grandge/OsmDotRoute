@@ -38,6 +38,7 @@ app.MapVersionEndpoints();
 app.MapDownloadEndpoints();
 app.MapExtractEndpoints();
 app.MapGraphEndpoints();
+app.MapRouteEndpoints();
 app.MapLoadEndpoints();
 app.MapBrowseEndpoints();
 

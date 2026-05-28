@@ -28,3 +28,13 @@ public sealed record CacheDirResponse(string Path);
 public sealed record ExtractRequest(string PbfPath, double[]? Bbox, string[]? Profiles);
 
 public sealed record LoadRequest(string? OdrgPath);
+
+public sealed record SnapRequest(double Lat, double Lon, string? Profile, float? SearchDistanceM);
+
+public sealed record SnapResponse(CoordinateDto? Snapped);
+
+public sealed record RouteRequest(double FromLat, double FromLon, double ToLat, double ToLon, string? Profile);
+
+public sealed record RouteResponse(bool Found, double DistanceM, double DurationSec, GeoJsonLineString? Geometry);
+
+public sealed record GeoJsonLineString(string Type, double[][] Coordinates);

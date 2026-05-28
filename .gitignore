@@ -39,6 +39,8 @@ appsettings.local.json
 
 # Node.js
 node_modules/
+samples/Sandbox/Web/vite.config.d.ts
+samples/Sandbox/Web/vite.config.js
 
 # Claude Code working files
 .claude/

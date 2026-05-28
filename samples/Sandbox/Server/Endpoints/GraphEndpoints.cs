@@ -19,7 +19,7 @@ public static class GraphEndpoints
                 stats.EdgeCount,
                 new CoordinateDto(stats.SouthWest.Latitude, stats.SouthWest.Longitude),
                 new CoordinateDto(stats.NorthEast.Latitude, stats.NorthEast.Longitude),
-                Array.Empty<string>()));
+                state.ProfileNames));
         });
 
         app.MapGet("/api/road-network", (SandboxState state) =>

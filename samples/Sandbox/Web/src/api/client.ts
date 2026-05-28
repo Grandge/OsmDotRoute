@@ -141,6 +141,45 @@ export async function loadOdrg(odrgPath: string): Promise<StatsResponse> {
   );
 }
 
+// --- Route ---
+
+export interface RouteResponse {
+  found: boolean;
+  distanceM: number;
+  durationSec: number;
+  geometry: GeoJSON.LineString | null;
+}
+
+export interface SnapResponse {
+  snapped: { latitude: number; longitude: number } | null;
+}
+
+export async function snapToRoad(lat: number, lon: number, profile: string): Promise<SnapResponse> {
+  return handle<SnapResponse>(
+    await fetch('/api/snap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon, profile }),
+    }),
+  );
+}
+
+export async function calculateRoute(req: {
+  fromLat: number;
+  fromLon: number;
+  toLat: number;
+  toLon: number;
+  profile: string;
+}): Promise<RouteResponse> {
+  return handle<RouteResponse>(
+    await fetch('/api/route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
 // --- Extract ---
 
 export interface ExtractPhaseEvent {
@@ -156,6 +195,7 @@ export interface ExtractCompleteEvent {
   edgeCount: number;
   fileSizeBytes: number;
   extractSeconds: number;
+  profileNames: string[];
 }
 
 export async function extractOdrg(

@@ -122,6 +122,20 @@ internal static class OdrgReader
             throw new InvalidDataException(
                 $"Unsupported edgeFlagBytes: {edgeFlagBytes}, expected {OdrgFormat.EdgeFlagBytes}");
 
+        Aabb requestedBbox;
+        if (minor >= OdrgFormat.VersionMinorRequestedBbox)
+        {
+            double rMinLon = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(88, 8));
+            double rMinLat = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(96, 8));
+            double rMaxLon = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(104, 8));
+            double rMaxLat = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(112, 8));
+            requestedBbox = new Aabb(rMinLon, rMinLat, rMaxLon, rMaxLat);
+        }
+        else
+        {
+            requestedBbox = default;
+        }
+
         return new OdrgHeader(
             VersionMajor: major,
             VersionMinor: minor,
@@ -132,7 +146,8 @@ internal static class OdrgReader
             ProfileCount: profileCount,
             EdgeFlagBytes: edgeFlagBytes,
             SectionTableOffset: sectionTableOffset,
-            SectionCount: sectionCount);
+            SectionCount: sectionCount,
+            RequestedBbox: requestedBbox);
     }
 
     private static OdrgSectionTableEntry[] ReadSectionTable(ReadOnlySpan<byte> span, OdrgHeader header)

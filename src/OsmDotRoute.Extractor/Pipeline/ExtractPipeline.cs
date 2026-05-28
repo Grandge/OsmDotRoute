@@ -30,7 +30,8 @@ internal sealed record ExtractPipelineResult(
     StrRTree RTree,
     BakedProfileTable ProfileTable,
     Func<long, GeoCoordinate> NodeCoordLookup,
-    Aabb FileBbox);
+    Aabb FileBbox,
+    Aabb RequestedBbox);
 
 /// <summary>
 /// OSM PBF → 抽出済みグラフ in-memory 構造体への変換パイプライン全体を組み立てる。
@@ -191,7 +192,8 @@ internal static class ExtractPipeline
             RTree: rtree,
             ProfileTable: profileTable,
             NodeCoordLookup: id => nodeCoords[id],
-            FileBbox: fileBbox);
+            FileBbox: fileBbox,
+            RequestedBbox: opts.Bbox);
     }
 
     private static Aabb ComputeBbox(GeoCoordinate[] vertices, Aabb fallback)

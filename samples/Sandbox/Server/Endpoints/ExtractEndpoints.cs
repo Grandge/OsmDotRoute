@@ -94,7 +94,8 @@ public static class ExtractEndpoints
                     ProfileTable: result.ProfileTable,
                     NodeCoordLookup: result.NodeCoordLookup,
                     Bbox: result.FileBbox,
-                    MetadataJson: metadataJson);
+                    MetadataJson: metadataJson,
+                    RequestedBbox: result.RequestedBbox);
 
                 await Task.Run(() =>
                 {
@@ -106,7 +107,8 @@ public static class ExtractEndpoints
 
                 var routerDb = await Task.Run(() => RouterDb.LoadFromOdrg(odrgPath), ctx.RequestAborted);
                 var router = new Router(routerDb);
-                state.Set(routerDb, router, odrgPath);
+                var bakedProfileNames = result.ProfileTable.ProfileNames.ToArray();
+                state.Set(routerDb, router, odrgPath, bakedProfileNames);
 
                 var stats = routerDb.GetStatistics();
                 var fileSize = new FileInfo(odrgPath).Length;
@@ -119,6 +121,7 @@ public static class ExtractEndpoints
                     edgeCount = stats.EdgeCount,
                     fileSizeBytes = fileSize,
                     extractSeconds = sw.Elapsed.TotalSeconds,
+                    profileNames = bakedProfileNames,
                 });
             }
             catch (OperationCanceledException)

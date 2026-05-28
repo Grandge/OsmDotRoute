@@ -88,7 +88,7 @@
 | ---------- | ------ | ---------------------- | --------- | --------------------------------------------------------------------------- |
 | 0          | 8      | `magic`              | byte[8]   | ASCII `"ODRG\0\0\0\0"` （0x4F, 0x44, 0x52, 0x47, 0x00, 0x00, 0x00, 0x00） |
 | 8          | 2      | `versionMajor`       | uint16    | フォーマットメジャー版（互換性破壊時に増やす）。初版 = 1                    |
-| 10         | 2      | `versionMinor`       | uint16    | フォーマットマイナー版（後方互換な拡張）。初版 = 0                          |
+| 10         | 2      | `versionMinor`       | uint16    | フォーマットマイナー版（後方互換な拡張）。初版 = 0、v0.3 = 1（`bboxRequested*` 追加） |
 | 12         | 4      | `flags`              | uint32    | 予約フラグ（初版 = 0、bit0 = "compressed"（将来）、bit1〜31 = 予約）        |
 | 16         | 8      | `vertexCount`        | uint64    | 頂点数                                                                      |
 | 24         | 8      | `edgeCount`          | uint64    | エッジ数（**有向辺数**。双方向道路は 2 エッジ）                       |
@@ -101,9 +101,17 @@
 | 72         | 8      | `sectionTableOffset` | uint64    | セクションテーブル先頭オフセット（通常 256）                                |
 | 80         | 4      | `sectionCount`       | uint32    | セクションテーブルのエントリ数                                              |
 | 84         | 4      | `reservedA`          | uint32    | 予約（0 固定）                                                              |
-| 88         | 168    | `reservedB`          | byte[168] | 予約（0 埋め）。将来のヘッダー拡張余地                                      |
+| 88         | 8      | `bboxRequestedMinLon` | double   | **抽出要求時の bbox 経度最小**（v0.3+、CLI `--bbox` のユーザー入力。way 拡張前。VersionMinor=0 は 0.0） |
+| 96         | 8      | `bboxRequestedMinLat` | double   | 同 緯度最小                                                                |
+| 104        | 8      | `bboxRequestedMaxLon` | double   | 同 経度最大                                                                |
+| 112        | 8      | `bboxRequestedMaxLat` | double   | 同 緯度最大                                                                |
+| 120        | 136    | `reservedB`          | byte[136] | 予約（0 埋め）。将来のヘッダー拡張余地                                      |
 
 総計 256 バイト。
+
+**bbox（オフセット 32-63）と bboxRequested（88-119）の違い**:
+- `bbox*` = 抽出結果の全頂点 AABB（way 拡張で要求 bbox を超える可能性）
+- `bboxRequested*` = 抽出要求時の bbox（CLI `--bbox` の入力値）。VersionMinor=0 では未定義（ゼロ）、フォールバックは `bbox*` を使う
 
 ### 2.1 マジックナンバーの根拠
 
@@ -114,6 +122,13 @@ ASCII で `ODRG` = "OsmDotRoute Graph"。残り 4 バイトを `\0` で詰めて
 - `versionMajor` が異なる場合 → 読込側は **エラー**（互換性なし）
 - `versionMinor` が読込側より大きい場合 → 読込側は **警告ログ + 続行**（後方互換、未知セクションはスキップ）
 - `versionMinor` が読込側より小さい場合 → 読込側は **正常動作**（古いファイル）
+
+**VersionMinor の履歴**:
+
+| Minor | 追加内容 | 後方互換性 |
+| --- | --- | --- |
+| 0 | 初版 | — |
+| 1 | `bboxRequested*`（オフセット 88-119）追加。要求 bbox を抽出後 bbox とは別に保持 | 旧コードはヘッダー末尾の予約領域として無視（安全）。新コードで Minor=0 を読む場合は `bboxRequested*` が未定義（ゼロ）として扱う |
 
 ---
 

@@ -8,6 +8,7 @@ public sealed class SandboxState
     private RouterDb? _routerDb;
     private Router? _router;
     private string? _loadedOdrgPath;
+    private string[] _profileNames = [];
 
     public bool IsLoaded
     {
@@ -29,15 +30,22 @@ public sealed class SandboxState
         get { lock (_lock) { return _router; } }
     }
 
-    public void Set(RouterDb routerDb, Router router, string odrgPath)
+    public string[] ProfileNames
+    {
+        get { lock (_lock) { return (string[])_profileNames.Clone(); } }
+    }
+
+    public void Set(RouterDb routerDb, Router router, string odrgPath, string[] profileNames)
     {
         ArgumentNullException.ThrowIfNull(routerDb);
         ArgumentNullException.ThrowIfNull(router);
+        ArgumentNullException.ThrowIfNull(profileNames);
         lock (_lock)
         {
             _routerDb = routerDb;
             _router = router;
             _loadedOdrgPath = odrgPath;
+            _profileNames = profileNames;
         }
     }
 }

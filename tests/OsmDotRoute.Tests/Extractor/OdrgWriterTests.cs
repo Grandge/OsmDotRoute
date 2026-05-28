@@ -86,11 +86,12 @@ public sealed class OdrgWriterTests
     }
 
     [Fact]
-    public void Write_HeaderVersions_AreMajor1Minor0()
+    public void Write_HeaderVersions_AreMajor1Minor1()
     {
+        // v0.3 で VersionMinor 0 → 1 に bump (bboxRequested 追加)
         var bytes = WriteToBytes(MinimalInput());
         Assert.Equal((ushort)1, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(8, 2)));
-        Assert.Equal((ushort)0, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(10, 2)));
+        Assert.Equal((ushort)1, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(10, 2)));
     }
 
     [Fact]
@@ -111,6 +112,36 @@ public sealed class OdrgWriterTests
         Assert.Equal(35.16, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(40, 8)));
         Assert.Equal(136.78, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(48, 8)));
         Assert.Equal(35.20, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(56, 8)));
+    }
+
+    [Fact]
+    public void Write_HeaderRequestedBbox_DefaultIsZero()
+    {
+        // MinimalInput では RequestedBbox 未指定 → default(Aabb) = 全 0
+        var bytes = WriteToBytes(MinimalInput());
+        Assert.Equal(0.0, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(88, 8)));
+        Assert.Equal(0.0, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(96, 8)));
+        Assert.Equal(0.0, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(104, 8)));
+        Assert.Equal(0.0, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(112, 8)));
+    }
+
+    [Fact]
+    public void Write_HeaderRequestedBbox_Explicit_RoundTrips()
+    {
+        var input = MinimalInput() with { RequestedBbox = new Aabb(136.50, 35.10, 137.00, 35.30) };
+        var bytes = WriteToBytes(input);
+        Assert.Equal(136.50, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(88, 8)));
+        Assert.Equal(35.10, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(96, 8)));
+        Assert.Equal(137.00, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(104, 8)));
+        Assert.Equal(35.30, BinaryPrimitives.ReadDoubleLittleEndian(bytes.AsSpan(112, 8)));
+
+        // OdrgReader でも読めること
+        var result = OdrgReader.Parse(bytes);
+        Assert.True(result.Header.HasRequestedBbox);
+        Assert.Equal(136.50, result.Header.RequestedBbox.MinLon);
+        Assert.Equal(35.10, result.Header.RequestedBbox.MinLat);
+        Assert.Equal(137.00, result.Header.RequestedBbox.MaxLon);
+        Assert.Equal(35.30, result.Header.RequestedBbox.MaxLat);
     }
 
     [Fact]

@@ -16,6 +16,7 @@ var rootCommand = new RootCommand(
     " 詳細: Documents/phase2_graph_format_spec.md v0.2 を参照。")
 {
     ExtractCommand.Build(Run),
+    PatchBboxCommand.Build(RunPatchBbox),
 };
 
 return rootCommand.Parse(args).Invoke();
@@ -100,7 +101,8 @@ static int Run(ExtractOptions options)
         ProfileTable: result.ProfileTable,
         NodeCoordLookup: result.NodeCoordLookup,
         Bbox: result.FileBbox,
-        MetadataJson: metadataJson);
+        MetadataJson: metadataJson,
+        RequestedBbox: result.RequestedBbox);
 
     Console.WriteLine("書出開始...");
     sw.Restart();
@@ -125,3 +127,99 @@ static VehicleProfile ResolveProfile(string name) =>
         "truck" => VehicleProfile.Truck,
         _ => throw new ArgumentException($"未対応プロファイル: '{name}'。'car' / 'pedestrian' / 'bicycle' / 'truck' のみ対応"),
     };
+
+static int RunPatchBbox(PatchBboxOptions options)
+{
+    if (options.Dir is not null)
+    {
+        return RunPatchBboxDirectory(options.Dir);
+    }
+
+    if (options.Input is null)
+    {
+        Console.Error.WriteLine("--input または --dir のいずれかを指定してください。");
+        return 2;
+    }
+    if (!options.Input.Exists)
+    {
+        Console.Error.WriteLine($".odrg が見つかりません: {options.Input.FullName}");
+        return 2;
+    }
+
+    Bbox? bbox = options.Bbox;
+    if (bbox is null && options.MapJson is not null)
+    {
+        if (!options.MapJson.Exists)
+        {
+            Console.Error.WriteLine($".map.json が見つかりません: {options.MapJson.FullName}");
+            return 2;
+        }
+        bbox = MapJson.TryReadBbox(options.MapJson.FullName);
+        if (bbox is null)
+        {
+            Console.Error.WriteLine($".map.json から bbox を読めませんでした: {options.MapJson.FullName}");
+            return 2;
+        }
+    }
+
+    if (bbox is null)
+    {
+        Console.Error.WriteLine("--bbox または --map-json のいずれかを指定してください。");
+        return 2;
+    }
+
+    var aabb = ToAabb(bbox.Value);
+    OdrgHeaderPatcher.Patch(options.Input.FullName, aabb);
+    Console.WriteLine($"patched: {options.Input.FullName}  bbox={bbox.Value}");
+    return 0;
+}
+
+static int RunPatchBboxDirectory(DirectoryInfo dir)
+{
+    if (!dir.Exists)
+    {
+        Console.Error.WriteLine($"ディレクトリが見つかりません: {dir.FullName}");
+        return 2;
+    }
+
+    var odrgFiles = dir.GetFiles("*.odrg", SearchOption.AllDirectories);
+    int patched = 0, skipped = 0;
+    foreach (var odrg in odrgFiles)
+    {
+        // 同名 .map.json（"foo.odrg" → "foo.map.json"）
+        var baseName = odrg.FullName.Substring(0, odrg.FullName.Length - ".odrg".Length);
+        var mapJsonPath = baseName + ".map.json";
+
+        if (!File.Exists(mapJsonPath))
+        {
+            Console.WriteLine($"skip (no .map.json): {odrg.Name}");
+            skipped++;
+            continue;
+        }
+
+        var bbox = MapJson.TryReadBbox(mapJsonPath);
+        if (bbox is null)
+        {
+            Console.WriteLine($"skip (bad .map.json): {odrg.Name}");
+            skipped++;
+            continue;
+        }
+
+        try
+        {
+            OdrgHeaderPatcher.Patch(odrg.FullName, ToAabb(bbox.Value));
+            Console.WriteLine($"patched: {odrg.Name}  bbox={bbox.Value}");
+            patched++;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"error: {odrg.Name}  {ex.Message}");
+            skipped++;
+        }
+    }
+
+    Console.WriteLine($"完了: patched={patched} skipped={skipped} (total {odrgFiles.Length})");
+    return 0;
+}
+
+static Aabb ToAabb(Bbox b) => new(b.MinLon, b.MinLat, b.MaxLon, b.MaxLat);

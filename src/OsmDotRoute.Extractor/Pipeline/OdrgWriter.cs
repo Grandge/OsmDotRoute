@@ -82,7 +82,7 @@ internal static class OdrgWriter
         using var bw = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
 
         // HEADER (256B)
-        WriteHeader(bw, vertexCount, edgeCount, input.Bbox, profileCount, sectionTableOffset);
+        WriteHeader(bw, vertexCount, edgeCount, input.Bbox, profileCount, sectionTableOffset, input.RequestedBbox);
 
         // SECTION TABLE (9 × 24B = 216B)
         WriteSectionEntry(bw, OdrgFormat.SectionVertexTable, offVertex, vertexLen);
@@ -204,7 +204,8 @@ internal static class OdrgWriter
         int edgeCount,
         Aabb bbox,
         int profileCount,
-        long sectionTableOffset)
+        long sectionTableOffset,
+        Aabb requestedBbox)
     {
         long startPos = bw.BaseStream.Position;
 
@@ -223,9 +224,13 @@ internal static class OdrgWriter
         bw.Write((ulong)sectionTableOffset);                // 72..79
         bw.Write((uint)SectionCount);                       // 80..83
         bw.Write((uint)0);                                  // 84..87 reservedA
+        bw.Write(requestedBbox.MinLon);                     // 88..95   (v0.3+)
+        bw.Write(requestedBbox.MinLat);                     // 96..103
+        bw.Write(requestedBbox.MaxLon);                     // 104..111
+        bw.Write(requestedBbox.MaxLat);                     // 112..119
 
-        // reservedB: 88..255 (168 byte) を 0 で埋める
-        Span<byte> zero = stackalloc byte[168];
+        // reservedB: 120..255 (136 byte) を 0 で埋める
+        Span<byte> zero = stackalloc byte[136];
         bw.Write(zero);
 
         long written = bw.BaseStream.Position - startPos;

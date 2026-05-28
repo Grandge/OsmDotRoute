@@ -35,7 +35,12 @@ internal readonly record struct OdrgFileHeader(
     uint ProfileCount,
     uint EdgeFlagBytes,
     ulong SectionTableOffset,
-    uint SectionCount);
+    uint SectionCount,
+    OdrgBbox RequestedBbox)
+{
+    /// <summary>VersionMinor=1 以降で <see cref="RequestedBbox"/> が明示的に書き込まれる。</summary>
+    public bool HasRequestedBbox => VersionMinor >= OdrgFormat.VersionMinorRequestedBbox;
+}
 
 /// <summary>
 /// セクションテーブルエントリ（24 byte 固定、仕様書 §2）。
@@ -181,6 +186,20 @@ internal sealed class OdrgSectionDirectory
                 $"Unexpected SectionCount: {sectionCount}, expected 9 (Phase 3 v1.0 spec).");
         }
 
+        OdrgBbox requestedBbox;
+        if (minor >= OdrgFormat.VersionMinorRequestedBbox)
+        {
+            double rMinLon = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(88, 8));
+            double rMinLat = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(96, 8));
+            double rMaxLon = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(104, 8));
+            double rMaxLat = BinaryPrimitives.ReadDoubleLittleEndian(span.Slice(112, 8));
+            requestedBbox = new OdrgBbox(rMinLon, rMinLat, rMaxLon, rMaxLat);
+        }
+        else
+        {
+            requestedBbox = default;
+        }
+
         return new OdrgFileHeader(
             VersionMajor: major,
             VersionMinor: minor,
@@ -191,7 +210,8 @@ internal sealed class OdrgSectionDirectory
             ProfileCount: profileCount,
             EdgeFlagBytes: edgeFlagBytes,
             SectionTableOffset: sectionTableOffset,
-            SectionCount: sectionCount);
+            SectionCount: sectionCount,
+            RequestedBbox: requestedBbox);
     }
 
     private static ImmutableArray<OdrgSectionEntry> ParseSectionTable(ReadOnlySpan<byte> span, OdrgFileHeader header)

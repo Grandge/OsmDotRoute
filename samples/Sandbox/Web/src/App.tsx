@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MapView, type MapViewHandle } from './components/MapView';
 import { DownloadPanel } from './components/DownloadPanel';
 import { ExtractPanel } from './components/ExtractPanel';
+import { RoutePanel, type PickMode } from './components/RoutePanel';
 import { panelStyle } from './components/styles';
-import { fetchVersion, fetchRoadNetwork, fetchCacheDir, type VersionResponse, type ExtractCompleteEvent, type StatsResponse } from './api/client';
+import { fetchVersion, fetchRoadNetwork, fetchCacheDir, type VersionResponse, type ExtractCompleteEvent, type StatsResponse, type RouteResponse } from './api/client';
 import { WEB_VERSION } from './version';
 
 export function App() {
@@ -15,6 +16,11 @@ export function App() {
   const [bbox, setBbox] = useState<[number, number, number, number] | null>(null);
   const [graphLoaded, setGraphLoaded] = useState(false);
   const [cacheDir, setCacheDir] = useState('');
+  const [availableProfiles, setAvailableProfiles] = useState<string[]>([]);
+
+  const [pickMode, setPickMode] = useState<PickMode>('idle');
+  const [from, setFrom] = useState<[number, number] | null>(null);
+  const [to, setTo] = useState<[number, number] | null>(null);
 
   useEffect(() => {
     fetchVersion().then(setVersion).catch((e: Error) => setError(e.message));
@@ -43,6 +49,10 @@ export function App() {
     mapRef.current?.setMeshGrid(null);
     mapRef.current?.setRestrictions(null);
     setGraphLoaded(false);
+    setAvailableProfiles([]);
+    setFrom(null);
+    setTo(null);
+    setPickMode('idle');
   }
 
   function handleBboxManualChange(newBbox: [number, number, number, number]) {
@@ -68,12 +78,52 @@ export function App() {
     }
   }
 
-  async function handleExtracted(_result: ExtractCompleteEvent) {
+  async function handleExtracted(result: ExtractCompleteEvent) {
+    setAvailableProfiles(result.profileNames);
     await loadRoadNetwork();
   }
 
   async function handleLoaded(stats: StatsResponse) {
+    setAvailableProfiles(stats.profileNames);
+    const loadedBbox: [number, number, number, number] = [
+      stats.southWest.longitude,
+      stats.southWest.latitude,
+      stats.northEast.longitude,
+      stats.northEast.latitude,
+    ];
+    setBbox(loadedBbox);
+    mapRef.current?.setBboxRect(loadedBbox);
     await loadRoadNetwork(stats);
+  }
+
+  function handleMapClick(lngLat: { lng: number; lat: number }) {
+    if (pickMode === 'pickFrom') {
+      const pt: [number, number] = [lngLat.lat, lngLat.lng];
+      setFrom(pt);
+      setPickMode('idle');
+      mapRef.current?.setRouteEndpoints({ from: pt, to: to ?? undefined });
+    } else if (pickMode === 'pickTo') {
+      const pt: [number, number] = [lngLat.lat, lngLat.lng];
+      setTo(pt);
+      setPickMode('idle');
+      mapRef.current?.setRouteEndpoints({ from: from ?? undefined, to: pt });
+    }
+  }
+
+  function handleRouteResult(result: RouteResponse) {
+    if (result.found && result.geometry) {
+      mapRef.current?.setRoute(result.geometry);
+    } else {
+      mapRef.current?.setRoute(null);
+    }
+  }
+
+  function handleClearRoute() {
+    setFrom(null);
+    setTo(null);
+    setPickMode('idle');
+    mapRef.current?.setRoute(null);
+    mapRef.current?.setRouteEndpoints({});
   }
 
   return (
@@ -100,21 +150,29 @@ export function App() {
         <ExtractPanel
           pbfPath={pbfPath}
           bbox={bbox}
+          availableProfiles={availableProfiles}
           onExtracted={handleExtracted}
           onLoaded={handleLoaded}
           cacheDir={cacheDir}
         />
 
-        {graphLoaded && (
-          <div style={panelStyle}>
-            <div style={{ fontSize: 12, color: '#059669' }}>
-              Graph loaded — road network displayed on map
-            </div>
-          </div>
-        )}
+        <RoutePanel
+          graphLoaded={graphLoaded}
+          availableProfiles={availableProfiles}
+          from={from}
+          to={to}
+          pickMode={pickMode}
+          onSetPickMode={setPickMode}
+          onRouteResult={handleRouteResult}
+          onClearRoute={handleClearRoute}
+        />
       </div>
       <div style={mapAreaStyle}>
-        <MapView ref={mapRef} onBboxDrawn={handleBboxDrawn} />
+        <MapView
+          ref={mapRef}
+          onBboxDrawn={handleBboxDrawn}
+          onMapClick={handleMapClick}
+        />
       </div>
     </div>
   );
