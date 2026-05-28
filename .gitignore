@@ -37,5 +37,8 @@ samples/Data/pbf/
 appsettings.local.json
 *.local.json
 
+# Node.js
+node_modules/
+
 # Claude Code working files
 .claude/

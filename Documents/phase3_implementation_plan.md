@@ -203,7 +203,29 @@
 - **本番運用想定はしない**（試用・デモ専用、設計書 §10.x で運用方針を明記）
 - **PBF ダウンロード元は Geofabrik 固定**（§5.5-30 ユーザー判断、ODbL 表記必須）
 
-### 3.9 OSS 公開準備（REQ-PKG-003 / REQ-LIC-004）
+### 3.9 GitHub Pages デモ（Blazor WASM、3I 完了後）
+
+**位置付け**：Sandbox（3I）はローカル実行前提だが、OSS 公開時に「インストール不要で即体験」できるブラウザデモを GitHub Pages に配置する。Sandbox のサブセット機能を **Blazor WebAssembly** で提供する。
+
+**GitHub Pages で可能な機能**：
+
+| 機能 | 可否 | 理由 |
+| --- | --- | --- |
+| 経路計算（事前ビルド `.odrg`） | ○ | C# ルーティングエンジンを WASM 化、`.odrg` を静的アセットとして同梱 |
+| メッシュ / ポリゴン制約 + Re-Route | ○ | 制約管理もクライアント側で完結 |
+| PBF ダウンロード | × | Geofabrik は CORS 非対応、ブラウザからの直接取得不可 |
+| Extractor（PBF → .odrg） | × | WASM 環境での大規模 PBF パースは現実的でない |
+
+**構成案**：
+
+- `samples/Sandbox.Wasm/`（Blazor WebAssembly プロジェクト）
+- 事前ビルド済み `.odrg`（津島市等の小規模データ）を `wwwroot/` に同梱
+- GitHub Actions で `dotnet publish` → `gh-pages` ブランチへデプロイ
+- Sandbox（3I）の Web コンポーネント（MapView / RoutePanel / MeshGridPanel / PolygonEditorPanel）を Blazor interop で流用
+
+**3I との関係**：3I のローカル Sandbox を先に完成させ、そのコア機能（Router + 制約）の WASM 化を本ステップで実施。3I の設計を WASM 前提にすると複雑度が跳ね上がるため、分離して段階的に対応する。
+
+### 3.10 OSS 公開準備（REQ-PKG-003 / REQ-LIC-004）
 
 - GitHub 個人アカウント上で公開可能な状態を整備：
   - `README.md`：プロジェクト概要 / インストール手順 / クイックスタート / アーキテクチャ図 / Phase 1〜3 経緯 / ライセンス / **§3.9.1 Itinero 比較ドキュメントへのリンク**
@@ -215,7 +237,7 @@
 - 公開判断は本ステップ完了 → ユーザー判断（REQ-PKG-002 の解除を Phase 3 確定で実施）
 - **エッジフラグ 14 bit の運用上不要な bit の剪定判断**もここで実施（Phase 2 §5.5-4「できるだけ多く採用、運用上不要と判断した時点で削る」方針、Phase 3 ステップ 3A〜3F で使われなかった bit を v0.3 リリースノートに記載のうえ予約化）
 
-#### 3.9.1 Itinero 比較ドキュメントの構成案（`Documents/comparison_with_itinero.md`）
+#### 3.10.1 Itinero 比較ドキュメントの構成案（`Documents/comparison_with_itinero.md`）
 
 OsmDotRoute は Itinero の単純代替ではなく**動的制約に特化したルーティングライブラリ**である。利用者が「自分のユースケースに OsmDotRoute / Itinero どちらが向くか」を判断できる、フェアな比較ドキュメントを Phase 3 完了時点で執筆する。
 
@@ -445,7 +467,8 @@ OsmDotRoute.Itinero              ← 削除
 | 3F | 親プロジェクト統合・パリティ検証（旧 Phase 1 ステップ 16、`OsmDotRoute` v0.3.x へ差替、`Route.Shape` 破壊変更対応、89 ペア経路結果 ±10% 以内、KSJ GML 制約動作確認） | — | 未着手 |
 | 3G | 都道府県単位ベンチ（Phase 1 §18.2 リベンジ、愛知県全域 PBF から `.odrg` 抽出、経路計算スループット実測、`.odrg` サイズ実測） | — | 未着手 |
 | 3I | **ユーザー試用デモツール `OsmDotRoute.Sandbox` 新設**（5 サブステップ 3I.1〜3I.5：プロジェクト雛形 → PBF DL + bbox → `.odrg` 抽出統合 → ルート探査 UI → メッシュ / ポリゴン制約付与。`samples/Sandbox/Server` + `samples/Sandbox/Web` 新設、MapVerifier 構成踏襲、ローカル限定運用） | （§3.8 新規） | 未着手 |
-| 3H | ユーザー検証・Phase 3 確定（OSS 公開準備：README / LICENSE / CI 整備、ODbL ガイドライン、**`Documents/comparison_with_itinero.md` 執筆 + README リンク（§3.9.1 構成案）**、**Sandbox 起動方法を README にクイックスタートとして掲載**、エッジフラグ運用観察結果記録、Phase 3 v0.3.0 タグ判断、REQ-PKG-002 解除判断） | REQ-PKG-003, REQ-LIC-004 | 未着手 |
+| 3J | **GitHub Pages デモ（Blazor WASM）**（Sandbox のサブセット機能を Blazor WebAssembly 化。事前ビルド `.odrg` 同梱、経路計算 + メッシュ/ポリゴン制約をブラウザ内実行。PBF DL / Extractor は対象外。GitHub Actions → `gh-pages` デプロイ） | （§3.9 新規） | 未着手 |
+| 3H | ユーザー検証・Phase 3 確定（OSS 公開準備：README / LICENSE / CI 整備、ODbL ガイドライン、**`Documents/comparison_with_itinero.md` 執筆 + README リンク（§3.10.1 構成案）**、**Sandbox 起動方法を README にクイックスタートとして掲載**、エッジフラグ運用観察結果記録、Phase 3 v0.3.0 タグ判断、REQ-PKG-002 解除判断） | REQ-PKG-003, REQ-LIC-004 | 未着手 |
 
 各ステップ完了時に **ユーザー報告 → 承認 → 次ステップ着手** のサイクルを厳守（CLAUDE.md ルール、Phase 1 / Phase 2 と同様）。
 
@@ -458,7 +481,8 @@ OsmDotRoute.Itinero              ← 削除
 - 3E → 3F：親プロ統合前にライブラリ性能を確定（親プロ統合で性能未達が発覚した場合に対応難）
 - 3F → 3G：親プロ統合で実用性確認後、都道府県単位ベンチで負荷上限確認
 - 3G → 3I：Sandbox は 3A〜3G の成果物（NativeRoadGraph / 新プロファイル / Itinero 撤去後 API / Extractor）を一通り利用するため、コア機能とベンチが揃った後に着手
-- 3I → 3H：OSS 公開準備（3H）の README で Sandbox 起動方法 / スクリーンショット / GIF を載せるため、Sandbox 完成後に着手
+- 3I → 3J：GitHub Pages デモ（3J）は Sandbox（3I）のサブセットを WASM 化するため、3I 完了後に着手
+- 3J → 3H：OSS 公開準備（3H）の README で Sandbox 起動方法 + GitHub Pages デモ URL / スクリーンショット / GIF を載せるため、3J 完成後に着手
 
 ---
 

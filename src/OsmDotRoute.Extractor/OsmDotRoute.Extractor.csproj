@@ -21,6 +21,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="OsmDotRoute.Tests" />
     <InternalsVisibleTo Include="MapVerifier.Server" />
+    <InternalsVisibleTo Include="Sandbox.Server" />
   </ItemGroup>
 
 </Project>
