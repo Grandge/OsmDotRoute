@@ -38,3 +38,17 @@ public sealed record RouteRequest(double FromLat, double FromLon, double ToLat, 
 public sealed record RouteResponse(bool Found, double DistanceM, double DurationSec, GeoJsonLineString? Geometry);
 
 public sealed record GeoJsonLineString(string Type, double[][] Coordinates);
+
+public sealed record PolygonRestrictionRequest(
+    string? Kind,
+    string? DifficultyType,
+    CoordinateDto[]? OuterBoundary,
+    string? Tag);
+
+public sealed record MeshRestrictionRequest(
+    string? Kind,
+    string? DifficultyType,
+    long[]? MeshCodes,
+    string? Tag);
+
+public sealed record RestrictionIdResponse(Guid Id);

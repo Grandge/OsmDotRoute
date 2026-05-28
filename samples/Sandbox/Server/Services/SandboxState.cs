@@ -7,6 +7,7 @@ public sealed class SandboxState
     private readonly object _lock = new();
     private RouterDb? _routerDb;
     private Router? _router;
+    private RestrictedAreaService? _restrictions;
     private string? _loadedOdrgPath;
     private string[] _profileNames = [];
 
@@ -30,20 +31,27 @@ public sealed class SandboxState
         get { lock (_lock) { return _router; } }
     }
 
+    public RestrictedAreaService? Restrictions
+    {
+        get { lock (_lock) { return _restrictions; } }
+    }
+
     public string[] ProfileNames
     {
         get { lock (_lock) { return (string[])_profileNames.Clone(); } }
     }
 
-    public void Set(RouterDb routerDb, Router router, string odrgPath, string[] profileNames)
+    public void Set(RouterDb routerDb, Router router, RestrictedAreaService restrictions, string odrgPath, string[] profileNames)
     {
         ArgumentNullException.ThrowIfNull(routerDb);
         ArgumentNullException.ThrowIfNull(router);
+        ArgumentNullException.ThrowIfNull(restrictions);
         ArgumentNullException.ThrowIfNull(profileNames);
         lock (_lock)
         {
             _routerDb = routerDb;
             _router = router;
+            _restrictions = restrictions;
             _loadedOdrgPath = odrgPath;
             _profileNames = profileNames;
         }

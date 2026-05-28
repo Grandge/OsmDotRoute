@@ -112,6 +112,96 @@ export async function deleteCachedPbf(region: string): Promise<void> {
   }
 }
 
+// --- Mesh / Restrictions ---
+
+export type Kind = 'block' | 'difficulty';
+
+export interface RestrictionItem {
+  id: string;
+  kind: Kind;
+  difficultyType: string | null;
+  shapeType: 'polygon' | 'mesh';
+  outerBoundary: CoordinateDto[] | null;
+  meshCodes: number[] | null;
+  tag: string | null;
+}
+
+export interface CoordinateDto {
+  latitude: number;
+  longitude: number;
+}
+
+export async function fetchMeshGrid(
+  sw: [number, number],
+  ne: [number, number],
+  level: '1km' | '500m' | '250m',
+): Promise<GeoJSON.FeatureCollection> {
+  const qs = new URLSearchParams({
+    swLat: sw[0].toString(),
+    swLon: sw[1].toString(),
+    neLat: ne[0].toString(),
+    neLon: ne[1].toString(),
+    level,
+  });
+  const res = await fetch(`/api/mesh/grid?${qs}`);
+  if (!res.ok) {
+    let detail: ErrorResponse | undefined;
+    try { detail = (await res.json()) as ErrorResponse; } catch { /* ignore */ }
+    throw new Error(detail?.message ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as GeoJSON.FeatureCollection;
+}
+
+export async function registerPolygonRestriction(req: {
+  kind: Kind;
+  difficultyType?: string;
+  outerBoundary: CoordinateDto[];
+  tag?: string;
+}): Promise<{ id: string }> {
+  return handle<{ id: string }>(
+    await fetch('/api/restrictions/polygon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
+export async function registerMeshRestriction(req: {
+  kind: Kind;
+  difficultyType?: string;
+  meshCodes: number[];
+  tag?: string;
+}): Promise<{ id: string }> {
+  return handle<{ id: string }>(
+    await fetch('/api/restrictions/mesh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    }),
+  );
+}
+
+export async function listRestrictions(): Promise<{ items: RestrictionItem[] }> {
+  return handle<{ items: RestrictionItem[] }>(await fetch('/api/restrictions'));
+}
+
+export async function fetchRestrictionsGeoJson(): Promise<GeoJSON.FeatureCollection> {
+  const res = await fetch('/api/restrictions/geojson');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as GeoJSON.FeatureCollection;
+}
+
+export async function deleteRestriction(id: string): Promise<void> {
+  const res = await fetch(`/api/restrictions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export async function clearAllRestrictions(): Promise<void> {
+  const res = await fetch('/api/restrictions', { method: 'DELETE' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
 // --- Browse ---
 
 export interface BrowseResult {

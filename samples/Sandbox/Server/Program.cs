@@ -41,5 +41,7 @@ app.MapGraphEndpoints();
 app.MapRouteEndpoints();
 app.MapLoadEndpoints();
 app.MapBrowseEndpoints();
+app.MapMeshEndpoints();
+app.MapRestrictionEndpoints();
 
 app.Run();

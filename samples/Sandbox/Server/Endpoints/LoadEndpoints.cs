@@ -29,8 +29,9 @@ public static class LoadEndpoints
                 var routerDb = loaded.RouterDb;
                 var meta = loaded.Meta;
                 var profileNames = meta.ProfileTable.ProfileNames;
-                var router = new Router(routerDb);
-                state.Set(routerDb, router, req.OdrgPath, profileNames);
+                var restrictions = new RestrictedAreaService();
+                var router = new Router(routerDb, restrictions);
+                state.Set(routerDb, router, restrictions, req.OdrgPath, profileNames);
 
                 var stats = routerDb.GetStatistics();
                 var (swLat, swLon, neLat, neLon) = ResolveBounds(meta, stats);

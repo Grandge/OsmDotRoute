@@ -106,9 +106,10 @@ public static class ExtractEndpoints
                 await WriteSseAsync(ctx, new { type = "phase", phase = "loading", message = "Loading .odrg into router..." });
 
                 var routerDb = await Task.Run(() => RouterDb.LoadFromOdrg(odrgPath), ctx.RequestAborted);
-                var router = new Router(routerDb);
+                var restrictions = new RestrictedAreaService();
+                var router = new Router(routerDb, restrictions);
                 var bakedProfileNames = result.ProfileTable.ProfileNames.ToArray();
-                state.Set(routerDb, router, odrgPath, bakedProfileNames);
+                state.Set(routerDb, router, restrictions, odrgPath, bakedProfileNames);
 
                 var stats = routerDb.GetStatistics();
                 var fileSize = new FileInfo(odrgPath).Length;

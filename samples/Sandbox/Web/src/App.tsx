@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import type maplibregl from 'maplibre-gl';
 import { MapView, type MapViewHandle } from './components/MapView';
 import { DownloadPanel } from './components/DownloadPanel';
 import { ExtractPanel } from './components/ExtractPanel';
 import { RoutePanel, type PickMode } from './components/RoutePanel';
+import { MeshGridPanel } from './components/MeshGridPanel';
+import { PolygonEditorPanel } from './components/PolygonEditorPanel';
+import { RestrictionListPanel } from './components/RestrictionListPanel';
 import { panelStyle } from './components/styles';
-import { fetchVersion, fetchRoadNetwork, fetchCacheDir, type VersionResponse, type ExtractCompleteEvent, type StatsResponse, type RouteResponse } from './api/client';
+import {
+  fetchVersion, fetchRoadNetwork, fetchCacheDir, fetchRestrictionsGeoJson,
+  type VersionResponse, type ExtractCompleteEvent, type StatsResponse, type RouteResponse,
+} from './api/client';
 import { WEB_VERSION } from './version';
 
 export function App() {
@@ -21,6 +28,13 @@ export function App() {
   const [pickMode, setPickMode] = useState<PickMode>('idle');
   const [from, setFrom] = useState<[number, number] | null>(null);
   const [to, setTo] = useState<[number, number] | null>(null);
+
+  // メッシュ / ポリゴン / 制約
+  const [mapBounds, setMapBounds] = useState<{ sw: [number, number]; ne: [number, number] } | null>(null);
+  const [selectedMeshCode, setSelectedMeshCode] = useState<number | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const [vertices, setVertices] = useState<[number, number][]>([]);
+  const [restrictionsNonce, setRestrictionsNonce] = useState(0);
 
   useEffect(() => {
     fetchVersion().then(setVersion).catch((e: Error) => setError(e.message));
@@ -48,11 +62,15 @@ export function App() {
     mapRef.current?.setRouteEndpoints({});
     mapRef.current?.setMeshGrid(null);
     mapRef.current?.setRestrictions(null);
+    mapRef.current?.setPolygonDraft([]);
     setGraphLoaded(false);
     setAvailableProfiles([]);
     setFrom(null);
     setTo(null);
     setPickMode('idle');
+    setSelectedMeshCode(null);
+    setDrawing(false);
+    setVertices([]);
   }
 
   function handleBboxManualChange(newBbox: [number, number, number, number]) {
@@ -76,6 +94,9 @@ export function App() {
     } catch {
       // Road network display is optional
     }
+    // 新しいグラフをロードしたら制約表示をリセット（サーバー側も新しい RestrictedAreaService）
+    mapRef.current?.setRestrictions(null);
+    setRestrictionsNonce((n) => n + 1);
   }
 
   async function handleExtracted(result: ExtractCompleteEvent) {
@@ -96,26 +117,40 @@ export function App() {
     await loadRoadNetwork(stats);
   }
 
-  function handleMapClick(lngLat: { lng: number; lat: number }) {
+  function handleMapClick(lngLat: { lng: number; lat: number }, feature: maplibregl.MapGeoJSONFeature | null) {
+    // 1. ポリゴン描画を最優先
+    if (drawing) {
+      setVertices((v) => {
+        const nv: [number, number][] = [...v, [lngLat.lng, lngLat.lat]];
+        mapRef.current?.setPolygonDraft(nv);
+        return nv;
+      });
+      return;
+    }
+    // 2. ルートピックモード
     if (pickMode === 'pickFrom') {
       const pt: [number, number] = [lngLat.lat, lngLat.lng];
       setFrom(pt);
       setPickMode('idle');
       mapRef.current?.setRouteEndpoints({ from: pt, to: to ?? undefined });
-    } else if (pickMode === 'pickTo') {
+      return;
+    }
+    if (pickMode === 'pickTo') {
       const pt: [number, number] = [lngLat.lat, lngLat.lng];
       setTo(pt);
       setPickMode('idle');
       mapRef.current?.setRouteEndpoints({ from: from ?? undefined, to: pt });
+      return;
+    }
+    // 3. メッシュ選択
+    const meshCode = feature?.properties?.meshCode;
+    if (meshCode != null) {
+      setSelectedMeshCode(Number(meshCode));
     }
   }
 
   function handleRouteResult(result: RouteResponse) {
-    if (result.found && result.geometry) {
-      mapRef.current?.setRoute(result.geometry);
-    } else {
-      mapRef.current?.setRoute(null);
-    }
+    mapRef.current?.setRoute(result.found && result.geometry ? result.geometry : null);
   }
 
   function handleClearRoute() {
@@ -124,6 +159,49 @@ export function App() {
     setPickMode('idle');
     mapRef.current?.setRoute(null);
     mapRef.current?.setRouteEndpoints({});
+  }
+
+  // --- メッシュ ---
+  function handleMeshGridFetched(fc: GeoJSON.FeatureCollection | null) {
+    mapRef.current?.setMeshGrid(fc);
+  }
+
+  async function refreshRestrictions() {
+    setRestrictionsNonce((n) => n + 1);
+    try {
+      const geojson = await fetchRestrictionsGeoJson();
+      mapRef.current?.setRestrictions(geojson);
+    } catch {
+      // optional
+    }
+  }
+
+  // --- ポリゴン ---
+  function handleStartDrawing() {
+    setDrawing(true);
+    setVertices([]);
+    mapRef.current?.setPolygonDraft([]);
+  }
+
+  function handleCancelDrawing() {
+    setDrawing(false);
+    setVertices([]);
+    mapRef.current?.setPolygonDraft([]);
+  }
+
+  function handleUndoVertex() {
+    setVertices((v) => {
+      const nv = v.slice(0, -1);
+      mapRef.current?.setPolygonDraft(nv);
+      return nv;
+    });
+  }
+
+  function handlePolygonRegistered() {
+    setDrawing(false);
+    setVertices([]);
+    mapRef.current?.setPolygonDraft([]);
+    void refreshRestrictions();
   }
 
   return (
@@ -166,12 +244,37 @@ export function App() {
           onRouteResult={handleRouteResult}
           onClearRoute={handleClearRoute}
         />
+
+        {graphLoaded && (
+          <>
+            <MeshGridPanel
+              currentBounds={mapBounds}
+              selectedMeshCode={selectedMeshCode}
+              onMeshGridFetched={handleMeshGridFetched}
+              onMeshRegistered={refreshRestrictions}
+              onClearSelection={() => setSelectedMeshCode(null)}
+            />
+            <PolygonEditorPanel
+              drawing={drawing}
+              vertices={vertices}
+              onStartDrawing={handleStartDrawing}
+              onCancelDrawing={handleCancelDrawing}
+              onUndoVertex={handleUndoVertex}
+              onPolygonRegistered={handlePolygonRegistered}
+            />
+            <RestrictionListPanel
+              refreshNonce={restrictionsNonce}
+              onChanged={refreshRestrictions}
+            />
+          </>
+        )}
       </div>
       <div style={mapAreaStyle}>
         <MapView
           ref={mapRef}
           onBboxDrawn={handleBboxDrawn}
           onMapClick={handleMapClick}
+          onBoundsChange={(sw, ne) => setMapBounds({ sw, ne })}
         />
       </div>
     </div>
