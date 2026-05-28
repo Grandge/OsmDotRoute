@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Sandbox.Wasm</RootNamespace>
+    <AssemblyName>Sandbox.Wasm</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- J-1: 既定の IL インタプリタを採用。AOT (RunAOTCompilation) は有効化しない（性能不足が判明したら再検討） -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OsmDotRoute\OsmDotRoute.csproj" />
+  </ItemGroup>
+</Project>
