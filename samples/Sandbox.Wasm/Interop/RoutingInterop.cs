@@ -14,6 +14,7 @@ public partial class Interop
 {
     private static RouterDb? _routerDb;
     private static Router? _router;
+    private static RestrictedAreaService? _restrictions;
     private static string[] _profileNames = [];
 
     /// <summary>動作確認用。コアアセンブリ（OsmDotRoute）が WASM 上でロードできることを実証する。</summary>
@@ -33,9 +34,11 @@ public partial class Interop
     internal static string LoadOdrg(byte[] data)
     {
         var db = RouterDb.LoadFromOdrg(data);
+        var restrictions = new RestrictedAreaService();
 
         _routerDb = db;
-        _router = new Router(db);
+        _restrictions = restrictions;
+        _router = new Router(db, restrictions);
         _profileNames = [.. db.GetProfileNames()];
 
         return StatsJson();

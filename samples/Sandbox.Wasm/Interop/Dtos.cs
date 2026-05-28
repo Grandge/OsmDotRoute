@@ -24,6 +24,25 @@ internal sealed record RouteRequestDto(double FromLat, double FromLon, double To
 
 internal sealed record SnapRequestDto(double Lat, double Lon, string? Profile, float? SearchDistanceM);
 
+internal sealed record PolygonRestrictionRequestDto(
+    string? Kind, string? DifficultyType, CoordinateDto[]? OuterBoundary, string? Tag);
+
+internal sealed record MeshRestrictionRequestDto(
+    string? Kind, string? DifficultyType, long[]? MeshCodes, string? Tag);
+
+internal sealed record RestrictionIdDto(string Id);
+
+internal sealed record RestrictionItemDto(
+    string Id,
+    string Kind,
+    string? DifficultyType,
+    string ShapeType,
+    CoordinateDto[]? OuterBoundary,
+    long[]? MeshCodes,
+    string? Tag);
+
+internal sealed record RestrictionListDto(RestrictionItemDto[] Items);
+
 /// <summary>
 /// WASM 環境では既定でトリミングが効くため、リフレクションベースの
 /// <see cref="System.Text.Json.JsonSerializer"/> ではなくソース生成（trim/AOT 安全）を用いる。
@@ -34,4 +53,8 @@ internal sealed record SnapRequestDto(double Lat, double Lon, string? Profile, f
 [JsonSerializable(typeof(SnapDto))]
 [JsonSerializable(typeof(RouteRequestDto))]
 [JsonSerializable(typeof(SnapRequestDto))]
+[JsonSerializable(typeof(PolygonRestrictionRequestDto))]
+[JsonSerializable(typeof(MeshRestrictionRequestDto))]
+[JsonSerializable(typeof(RestrictionIdDto))]
+[JsonSerializable(typeof(RestrictionListDto))]
 internal partial class SandboxJsonContext : JsonSerializerContext;
