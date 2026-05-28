@@ -348,6 +348,21 @@ internal sealed class NativeRoadGraph : IRoadGraph
         return _profileSlotByName.ContainsKey(profileName);
     }
 
+    /// <summary><c>.odrg</c> にベイク済みのプロファイル名一覧（スロット順、Phase 3 ステップ 3J.3）。</summary>
+    internal IReadOnlyList<string> ProfileNames
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var names = new string[_profileSlotByName.Count];
+            foreach (var (name, slot) in _profileSlotByName)
+            {
+                names[slot] = name;
+            }
+            return names;
+        }
+    }
+
     internal OdrgEdge ReadEdge(uint edgeId)
     {
         if (edgeId >= _edgeCount)

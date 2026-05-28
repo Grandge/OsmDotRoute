@@ -95,4 +95,11 @@ public sealed class RouterDb
             bounds.SouthWest,
             bounds.NorthEast);
     }
+
+    /// <summary>
+    /// 読み込み済み <c>.odrg</c> にベイクされているプロファイル名一覧を取得する
+    /// （Phase 3 ステップ 3J.3、Sandbox / WASM ブリッジ用）。
+    /// </summary>
+    public IReadOnlyList<string> GetProfileNames()
+        => _graph is NativeRoadGraph ng ? ng.ProfileNames : Array.Empty<string>();
 }

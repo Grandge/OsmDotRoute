@@ -32,6 +32,8 @@ BenchmarkDotNet.Artifacts/
 samples/Data/aichi.odrg
 samples/Data/tokyo.odrg
 samples/Data/pbf/
+# Sandbox.Wasm にビルド時コピーされる .odrg（実体は samples/Data/tsushima.odrg）
+samples/Sandbox.Wasm/wwwroot/data/
 
 # Local config
 appsettings.local.json

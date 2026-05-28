@@ -11,13 +11,6 @@ namespace OsmDotRoute;
 /// </summary>
 public sealed class VehicleProfile
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        AllowTrailingCommas = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-    };
-
     private static readonly Lazy<VehicleProfile> CarLazy = new(() => LoadEmbedded("car.json"));
     private static readonly Lazy<VehicleProfile> PedestrianLazy = new(() => LoadEmbedded("pedestrian.json"));
     private static readonly Lazy<VehicleProfile> BicycleLazy = new(() => LoadEmbedded("bicycle.json"));
@@ -100,7 +93,7 @@ public sealed class VehicleProfile
         JsonProfileDefinition? def;
         try
         {
-            def = JsonSerializer.Deserialize<JsonProfileDefinition>(json, JsonOptions);
+            def = JsonSerializer.Deserialize(json, ProfileJsonContext.Default.JsonProfileDefinition);
         }
         catch (JsonException ex)
         {
@@ -130,7 +123,7 @@ public sealed class VehicleProfile
         JsonProfileDefinition? def;
         try
         {
-            def = JsonSerializer.Deserialize<JsonProfileDefinition>(stream, JsonOptions);
+            def = JsonSerializer.Deserialize(stream, ProfileJsonContext.Default.JsonProfileDefinition);
         }
         catch (JsonException ex)
         {

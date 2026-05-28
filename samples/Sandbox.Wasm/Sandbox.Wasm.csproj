@@ -12,4 +12,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OsmDotRoute\OsmDotRoute.csproj" />
   </ItemGroup>
+
+  <!-- 事前ビルド .odrg（J-3: 津島市のみ）を静的アセットとして同梱する。
+       実体は samples/Data/tsushima.odrg（git 追跡済み）を流用し、wwwroot へはビルド時コピー（git 追跡しない）。 -->
+  <Target Name="CopySandboxOdrg" BeforeTargets="ResolveStaticWebAssetsInputs;Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\Data\tsushima.odrg"
+          DestinationFiles="$(MSBuildProjectDirectory)\wwwroot\data\tsushima.odrg"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>
