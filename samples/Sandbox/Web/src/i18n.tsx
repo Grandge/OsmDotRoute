@@ -93,7 +93,12 @@ const en: Dict = {
   'pp.title': 'Load a pre-built .odrg',
   'pp.presetTsushima': 'Tsushima, Aichi',
   'pp.loading': 'Loading...',
+  'pp.upload': 'Upload .odrg',
+  'pp.uploadHint': 'Load an .odrg file you extracted locally',
   'pp.desc': 'Runs routing, restrictions, and Re-Route in the browser (no server).',
+  // Map overlay
+  'map.roadNetwork': 'Road network',
+  'map.roadNetworkError': 'Road network error',
   // FileBrowserDialog
   'fb.drive': 'Drive:',
   'fb.foldersPrefix': 'Folders: ',
@@ -194,7 +199,12 @@ const ja: Dict = {
   'pp.title': '事前ビルド .odrg を読み込む',
   'pp.presetTsushima': '津島市 (Tsushima, 愛知県)',
   'pp.loading': '読み込み中…',
+  'pp.upload': '.odrg をアップロード',
+  'pp.uploadHint': '自分でローカル抽出した .odrg ファイルを読み込む',
   'pp.desc': 'ブラウザ内で経路計算・制約・Re-Route を実行します（サーバー不要）。',
+  // Map overlay
+  'map.roadNetwork': '道路ネットワーク',
+  'map.roadNetworkError': '道路NW エラー',
   // FileBrowserDialog
   'fb.drive': 'ドライブ:',
   'fb.foldersPrefix': 'フォルダ: ',

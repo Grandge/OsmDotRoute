@@ -21,7 +21,7 @@ import { useI18n } from './i18n';
 const isWasm = import.meta.env.MODE === 'wasm';
 
 export function App() {
-  const { lang, setLang } = useI18n();
+  const { lang, setLang, t } = useI18n();
   const mapRef = useRef<MapViewHandle>(null);
   const [version, setVersion] = useState<VersionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +43,11 @@ export function App() {
   const [vertices, setVertices] = useState<[number, number][]>([]);
   const [restrictionsNonce, setRestrictionsNonce] = useState(0);
 
+  // 道路ネットワーク表示
+  const [roadNetworkData, setRoadNetworkData] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [roadNetworkVisible, setRoadNetworkVisible] = useState(true);
+  const [roadNetworkError, setRoadNetworkError] = useState<string | null>(null);
+
   useEffect(() => {
     fetchVersion().then(setVersion).catch((e: Error) => setError(e.message));
     fetchCacheDir().then((r) => setCacheDir(r.path)).catch(() => {});
@@ -63,6 +68,9 @@ export function App() {
 
   function handleClearBbox() {
     setBbox(null);
+    setRoadNetworkData(null);
+    setRoadNetworkVisible(true);
+    setRoadNetworkError(null);
     mapRef.current?.setBboxRect(null);
     mapRef.current?.setRoadNetwork(null);
     mapRef.current?.setRoute(null);
@@ -87,8 +95,11 @@ export function App() {
 
   async function loadRoadNetwork(bounds?: { southWest: { latitude: number; longitude: number }; northEast: { latitude: number; longitude: number } }) {
     setGraphLoaded(true);
+    setRoadNetworkError(null);
     try {
       const geojson = await fetchRoadNetwork();
+      setRoadNetworkData(geojson);
+      setRoadNetworkVisible(true);
       mapRef.current?.setRoadNetwork(geojson);
       if (bounds) {
         mapRef.current?.fitBounds([
@@ -98,12 +109,25 @@ export function App() {
       } else if (bbox) {
         mapRef.current?.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]]);
       }
-    } catch {
-      // Road network display is optional
+    } catch (e) {
+      console.error('[OsmDotRoute] Road network load failed:', e);
+      setRoadNetworkError(e instanceof Error ? e.message : String(e));
     }
     // 新しいグラフをロードしたら制約表示をリセット（サーバー側も新しい RestrictedAreaService）
     mapRef.current?.setRestrictions(null);
     setRestrictionsNonce((n) => n + 1);
+  }
+
+  function handleRoadNetworkToggle() {
+    setRoadNetworkVisible((prev) => {
+      const next = !prev;
+      if (next && roadNetworkData) {
+        mapRef.current?.setRoadNetwork(roadNetworkData);
+      } else {
+        mapRef.current?.setRoadNetwork(null);
+      }
+      return next;
+    });
   }
 
   async function handleExtracted(result: ExtractCompleteEvent) {
@@ -295,6 +319,22 @@ export function App() {
           onMapClick={handleMapClick}
           onBoundsChange={(sw, ne) => setMapBounds({ sw, ne })}
         />
+        {graphLoaded && (
+          <label style={mapOverlayToggleStyle}>
+            <input
+              type="checkbox"
+              checked={roadNetworkVisible}
+              onChange={handleRoadNetworkToggle}
+              style={{ marginRight: 5 }}
+            />
+            {t('map.roadNetwork')}
+          </label>
+        )}
+        {roadNetworkError && (
+          <div style={mapOverlayErrorStyle}>
+            {t('map.roadNetworkError')}: {roadNetworkError}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -323,6 +363,37 @@ const sidebarStyle: CSSProperties = {
 const mapAreaStyle: CSSProperties = {
   flex: 1,
   height: '100%',
+  position: 'relative',
+};
+
+const mapOverlayToggleStyle: CSSProperties = {
+  position: 'absolute',
+  top: 10,
+  left: 10,
+  zIndex: 10,
+  display: 'flex',
+  alignItems: 'center',
+  background: '#fff',
+  borderRadius: 6,
+  padding: '5px 10px',
+  fontSize: 13,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+  cursor: 'pointer',
+  userSelect: 'none',
+};
+
+const mapOverlayErrorStyle: CSSProperties = {
+  position: 'absolute',
+  top: 45,
+  left: 10,
+  zIndex: 10,
+  background: '#fee2e2',
+  color: '#991b1b',
+  borderRadius: 6,
+  padding: '5px 10px',
+  fontSize: 12,
+  maxWidth: 340,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
 };
 
 function langBtnStyle(active: boolean): CSSProperties {

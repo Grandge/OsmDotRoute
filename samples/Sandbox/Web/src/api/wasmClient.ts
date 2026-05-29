@@ -31,6 +31,13 @@ export async function loadOdrg(odrgFile: string): Promise<StatsResponse> {
   return JSON.parse(interop.LoadOdrg(bytes)) as StatsResponse;
 }
 
+// ユーザーがアップロードした .odrg ファイルをブラウザ内でロードする。
+export async function loadOdrgFile(file: File): Promise<StatsResponse> {
+  const interop = await getInterop();
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  return JSON.parse(interop.LoadOdrg(bytes)) as StatsResponse;
+}
+
 export async function fetchGraphStats(): Promise<StatsResponse> {
   const interop = await getInterop();
   return JSON.parse(interop.GetStats()) as StatsResponse;

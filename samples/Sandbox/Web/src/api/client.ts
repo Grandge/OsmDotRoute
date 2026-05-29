@@ -231,6 +231,12 @@ export async function loadOdrg(odrgPath: string): Promise<StatsResponse> {
   );
 }
 
+// .odrg ファイルのアップロードは WASM モード専用（wasmClient.ts が実装）。
+// サーバーモードでは PresetPanel 自体が非表示のため呼ばれないが、import 解決のためスタブを置く。
+export async function loadOdrgFile(_file: File): Promise<StatsResponse> {
+  throw new Error('.odrg のアップロードは WASM デモのみ利用できます。');
+}
+
 // --- Route ---
 
 export interface RouteResponse {
