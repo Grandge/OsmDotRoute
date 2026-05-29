@@ -14,12 +14,14 @@ import {
   type VersionResponse, type ExtractCompleteEvent, type StatsResponse, type RouteResponse,
 } from './api/client';
 import { WEB_VERSION } from './version';
+import { useI18n } from './i18n';
 
 // J-4a: --mode wasm でビルドした静的サイトはブラウザ内 WASM エンジンで動作する。
 // その場合 PBF ダウンロード / 抽出は不可のため該当パネルを隠し、事前ビルド .odrg プルダウンを出す。
 const isWasm = import.meta.env.MODE === 'wasm';
 
 export function App() {
+  const { lang, setLang } = useI18n();
   const mapRef = useRef<MapViewHandle>(null);
   const [version, setVersion] = useState<VersionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -213,7 +215,13 @@ export function App() {
     <div style={rootStyle}>
       <div style={sidebarStyle}>
         <div style={panelStyle}>
-          <h2 style={{ margin: 0, fontSize: 16 }}>OsmDotRoute Sandbox</h2>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 16 }}>OsmDotRoute Sandbox</h2>
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+              <button onClick={() => setLang('ja')} style={langBtnStyle(lang === 'ja')}>日本語</button>
+              <button onClick={() => setLang('en')} style={langBtnStyle(lang === 'en')}>EN</button>
+            </div>
+          </div>
           <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
             Web {WEB_VERSION}
             {isWasm ? <> / WASM (in-browser)</> : version && <> / Server {version.version}</>}
@@ -316,3 +324,15 @@ const mapAreaStyle: CSSProperties = {
   flex: 1,
   height: '100%',
 };
+
+function langBtnStyle(active: boolean): CSSProperties {
+  return {
+    padding: '2px 8px',
+    fontSize: 11,
+    cursor: 'pointer',
+    borderRadius: 4,
+    border: active ? '1px solid #2563eb' : '1px solid #d1d5db',
+    background: active ? '#2563eb' : '#fff',
+    color: active ? '#fff' : '#374151',
+  };
+}

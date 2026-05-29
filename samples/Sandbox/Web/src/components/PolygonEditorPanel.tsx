@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { registerPolygonRestriction, type Kind } from '../api/client';
 import { panelStyle, h2Style, btnStyle, inputStyle, errorStyle, BUILTIN_DIFFICULTIES } from './styles';
+import { useI18n } from '../i18n';
 
 interface Props {
   drawing: boolean;
@@ -19,6 +20,7 @@ export function PolygonEditorPanel({
   onUndoVertex,
   onPolygonRegistered,
 }: Props) {
+  const { t } = useI18n();
   const [kind, setKind] = useState<Kind>('block');
   const [difficulty, setDifficulty] = useState<string>('flooding');
   const [tag, setTag] = useState('');
@@ -27,7 +29,7 @@ export function PolygonEditorPanel({
 
   async function handleRegister() {
     if (vertices.length < 3) {
-      setError('ポリゴンは 3 頂点以上必要です。');
+      setError(t('pg.needThree'));
       return;
     }
     setBusy(true);
@@ -49,29 +51,29 @@ export function PolygonEditorPanel({
 
   return (
     <section style={panelStyle}>
-      <h2 style={h2Style}>ポリゴン作成</h2>
+      <h2 style={h2Style}>{t('pg.title')}</h2>
       {!drawing && (
-        <button onClick={onStartDrawing} style={btnStyle}>マウスで描画開始</button>
+        <button onClick={onStartDrawing} style={btnStyle}>{t('pg.startDraw')}</button>
       )}
       {drawing && (
         <>
           <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 6px' }}>
-            マップをクリックして頂点を追加 → 下のフォームで属性を入力 → 「登録」
+            {t('pg.hint')}
           </p>
-          <div style={{ fontSize: 13, marginBottom: 6 }}>頂点数: <strong>{vertices.length}</strong></div>
+          <div style={{ fontSize: 13, marginBottom: 6 }}>{t('pg.vertexCountPrefix')}<strong>{vertices.length}</strong></div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-            <button onClick={onUndoVertex} disabled={vertices.length === 0} style={btnStyle}>1 頂点取消</button>
-            <button onClick={onCancelDrawing} style={btnStyle}>キャンセル</button>
+            <button onClick={onUndoVertex} disabled={vertices.length === 0} style={btnStyle}>{t('pg.undoVertex')}</button>
+            <button onClick={onCancelDrawing} style={btnStyle}>{t('common.cancel')}</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 8px', fontSize: 13 }}>
-            <label>種別</label>
+            <label>{t('common.kind')}</label>
             <select value={kind} onChange={(e) => setKind(e.target.value as Kind)} style={inputStyle}>
-              <option value="block">block (進入不可)</option>
-              <option value="difficulty">difficulty (難所)</option>
+              <option value="block">{t('kind.block')}</option>
+              <option value="difficulty">{t('kind.difficulty')}</option>
             </select>
             {kind === 'difficulty' && (
               <>
-                <label>難所タイプ</label>
+                <label>{t('common.difficultyType')}</label>
                 <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} style={inputStyle}>
                   {BUILTIN_DIFFICULTIES.map((d) => (
                     <option key={d} value={d}>{d}</option>
@@ -79,7 +81,7 @@ export function PolygonEditorPanel({
                 </select>
               </>
             )}
-            <label>タグ (任意)</label>
+            <label>{t('common.tagOptional')}</label>
             <input value={tag} onChange={(e) => setTag(e.target.value)} style={inputStyle} />
           </div>
           <button
@@ -87,7 +89,7 @@ export function PolygonEditorPanel({
             disabled={busy || vertices.length < 3}
             style={{ ...btnStyle, marginTop: 8 }}
           >
-            {busy ? '登録中…' : '登録'}
+            {busy ? t('common.registering') : t('common.register')}
           </button>
           {error && <p style={errorStyle}>{error}</p>}
         </>

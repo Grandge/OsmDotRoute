@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { panelStyle } from './styles';
+import { useI18n } from '../i18n';
 import { FileBrowserDialog } from './FileBrowserDialog';
 import {
   fetchRegions,
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function DownloadPanel({ onPbfReady, bbox, onStartBboxDraw, onClearBbox, onBboxManualChange, onCacheDirChanged }: Props) {
+  const { t } = useI18n();
   const [regions, setRegions] = useState<RegionInfo[]>([]);
   const [cached, setCached] = useState<Map<string, CachedPbfInfo>>(new Map());
   const [selectedRegion, setSelectedRegion] = useState('chubu');
@@ -104,7 +106,7 @@ export function DownloadPanel({ onPbfReady, bbox, onStartBboxDraw, onClearBbox, 
   return (
     <>
       <div style={panelStyle}>
-        <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Save Location</h3>
+        <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>{t('dl.saveLocation')}</h3>
         <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
           <input
             type="text"
@@ -113,21 +115,21 @@ export function DownloadPanel({ onPbfReady, bbox, onStartBboxDraw, onClearBbox, 
             style={{ flex: 1, padding: '3px 6px', fontSize: 11, fontFamily: 'monospace' }}
           />
           <button onClick={() => setShowFolderBrowser(true)} style={{ padding: '3px 8px', fontSize: 11 }}>
-            Browse
+            {t('common.browse')}
           </button>
           <button
             onClick={() => handleChangeCacheDir()}
             disabled={!cacheDirChanged}
             style={{ padding: '3px 8px', fontSize: 11 }}
           >
-            Apply
+            {t('common.apply')}
           </button>
         </div>
         {cacheDirError && <div style={{ fontSize: 11, color: '#dc2626' }}>{cacheDirError}</div>}
       </div>
 
       <div style={panelStyle}>
-        <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>PBF Source</h3>
+        <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>{t('dl.pbfSource')}</h3>
 
         <div style={{ marginBottom: 8 }}>
           <select
@@ -149,14 +151,14 @@ export function DownloadPanel({ onPbfReady, bbox, onStartBboxDraw, onClearBbox, 
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
           <button onClick={handleDownload} disabled={downloading} style={{ padding: '4px 12px' }}>
-            {downloading ? 'Downloading...' : cachedInfo ? 'Re-download' : 'Download'}
+            {downloading ? t('dl.downloading') : cachedInfo ? t('dl.redownload') : t('dl.download')}
           </button>
           <button onClick={() => setShowPbfBrowser(true)} style={{ padding: '4px 12px' }}>
-            Browse PBF...
+            {t('dl.browsePbf')}
           </button>
           {cachedInfo && (
             <span style={{ fontSize: 12, color: '#059669' }}>
-              Cached: {formatBytes(cachedInfo.sizeBytes)}
+              {t('dl.cachedPrefix')}{formatBytes(cachedInfo.sizeBytes)}
             </span>
           )}
         </div>
@@ -176,30 +178,30 @@ export function DownloadPanel({ onPbfReady, bbox, onStartBboxDraw, onClearBbox, 
       </div>
 
       <div style={panelStyle}>
-        <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Bbox</h3>
+        <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>{t('dl.bbox')}</h3>
 
         <div style={{ display: 'grid', gridTemplateColumns: '50px 1fr 8px 50px 1fr', gap: '4px 4px', fontSize: 12, marginBottom: 8, alignItems: 'center' }}>
-          <label>West</label>
+          <label>{t('dir.west')}</label>
           <input type="number" step="0.01" value={bbox ? bbox[0].toFixed(4) : ''} onChange={(e) => { if (bbox) onBboxManualChange([parseFloat(e.target.value) || 0, bbox[1], bbox[2], bbox[3]]); }} style={{ width: '100%', padding: 2 }} />
           <div />
-          <label>East</label>
+          <label>{t('dir.east')}</label>
           <input type="number" step="0.01" value={bbox ? bbox[2].toFixed(4) : ''} onChange={(e) => { if (bbox) onBboxManualChange([bbox[0], bbox[1], parseFloat(e.target.value) || 0, bbox[3]]); }} style={{ width: '100%', padding: 2 }} />
-          <label>South</label>
+          <label>{t('dir.south')}</label>
           <input type="number" step="0.01" value={bbox ? bbox[1].toFixed(4) : ''} onChange={(e) => { if (bbox) onBboxManualChange([bbox[0], parseFloat(e.target.value) || 0, bbox[2], bbox[3]]); }} style={{ width: '100%', padding: 2 }} />
           <div />
-          <label>North</label>
+          <label>{t('dir.north')}</label>
           <input type="number" step="0.01" value={bbox ? bbox[3].toFixed(4) : ''} onChange={(e) => { if (bbox) onBboxManualChange([bbox[0], bbox[1], bbox[2], parseFloat(e.target.value) || 0]); }} style={{ width: '100%', padding: 2 }} />
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onStartBboxDraw} style={{ padding: '4px 12px' }}>Draw on map</button>
-          <button onClick={onClearBbox} disabled={!bbox} style={{ padding: '4px 12px' }}>Clear</button>
+          <button onClick={onStartBboxDraw} style={{ padding: '4px 12px' }}>{t('dl.drawOnMap')}</button>
+          <button onClick={onClearBbox} disabled={!bbox} style={{ padding: '4px 12px' }}>{t('common.clear')}</button>
         </div>
       </div>
 
       {showFolderBrowser && (
         <FileBrowserDialog
-          title="Select save folder"
+          title={t('dl.selectSaveFolder')}
           folderMode
           initialPath={cacheDir}
           rememberKey="sandbox-cache-dir"
@@ -210,7 +212,7 @@ export function DownloadPanel({ onPbfReady, bbox, onStartBboxDraw, onClearBbox, 
 
       {showPbfBrowser && (
         <FileBrowserDialog
-          title="Select PBF file"
+          title={t('dl.selectPbfFile')}
           pattern="*.osm.pbf;*.pbf"
           initialPath={cacheDir}
           rememberKey="sandbox-pbf-browse"

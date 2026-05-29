@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { browseDirectory, type BrowseResult } from '../api/client';
+import { useI18n } from '../i18n';
 
 interface Props {
   title?: string;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function FileBrowserDialog({ title = 'Select', pattern, rememberKey, initialPath, folderMode, onClose, onSelect }: Props) {
+  const { t } = useI18n();
   const [data, setData] = useState<BrowseResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +89,7 @@ export function FileBrowserDialog({ title = 'Select', pattern, rememberKey, init
 
         {data && data.drives.length > 0 && (
           <div style={driveRowStyle}>
-            <span style={{ fontSize: 12, color: '#6b7280' }}>Drive:</span>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>{t('fb.drive')}</span>
             {data.drives.map((d) => (
               <button key={d} onClick={() => load(d)} style={driveBtnStyle}>
                 {d.replace('\\', '')}
@@ -99,8 +101,8 @@ export function FileBrowserDialog({ title = 'Select', pattern, rememberKey, init
         {data && (
           <div style={statusRowStyle}>
             <span>
-              Folders: <strong>{data.directories.length}</strong>
-              {!folderMode && <> / Files: <strong>{data.files.length}</strong></>}
+              {t('fb.foldersPrefix')}<strong>{data.directories.length}</strong>
+              {!folderMode && <> / {t('fb.filesPrefix')}<strong>{data.files.length}</strong></>}
               {pattern && !folderMode && (
                 <> (<code style={{ background: '#e5e7eb', padding: '0 4px', borderRadius: 2 }}>{pattern}</code>)</>
               )}
@@ -109,7 +111,7 @@ export function FileBrowserDialog({ title = 'Select', pattern, rememberKey, init
         )}
 
         <div style={listStyle}>
-          {loading && <div style={messageStyle}>Loading...</div>}
+          {loading && <div style={messageStyle}>{t('fb.loading')}</div>}
           {error && <div style={{ ...messageStyle, color: '#dc2626' }}>{error}</div>}
           {!loading && data && (
             <>
@@ -145,21 +147,21 @@ export function FileBrowserDialog({ title = 'Select', pattern, rememberKey, init
           <input
             style={{ flex: 1, padding: '4px 6px', fontFamily: 'monospace', fontSize: 12 }}
             value={directInput}
-            placeholder="Paste path..."
+            placeholder={t('fb.pastePath')}
             onChange={(e) => setDirectInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void handleDirectInput(); }}
           />
-          <button onClick={handleDirectInput} style={btnStyle}>Go</button>
+          <button onClick={handleDirectInput} style={btnStyle}>{t('fb.go')}</button>
         </div>
 
         <div style={footerStyle}>
-          <button onClick={onClose} style={btnStyle}>Cancel</button>
+          <button onClick={onClose} style={btnStyle}>{t('common.cancel')}</button>
           <button
             onClick={() => folderMode ? commitFolder() : (selectedFile && commitFile(selectedFile))}
             disabled={!canSelect}
             style={{ ...btnStyle, background: canSelect ? '#16a34a' : '#9ca3af', color: '#fff' }}
           >
-            {folderMode ? 'Select this folder' : 'Select'}
+            {folderMode ? t('fb.selectThisFolder') : t('fb.select')}
           </button>
         </div>
       </div>

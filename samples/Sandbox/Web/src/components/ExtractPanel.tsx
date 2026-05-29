@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { panelStyle } from './styles';
+import { useI18n } from '../i18n';
 import { FileBrowserDialog } from './FileBrowserDialog';
 import { extractOdrg, loadOdrg, type ExtractCompleteEvent, type StatsResponse } from '../api/client';
 
@@ -15,6 +16,7 @@ interface Props {
 const PROFILES = ['car', 'pedestrian', 'bicycle', 'truck'] as const;
 
 export function ExtractPanel({ pbfPath, bbox, availableProfiles, onExtracted, onLoaded, cacheDir }: Props) {
+  const { t } = useI18n();
   const [selectedProfiles, setSelectedProfiles] = useState<Set<string>>(new Set(['car', 'pedestrian']));
 
   // ロード済み .odrg のプロファイルセットをチェックボックスに反映
@@ -47,7 +49,7 @@ export function ExtractPanel({ pbfPath, bbox, availableProfiles, onExtracted, on
     setError(null);
     setResult(null);
     setExtracting(true);
-    setPhase('Starting...');
+    setPhase(t('ex.starting'));
     try {
       const r = await extractOdrg(
         pbfPath,
@@ -94,16 +96,16 @@ export function ExtractPanel({ pbfPath, bbox, availableProfiles, onExtracted, on
 
   return (
     <div style={panelStyle}>
-      <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Extract / Load .odrg</h3>
+      <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>{t('ex.title')}</h3>
 
       {!ready && (
         <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>
-          {!pbfPath ? 'Select a PBF source first' : 'Draw a bbox on the map'}
+          {!pbfPath ? t('ex.selectPbfFirst') : t('ex.drawBboxFirst')}
         </div>
       )}
 
       <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 12, marginBottom: 4 }}>Profiles:</div>
+        <div style={{ fontSize: 12, marginBottom: 4 }}>{t('ex.profiles')}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {PROFILES.map((p) => (
             <label key={p} style={{ fontSize: 12, cursor: 'pointer' }}>
@@ -125,14 +127,14 @@ export function ExtractPanel({ pbfPath, bbox, availableProfiles, onExtracted, on
           disabled={!ready || extracting || loadingOdrg}
           style={{ padding: '4px 12px' }}
         >
-          {extracting ? 'Extracting...' : 'Extract'}
+          {extracting ? t('ex.extracting') : t('ex.extract')}
         </button>
         <button
           onClick={() => setShowOdrgBrowser(true)}
           disabled={extracting || loadingOdrg}
           style={{ padding: '4px 12px' }}
         >
-          {loadingOdrg ? 'Loading...' : 'Load .odrg...'}
+          {loadingOdrg ? t('ex.loading') : t('ex.loadOdrg')}
         </button>
       </div>
 
@@ -144,16 +146,16 @@ export function ExtractPanel({ pbfPath, bbox, availableProfiles, onExtracted, on
 
       {result && (
         <div style={{ fontSize: 12, color: '#059669' }}>
-          <div>Vertices: {result.vertexCount.toLocaleString()}</div>
-          <div>Edges: {result.edgeCount.toLocaleString()}</div>
-          {result.fileSizeBytes > 0 && <div>File: {formatBytes(result.fileSizeBytes)}</div>}
-          {result.extractSeconds > 0 && <div>Time: {result.extractSeconds.toFixed(1)}s</div>}
+          <div>{t('ex.verticesPrefix')}{result.vertexCount.toLocaleString()}</div>
+          <div>{t('ex.edgesPrefix')}{result.edgeCount.toLocaleString()}</div>
+          {result.fileSizeBytes > 0 && <div>{t('ex.filePrefix')}{formatBytes(result.fileSizeBytes)}</div>}
+          {result.extractSeconds > 0 && <div>{t('ex.timePrefix')}{result.extractSeconds.toFixed(1)}s</div>}
         </div>
       )}
 
       {showOdrgBrowser && (
         <FileBrowserDialog
-          title="Select .odrg file"
+          title={t('ex.selectOdrgFile')}
           pattern="*.odrg"
           initialPath={cacheDir}
           rememberKey="sandbox-odrg-browse"

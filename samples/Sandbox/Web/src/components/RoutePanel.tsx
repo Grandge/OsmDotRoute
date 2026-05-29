@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { panelStyle } from './styles';
+import { useI18n } from '../i18n';
 import { calculateRoute, type RouteResponse } from '../api/client';
 
 export type PickMode = 'idle' | 'pickFrom' | 'pickTo';
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function RoutePanel({ graphLoaded, availableProfiles, from, to, pickMode, onSetPickMode, onRouteResult, onClearRoute }: Props) {
+  const { t } = useI18n();
   const [profile, setProfile] = useState<string>(availableProfiles[0] ?? 'car');
 
   // Auto-select first available profile when the list changes
@@ -60,29 +62,29 @@ export function RoutePanel({ graphLoaded, availableProfiles, from, to, pickMode,
 
   return (
     <div style={panelStyle}>
-      <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Route</h3>
+      <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>{t('rt.title')}</h3>
 
       <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: '4px 6px', fontSize: 12, marginBottom: 8, alignItems: 'center' }}>
-        <label>From</label>
+        <label>{t('rt.from')}</label>
         <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
-          {from ? `${from[0].toFixed(5)}, ${from[1].toFixed(5)}` : '(click map)'}
+          {from ? `${from[0].toFixed(5)}, ${from[1].toFixed(5)}` : t('rt.clickMap')}
         </span>
         <button
           onClick={() => onSetPickMode(pickFromActive ? 'idle' : 'pickFrom')}
           style={{ ...pickBtnStyle, background: pickFromActive ? '#bbf7d0' : undefined }}
         >
-          {pickFromActive ? 'Picking...' : 'Pick'}
+          {pickFromActive ? t('rt.picking') : t('rt.pick')}
         </button>
 
-        <label>To</label>
+        <label>{t('rt.to')}</label>
         <span style={{ fontFamily: 'monospace', fontSize: 11 }}>
-          {to ? `${to[0].toFixed(5)}, ${to[1].toFixed(5)}` : '(click map)'}
+          {to ? `${to[0].toFixed(5)}, ${to[1].toFixed(5)}` : t('rt.clickMap')}
         </span>
         <button
           onClick={() => onSetPickMode(pickToActive ? 'idle' : 'pickTo')}
           style={{ ...pickBtnStyle, background: pickToActive ? '#fecaca' : undefined }}
         >
-          {pickToActive ? 'Picking...' : 'Pick'}
+          {pickToActive ? t('rt.picking') : t('rt.pick')}
         </button>
       </div>
 
@@ -97,10 +99,10 @@ export function RoutePanel({ graphLoaded, availableProfiles, from, to, pickMode,
           disabled={!from || !to || calculating}
           style={{ padding: '4px 12px' }}
         >
-          {calculating ? 'Calculating...' : result ? 'Re-Route' : 'Route'}
+          {calculating ? t('rt.calculating') : result ? t('rt.reroute') : t('rt.route')}
         </button>
         <button onClick={handleClear} disabled={!result && !from && !to} style={{ padding: '4px 12px' }}>
-          Clear
+          {t('common.clear')}
         </button>
       </div>
 
@@ -111,10 +113,10 @@ export function RoutePanel({ graphLoaded, availableProfiles, from, to, pickMode,
           {result.found ? (
             <div style={{ color: '#059669' }}>
               <div><strong>{(result.distanceM / 1000).toFixed(2)} km</strong> / <strong>{formatDuration(result.durationSec)}</strong></div>
-              <div style={{ color: '#6b7280', fontSize: 11 }}>Profile: {profile}</div>
+              <div style={{ color: '#6b7280', fontSize: 11 }}>{t('rt.profilePrefix')}{profile}</div>
             </div>
           ) : (
-            <div style={{ color: '#dc2626' }}>No route found</div>
+            <div style={{ color: '#dc2626' }}>{t('rt.noRoute')}</div>
           )}
         </div>
       )}
