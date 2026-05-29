@@ -103,11 +103,15 @@ public partial class Interop
     private static string StatsJson()
     {
         var s = _routerDb!.GetStatistics();
+        // RequestedBbox（ユーザー指定抽出範囲）を優先。way 拡張で FileBbox が広がる場合の補正。
+        var req = _routerDb!.GetRequestedBounds();
+        var sw = req.HasValue ? req.Value.SouthWest : s.SouthWest;
+        var ne = req.HasValue ? req.Value.NorthEast : s.NorthEast;
         var dto = new StatsDto(
             s.VertexCount,
             s.EdgeCount,
-            new CoordinateDto(s.SouthWest.Latitude, s.SouthWest.Longitude),
-            new CoordinateDto(s.NorthEast.Latitude, s.NorthEast.Longitude),
+            new CoordinateDto(sw.Latitude, sw.Longitude),
+            new CoordinateDto(ne.Latitude, ne.Longitude),
             _profileNames);
         return JsonSerializer.Serialize(dto, SandboxJsonContext.Default.StatsDto);
     }

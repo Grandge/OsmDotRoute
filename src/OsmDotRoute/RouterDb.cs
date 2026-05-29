@@ -102,4 +102,15 @@ public sealed class RouterDb
     /// </summary>
     public IReadOnlyList<string> GetProfileNames()
         => _graph is NativeRoadGraph ng ? ng.ProfileNames : Array.Empty<string>();
+
+    /// <summary>
+    /// 抽出要求時の bbox（RequestedBbox）を返す。ODRG v1.1+ で有効、それ未満は null。
+    /// <c>null</c> の場合は <see cref="GetStatistics"/> の bounds を表示用 bbox として使うこと。
+    /// </summary>
+    public (GeoCoordinate SouthWest, GeoCoordinate NorthEast)? GetRequestedBounds()
+    {
+        if (_graph is NativeRoadGraph ng && ng.RequestedBounds is { } rb)
+            return (rb.SouthWest, rb.NorthEast);
+        return null;
+    }
 }

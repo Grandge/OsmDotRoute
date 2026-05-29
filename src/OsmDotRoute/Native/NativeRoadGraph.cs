@@ -50,6 +50,7 @@ internal sealed class NativeRoadGraph : IRoadGraph
     private readonly uint _vertexCount;
     private readonly int _edgeCount;
     private readonly GeoBounds _bounds;
+    private readonly GeoBounds? _requestedBounds;
 
     // BAKED_PROFILE name → slot index
     private readonly Dictionary<string, int> _profileSlotByName;
@@ -120,6 +121,15 @@ internal sealed class NativeRoadGraph : IRoadGraph
             _bounds = new GeoBounds(
                 new GeoCoordinate(bbox.MinLat, bbox.MinLon),
                 new GeoCoordinate(bbox.MaxLat, bbox.MaxLon));
+
+            if (header.HasRequestedBbox)
+            {
+                var rb = header.RequestedBbox;
+                if (rb.MinLon < rb.MaxLon && rb.MinLat < rb.MaxLat)
+                    _requestedBounds = new GeoBounds(
+                        new GeoCoordinate(rb.MinLat, rb.MinLon),
+                        new GeoCoordinate(rb.MaxLat, rb.MaxLon));
+            }
         }
         catch
         {
@@ -153,6 +163,14 @@ internal sealed class NativeRoadGraph : IRoadGraph
     {
         ThrowIfDisposed();
         return _bounds;
+    }
+
+    /// <summary>
+    /// 抽出要求時の bbox（RequestedBbox）。v1.1 以降で有効、それ未満は null。
+    /// </summary>
+    internal GeoBounds? RequestedBounds
+    {
+        get { ThrowIfDisposed(); return _requestedBounds; }
     }
 
     /// <inheritdoc/>
