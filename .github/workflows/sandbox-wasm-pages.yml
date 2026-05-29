@@ -62,10 +62,10 @@ jobs:
         with:
           path: samples/Sandbox/Web/dist
 
-  # J-C: gh-pages 公開は 3H で REQ-PKG-002 解除と同時に `if: true` へ変更して有効化する。
+  # 3H: REQ-PKG-002 解除（リポジトリ public 化）に伴い有効化（2026-05-29）。
   deploy:
     needs: build
-    if: false
+    if: true
     runs-on: ubuntu-latest
     environment:
       name: github-pages
