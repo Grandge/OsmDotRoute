@@ -1,68 +1,49 @@
 # OsmDotRoute
 
+[English](README.en.md) | 日本語
+
 .NET ネイティブの OSM 経路計算ライブラリ。動的通行制限（進入不可・移動困難）に対応した
 Dijkstra ベースの経路探索を提供する。Itinero 1.x の後継として親プロジェクト
 「災害廃棄物処理シミュレーション」から派生したスピンオフ。
 
+事前抽出した独自バイナリ `.odrg` をランタイムで読み込み、シミュレーション実行中に
+通行制限を**追加・削除しながら経路を即時再計算**できることが最大の特長。
+
+> OsmDotRoute と Itinero の違い・向き不向きの詳細は
+> [比較・選定ガイド](Documents/comparison_with_itinero.md) を参照。
+
 ## 特長
 
-- **.NET 9 / pure C# 実装**、ホットパスは Itinero 由来の `RouterDb` グラフを利用
-- **動的制約**: ポリゴン・JIS X0410 メッシュコード・国土数値情報 KSJ アプリケーションスキーマ GML（A31 等）入力
-- **JSON 外部化されたプロファイル**: リビルドなしに通行可否・速度・難所反応を調整可能
+- **.NET 9 / pure C# 実装、ランタイム依存は System.* のみ**（外部 NuGet ゼロ）
+- **`.odrg` 独自グラフ形式**: `MemoryMappedFile` + `ReadOnlySpan<T>` でゼロコピー読込
+- **動的制約**: ポリゴン・JIS X0410 メッシュコード・国土数値情報 KSJ GML（A31 等）入力。再ビルドなしで次回計算へ即時反映
+- **JSON 外部化されたプロファイル**: 通行可否・速度・難所反応をリビルドなしに調整可能
+- **4 種の組込みプロファイル**: car / pedestrian / bicycle / truck（10t、日本道路法ベース）
 - **8 種の組込み難所タイプ**: 冠水・液状化・土砂崩れ・工事中・障害物・交通集中・積雪・凍結
 - **MIT License**
 
-## 現在のフェーズ
-
-**Phase 1 進行中**（ステップ 12 / 17）。
-
-| Phase | 目標 | 状態 |
-| --- | --- | --- |
-| Phase 0 | 要件定義 | 完了（2026-05-18） |
-| Phase 1 | 経路探索エンジン独自化（Itinero をデータ層として残す） | **進行中** |
-| Phase 2 | 中間グラフフォーマット策定、ランタイム Itinero 依存削除 | 未着手 |
-| Phase 3 | OSM PBF パーサー独自化、GitHub 個人アカウントで OSS 公開 | 未着手 |
-
-## インストール
-
-Phase 1 期間中は **ソース参照** での利用を想定しています（NuGet 公開は Phase 3 以降、REQ-PKG-001/004）。
-親プロジェクトから次のように参照してください。
-
-```xml
-<ProjectReference Include="path/to/OsmDotRoute/src/OsmDotRoute/OsmDotRoute.csproj" />
-<ProjectReference Include="path/to/OsmDotRoute/src/OsmDotRoute.Itinero/OsmDotRoute.Itinero.csproj" />
-```
-
-DI 統合を使う場合は加えて:
-
-```xml
-<ProjectReference Include="path/to/OsmDotRoute/src/OsmDotRoute.Extensions.DependencyInjection/OsmDotRoute.Extensions.DependencyInjection.csproj" />
-```
-
-## 最小利用サンプル
+## クイックスタート
 
 ```csharp
 using OsmDotRoute;
-using OsmDotRoute.Itinero;
 
-// 1. Itinero RouterDb から OsmDotRoute の RouterDb を構築
-var routerDb = ItineroRouterDbLoader.LoadFromFile("default.routerdb");
+// 1. 事前抽出した .odrg をロード（PBF も Itinero も不要）
+var routerDb = RouterDb.LoadFromOdrg(@"D:\odrg\tokyo.odrg");
 var router = new Router(routerDb);
 
-// 2. 東京駅 → 渋谷駅 を Car プロファイルで計算
+// 2. 東京駅 → 渋谷駅 を Car プロファイルで計算（GeoCoordinate は 緯度, 経度 の順）
 var route = router.Calculate(
     VehicleProfile.Car,
     new GeoCoordinate(35.681, 139.767),
     new GeoCoordinate(35.658, 139.745));
 
-if (route is null)
-{
-    Console.WriteLine("経路を計算できませんでした。");
-    return;
-}
-
-Console.WriteLine($"距離 {route.TotalDistanceM:F0} m, 所要時間 {route.TotalDurationSec:F0} s");
+Console.WriteLine(route is null
+    ? "経路を計算できませんでした。"
+    : $"距離 {route.TotalDistanceM:F0} m, 所要時間 {route.TotalDurationSec:F0} 秒");
 ```
+
+`.odrg` の作り方（PBF の準備 → 抽出）から、プロファイル指定・動的制約まで詳しくは
+**[使い方ガイド](Documents/usage_guide.md)** を参照。
 
 ## 動的制約の登録例
 
@@ -78,7 +59,7 @@ var polygon = new GeoPolygon(new[]
     new GeoCoordinate(35.66, 139.78),
     new GeoCoordinate(35.66, 139.76),
 });
-var blockId = restrictions.AddBlockArea(polygon, tag: "incident-2026-05-19");
+restrictions.AddBlockArea(polygon, tag: "incident-2026-05-19");
 
 // メッシュコードで難所エリア登録（冠水）
 restrictions.AddDifficultyArea(
@@ -96,7 +77,7 @@ restrictions.AddDifficultyAreaFromGmlFile(
     mapBounds: bounds,
     tag: "ksj-a31");
 
-// 一括削除
+// タグ単位で一括削除 → 次回計算から即時反映
 restrictions.RemoveByTag("typhoon-15");
 ```
 
@@ -106,7 +87,7 @@ restrictions.RemoveByTag("typhoon-15");
 using Microsoft.Extensions.DependencyInjection;
 using OsmDotRoute.Extensions.DependencyInjection;
 
-services.AddOsmDotRoute("default.routerdb");
+services.AddOsmDotRoute(@"D:\odrg\tokyo.odrg");
 
 // 取得側
 var router = serviceProvider.GetRequiredService<Router>();
@@ -117,11 +98,50 @@ var restrictions = serviceProvider.GetRequiredService<RestrictedAreaService>();
 `RestrictedAreaService` を共有することで、シミュレーション中に動的制約を変更すると
 次の `Router.Calculate` 呼び出しから即時反映されます（REQ-RST-012）。
 
+## 試用デモ（Sandbox）
+
+PBF ダウンロード → bbox 抽出 → 経路探査 → メッシュ／ポリゴン制約付与 → Re-Route までを
+ブラウザ UI で試せる試用デモを同梱（`samples/Sandbox`、ローカル限定運用）。
+
+コアエンジンを WebAssembly 化し、インストール不要でブラウザ内に完結する静的サイト版も用意:
+
+```powershell
+cd samples/Sandbox/Web ; npm run build:wasm
+```
+
+## インストール
+
+NuGet 公開前のため、現状は **ソース参照** での利用を想定しています。
+次のようにプロジェクト参照してください（ランタイムは System.* のみ依存）。
+
+```xml
+<ProjectReference Include="path/to/OsmDotRoute/src/OsmDotRoute/OsmDotRoute.csproj" />
+```
+
+DI 統合を使う場合は加えて:
+
+```xml
+<ProjectReference Include="path/to/OsmDotRoute/src/OsmDotRoute.Extensions.DependencyInjection/OsmDotRoute.Extensions.DependencyInjection.csproj" />
+```
+
+`.odrg` を生成する抽出ツール（`osmdotroute-extractor`）の使い方は
+[使い方ガイド §4](Documents/usage_guide.md#4-odrg-の作成方法) を参照。
+
+## 現在のフェーズ
+
+| Phase | 目標 | 状態 |
+| --- | --- | --- |
+| Phase 0 | 要件定義 | 完了（2026-05-18） |
+| Phase 1 | 経路探索エンジン独自化（Itinero をデータ層として利用） | 完了 |
+| Phase 2 | 中間グラフ形式 `.odrg` 策定 | 完了 |
+| Phase 3 | `.odrg` ランタイム化・Itinero 依存完全撤去・bicycle/truck・ベンチ・親プロ統合・デモ・OSS 公開準備 | **進行中（OSS 公開準備）** |
+
+ランタイムから Itinero 依存は撤去済み（System.* のみで完結）。
+
 ## バージョニング方針
 
 0.x 期間中は **マイナー版アップでの破壊的 API 変更を許容** します（REQ-API-008）。
-Phase 1 → Phase 2 移行時に独自グラフフォーマットと組み合わせて公開 API を整理する予定です。
-セマンティックバージョニング厳密適用は 1.0 リリース以降（Phase 3 完了後）から。
+セマンティックバージョニング厳密適用は 1.0 リリース以降から。
 
 ## 親プロジェクトとの関係
 
@@ -134,8 +154,12 @@ Phase 1 → Phase 2 移行時に独自グラフフォーマットと組み合わ
 
 [MIT License](LICENSE) — Copyright (c) 2026 Grandge.
 
+OSM データは ODbL です。`.odrg` を配布・公開する場合は「© OpenStreetMap contributors」の帰属表示が必要です。
+
 ## ドキュメント
 
+- [使い方ガイド](Documents/usage_guide.md) — PBF 準備 → `.odrg` 抽出 → 経路探査 → プロファイル → 実装例
+- [Itinero との比較・選定ガイド](Documents/comparison_with_itinero.md) — 設計思想・データ構造・性能・用途別の向き不向き
+- [`.odrg` バイナリ形式仕様](Documents/phase2_graph_format_spec.md)
 - [要件定義書](Documents/requirement_definition.md)
-- [Phase 1 設計書](Documents/phase1_design.md)
-- [Phase 1 実装計画書](Documents/phase1_implementation_plan.md)
+- [Phase 1 設計書](Documents/phase1_design.md) / [Phase 2 設計書](Documents/phase2_design.md) / [Phase 3 設計書](Documents/phase3_design.md)
