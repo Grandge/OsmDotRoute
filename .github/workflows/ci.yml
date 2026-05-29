@@ -1,0 +1,55 @@
+name: CI
+
+# Phase 3 ステップ 3H。コアライブラリとテストを Windows / Linux でビルド・テストし、
+# 配布ライブラリの NuGet pack が通ることを検証する。
+# ローカル固有データに依存するテストはファイル不在時に自動スキップされる（CONTRIBUTING.md 参照）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    name: build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # MapVerifier.FilePicker は net9.0-windows のためソリューション全体ビルドは避け、
+      # クロスプラットフォームなテストプロジェクト（コア依存グラフ）を対象にする。
+      - name: Test
+        run: dotnet test tests/OsmDotRoute.Tests/OsmDotRoute.Tests.csproj -c Release
+
+  pack:
+    name: pack library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Pack
+        run: |
+          dotnet pack src/OsmDotRoute/OsmDotRoute.csproj -c Release -o ./artifacts
+          dotnet pack src/OsmDotRoute.Pbf/OsmDotRoute.Pbf.csproj -c Release -o ./artifacts
+          dotnet pack src/OsmDotRoute.Extensions.DependencyInjection/OsmDotRoute.Extensions.DependencyInjection.csproj -c Release -o ./artifacts
+
+      - name: Upload nupkg
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: ./artifacts/*.nupkg

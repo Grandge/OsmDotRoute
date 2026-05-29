@@ -150,9 +150,14 @@ DI 統合を使う場合は加えて:
 親プロジェクトのコード・データ・ドキュメントを本リポジトリに移動・コピーすることはしません
 （依存方向は親 → 本ライブラリで一方向）。
 
+## 貢献
+
+バグ報告・プルリクエストを歓迎します。ビルド・テスト・PR の手順は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+
 ## ライセンス
 
 [MIT License](LICENSE) — Copyright (c) 2026 Grandge.
+第三者コンポーネントとその扱いは [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md) を参照してください。
 
 OSM データは ODbL です。`.odrg` を配布・公開する場合は「© OpenStreetMap contributors」の帰属表示が必要です。
 

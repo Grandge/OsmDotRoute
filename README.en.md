@@ -152,9 +152,15 @@ However, OsmDotRoute is designed as a **general-purpose OSM routing library**, w
 use case positioned as one application. We do not move or copy the parent project's code, data, or
 documents into this repository (the dependency direction is one-way: parent -> this library).
 
+## Contributing
+
+Bug reports and pull requests are welcome. For build/test/PR instructions, see
+[CONTRIBUTING.md](CONTRIBUTING.md) (Japanese).
+
 ## License
 
 [MIT License](LICENSE) — Copyright (c) 2026 Grandge.
+For third-party components and their licenses, see [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md).
 
 The OSM data itself is under ODbL. When distributing or publishing a `.odrg`, the attribution
 "© OpenStreetMap contributors" is required.
