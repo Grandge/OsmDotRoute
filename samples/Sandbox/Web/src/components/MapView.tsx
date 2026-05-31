@@ -243,14 +243,25 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
       mapRef.current?.fitBounds(bounds, { padding, animate: false });
     },
     setRoadNetwork(geojson) {
-      runWhenStyleReady((m) => updateGeoJsonSource(m, ROAD_SOURCE, geojson, () => {
+      runWhenStyleReady((m) => {
+        if (!geojson) {
+          if (m.getLayer(ROAD_LAYER)) m.setLayoutProperty(ROAD_LAYER, 'visibility', 'none');
+          return;
+        }
+        const existing = m.getSource(ROAD_SOURCE) as maplibregl.GeoJSONSource | undefined;
+        if (existing) {
+          existing.setData(geojson);
+          if (m.getLayer(ROAD_LAYER)) m.setLayoutProperty(ROAD_LAYER, 'visibility', 'visible');
+          return;
+        }
+        m.addSource(ROAD_SOURCE, { type: 'geojson', data: geojson });
         m.addLayer({
           id: ROAD_LAYER,
           type: 'line',
           source: ROAD_SOURCE,
           paint: { 'line-color': '#1e6fff', 'line-width': 1.2, 'line-opacity': 0.55 },
         });
-      }, [ROAD_LAYER]));
+      });
     },
     setMeshGrid(geojson) {
       runWhenStyleReady((m) => updateGeoJsonSource(m, MESH_SOURCE, geojson, () => {

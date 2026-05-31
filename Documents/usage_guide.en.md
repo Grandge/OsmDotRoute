@@ -187,7 +187,7 @@ var router = new Router(routerDb);
 // 3. Specify origin and destination (GeoCoordinate is latitude, longitude order)
 var route = router.Calculate(
     VehicleProfile.Car,
-    new GeoCoordinate(35.681, 139.767),   // Tokyo Station
+    new GeoCoordinate(35.68040208522669, 139.769056008911),   // Tokyo Station
     new GeoCoordinate(35.659, 139.700));  // Shibuya Station
 
 // 4. Result (null when no route is found or a coordinate is out of range)
@@ -363,7 +363,7 @@ var router = new Router(routerDb);
 
 var route = router.Calculate(
     VehicleProfile.Car,
-    new GeoCoordinate(35.681, 139.767),
+    new GeoCoordinate(35.68040208522669, 139.769056008911),
     new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null
@@ -391,7 +391,7 @@ var restrictions = serviceProvider.GetRequiredService<RestrictedAreaService>();
 var restrictions = new RestrictedAreaService();
 var router = new Router(routerDb, restrictions);
 
-var from = new GeoCoordinate(35.681, 139.767);
+var from = new GeoCoordinate(35.68040208522669, 139.769056008911);
 var to   = new GeoCoordinate(35.659, 139.700);
 
 var before = router.Calculate(VehicleProfile.Car, from, to);

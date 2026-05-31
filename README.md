@@ -34,7 +34,7 @@ var router = new Router(routerDb);
 // 2. 東京駅 → 渋谷駅 を Car プロファイルで計算（GeoCoordinate は 緯度, 経度 の順）
 var route = router.Calculate(
     VehicleProfile.Car,
-    new GeoCoordinate(35.681, 139.767),
+    new GeoCoordinate(35.68040208522669, 139.769056008911),
     new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null

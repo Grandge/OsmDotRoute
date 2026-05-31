@@ -4,7 +4,7 @@ import { panelStyle, h2Style, btnStyle, inputStyle, errorStyle } from './styles'
 import { useI18n } from '../i18n';
 
 // WASM デモ専用。事前ビルド .odrg（data/ 同梱）を選んでブラウザ内ロードする（Phase 3 ステップ 3J.5、J-3）。
-const PRESETS = [{ file: 'tsushima.odrg', labelKey: 'pp.presetTsushima' }];
+const PRESETS = [{ file: 'tokyo.odrg', labelKey: 'pp.presetTokyo' }];
 
 export function PresetPanel({ onLoaded }: { onLoaded: (stats: StatsResponse) => void }) {
   const { t } = useI18n();

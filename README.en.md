@@ -35,7 +35,7 @@ var router = new Router(routerDb);
 // 2. Tokyo Station -> Shibuya Station with the Car profile (GeoCoordinate is latitude, longitude order)
 var route = router.Calculate(
     VehicleProfile.Car,
-    new GeoCoordinate(35.681, 139.767),
+    new GeoCoordinate(35.68040208522669, 139.769056008911),
     new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null

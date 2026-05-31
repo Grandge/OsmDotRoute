@@ -182,7 +182,7 @@ var router = new Router(routerDb);
 // 3. 起点・終点を指定して計算（GeoCoordinate は 緯度, 経度 の順）
 var route = router.Calculate(
     VehicleProfile.Car,
-    new GeoCoordinate(35.681, 139.767),   // 東京駅
+    new GeoCoordinate(35.68040208522669, 139.769056008911),   // 東京駅
     new GeoCoordinate(35.659, 139.700));  // 渋谷駅
 
 // 4. 結果（経路未発見・範囲外座標のときは null）
@@ -359,7 +359,7 @@ var router = new Router(routerDb);
 
 var route = router.Calculate(
     VehicleProfile.Car,
-    new GeoCoordinate(35.681, 139.767),
+    new GeoCoordinate(35.68040208522669, 139.769056008911),
     new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null
@@ -387,7 +387,7 @@ var restrictions = serviceProvider.GetRequiredService<RestrictedAreaService>();
 var restrictions = new RestrictedAreaService();
 var router = new Router(routerDb, restrictions);
 
-var from = new GeoCoordinate(35.681, 139.767);
+var from = new GeoCoordinate(35.68040208522669, 139.769056008911);
 var to   = new GeoCoordinate(35.659, 139.700);
 
 var before = router.Calculate(VehicleProfile.Car, from, to);

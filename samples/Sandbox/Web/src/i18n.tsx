@@ -91,7 +91,7 @@ const en: Dict = {
   'rl.colTag': 'Tag',
   // PresetPanel
   'pp.title': 'Load a pre-built .odrg',
-  'pp.presetTsushima': 'Tsushima, Aichi',
+  'pp.presetTokyo': 'Around Tokyo Station',
   'pp.loading': 'Loading...',
   'pp.upload': 'Upload .odrg',
   'pp.uploadHint': 'Load an .odrg file you extracted locally',
@@ -197,7 +197,7 @@ const ja: Dict = {
   'rl.colTag': 'タグ',
   // PresetPanel
   'pp.title': '事前ビルド .odrg を読み込む',
-  'pp.presetTsushima': '津島市 (Tsushima, 愛知県)',
+  'pp.presetTokyo': '東京駅周辺',
   'pp.loading': '読み込み中…',
   'pp.upload': '.odrg をアップロード',
   'pp.uploadHint': '自分でローカル抽出した .odrg ファイルを読み込む',
