@@ -117,6 +117,8 @@ export function App() {
       } else if (bbox) {
         mapRef.current?.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]]);
       }
+      // fitBounds 後に直接描画（useEffect より先に確実に届ける）
+      mapRef.current?.setRoadNetwork(geojson);
     } catch (e) {
       console.error('[OsmDotRoute] Road network load failed:', e);
       setRoadNetworkError(e instanceof Error ? e.message : String(e));
