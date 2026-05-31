@@ -45,7 +45,7 @@ export function App() {
 
   // 道路ネットワーク表示
   const [roadNetworkData, setRoadNetworkData] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [roadNetworkVisible, setRoadNetworkVisible] = useState(true);
+  const [roadNetworkVisible, setRoadNetworkVisible] = useState(false);
   const [roadNetworkError, setRoadNetworkError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function App() {
   function handleClearBbox() {
     setBbox(null);
     setRoadNetworkData(null);
-    setRoadNetworkVisible(true);
+    setRoadNetworkVisible(false);
     setRoadNetworkError(null);
     mapRef.current?.setBboxRect(null);
     mapRef.current?.setRoute(null);
@@ -108,7 +108,7 @@ export function App() {
     try {
       const geojson = await fetchRoadNetwork();
       setRoadNetworkData(geojson);
-      setRoadNetworkVisible(true);
+      setRoadNetworkVisible(false);
       if (bounds) {
         mapRef.current?.fitBounds([
           [bounds.southWest.longitude, bounds.southWest.latitude],
