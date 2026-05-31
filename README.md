@@ -35,7 +35,7 @@ var router = new Router(routerDb);
 var route = router.Calculate(
     VehicleProfile.Car,
     new GeoCoordinate(35.681, 139.767),
-    new GeoCoordinate(35.658, 139.745));
+    new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null
     ? "経路を計算できませんでした。"
@@ -100,10 +100,13 @@ var restrictions = serviceProvider.GetRequiredService<RestrictedAreaService>();
 
 ## 試用デモ（Sandbox）
 
-PBF ダウンロード → bbox 抽出 → 経路探査 → メッシュ／ポリゴン制約付与 → Re-Route までを
-ブラウザ UI で試せる試用デモを同梱（`samples/Sandbox`、ローカル限定運用）。
+**[→ ブラウザで今すぐ試す（GitHub Pages）](https://grandge.github.io/OsmDotRoute/)**（インストール不要）
 
-コアエンジンを WebAssembly 化し、インストール不要でブラウザ内に完結する静的サイト版も用意:
+コアエンジンを WebAssembly 化した静的サイトを GitHub Pages で公開中。
+PBF ダウンロード → bbox 抽出 → 経路探索 → メッシュ／ポリゴン制約付与 → Re-Route までを
+ブラウザ内で完結して体験できる。
+
+ローカルでビルドする場合:
 
 ```powershell
 cd samples/Sandbox/Web ; npm run build:wasm

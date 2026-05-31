@@ -52,12 +52,17 @@ public partial class Interop
         return StatsJson();
     }
 
-    /// <summary>道路ネットワーク全体の GeoJSON FeatureCollection 文字列を返す。</summary>
+    /// <summary>
+    /// 道路ネットワークの GeoJSON FeatureCollection 文字列を返す。
+    /// RequestedBbox（ユーザー指定抽出範囲）が利用可能な場合はそれでフィルタリングし、
+    /// way 拡張で FileBbox が広がった余剰エッジを除外する。
+    /// </summary>
     [JSExport]
     internal static string GetRoadNetwork()
     {
         EnsureLoaded();
-        return _router!.GetRoadNetworkGeoJson().Json;
+        var bounds = _routerDb!.GetRequestedBounds();
+        return _router!.GetRoadNetworkGeoJson(bounds).Json;
     }
 
     /// <summary>経路計算リクエスト（<see cref="RouteRequestDto"/> JSON）→ <see cref="RouteDto"/> JSON。</summary>

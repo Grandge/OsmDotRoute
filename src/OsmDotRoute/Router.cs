@@ -89,9 +89,13 @@ public sealed class Router
     }
 
     /// <summary>
-    /// 道路ネットワーク全体を GeoJSON FeatureCollection（LineString 列）として出力する（REQ-RTE-004）。
+    /// 道路ネットワークを GeoJSON FeatureCollection（LineString 列）として出力する（REQ-RTE-004）。
     /// </summary>
-    /// <returns>道路ネットワーク GeoJSON</returns>
-    public RoadNetworkGeoJson GetRoadNetworkGeoJson()
-        => new RoadNetworkGeoJson(GeoJsonWriter.WriteRoadNetwork(_routerDb.Graph));
+    /// <param name="bounds">
+    /// フィルタ用 bbox（省略可）。way 拡張で FileBbox が広がる場合は
+    /// <see cref="RouterDb.GetRequestedBounds"/> の値を渡すと表示範囲を抑制できる。
+    /// </param>
+    public RoadNetworkGeoJson GetRoadNetworkGeoJson(
+        (GeoCoordinate SouthWest, GeoCoordinate NorthEast)? bounds = null)
+        => new RoadNetworkGeoJson(GeoJsonWriter.WriteRoadNetwork(_routerDb.Graph, bounds));
 }

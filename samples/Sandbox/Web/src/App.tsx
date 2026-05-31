@@ -53,6 +53,16 @@ export function App() {
     fetchCacheDir().then((r) => setCacheDir(r.path)).catch(() => {});
   }, []);
 
+  // roadNetworkData / roadNetworkVisible が変わったら MapLibre レイヤーに反映する。
+  // loadRoadNetwork や toggle からの直接呼び出しに依存せず、state を信頼できる唯一の真実とする。
+  useEffect(() => {
+    if (roadNetworkVisible && roadNetworkData) {
+      mapRef.current?.setRoadNetwork(roadNetworkData);
+    } else {
+      mapRef.current?.setRoadNetwork(null);
+    }
+  }, [roadNetworkData, roadNetworkVisible]);
+
   function handlePbfReady(_regionKey: string, path: string) {
     setPbfPath(path);
   }
@@ -72,7 +82,6 @@ export function App() {
     setRoadNetworkVisible(true);
     setRoadNetworkError(null);
     mapRef.current?.setBboxRect(null);
-    mapRef.current?.setRoadNetwork(null);
     mapRef.current?.setRoute(null);
     mapRef.current?.setRouteEndpoints({});
     mapRef.current?.setMeshGrid(null);
@@ -100,7 +109,6 @@ export function App() {
       const geojson = await fetchRoadNetwork();
       setRoadNetworkData(geojson);
       setRoadNetworkVisible(true);
-      mapRef.current?.setRoadNetwork(geojson);
       if (bounds) {
         mapRef.current?.fitBounds([
           [bounds.southWest.longitude, bounds.southWest.latitude],
@@ -119,15 +127,7 @@ export function App() {
   }
 
   function handleRoadNetworkToggle() {
-    setRoadNetworkVisible((prev) => {
-      const next = !prev;
-      if (next && roadNetworkData) {
-        mapRef.current?.setRoadNetwork(roadNetworkData);
-      } else {
-        mapRef.current?.setRoadNetwork(null);
-      }
-      return next;
-    });
+    setRoadNetworkVisible((prev) => !prev);
   }
 
   async function handleExtracted(result: ExtractCompleteEvent) {

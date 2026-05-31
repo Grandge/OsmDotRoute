@@ -6,6 +6,10 @@ This guide summarizes the whole flow from OSM data to a computed route.
 It is not an API reference; it is a practical guide that gets you to a **first working route**
 as quickly as possible.
 
+> **Try it without installing**: A live demo with the core engine compiled to WebAssembly is
+> available on **[GitHub Pages](https://grandge.github.io/OsmDotRoute/)**.
+> You can try routing, dynamic restrictions, and Re-Route right in the browser.
+
 Target version: Phase 3 (`.odrg` runtime, System.* only, net9.0).
 
 ---
@@ -184,7 +188,7 @@ var router = new Router(routerDb);
 var route = router.Calculate(
     VehicleProfile.Car,
     new GeoCoordinate(35.681, 139.767),   // Tokyo Station
-    new GeoCoordinate(35.658, 139.745));  // Shibuya Station
+    new GeoCoordinate(35.659, 139.700));  // Shibuya Station
 
 // 4. Result (null when no route is found or a coordinate is out of range)
 if (route is null)
@@ -360,7 +364,7 @@ var router = new Router(routerDb);
 var route = router.Calculate(
     VehicleProfile.Car,
     new GeoCoordinate(35.681, 139.767),
-    new GeoCoordinate(35.658, 139.745));
+    new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null
     ? "no route"
@@ -388,7 +392,7 @@ var restrictions = new RestrictedAreaService();
 var router = new Router(routerDb, restrictions);
 
 var from = new GeoCoordinate(35.681, 139.767);
-var to   = new GeoCoordinate(35.658, 139.745);
+var to   = new GeoCoordinate(35.659, 139.700);
 
 var before = router.Calculate(VehicleProfile.Car, from, to);
 

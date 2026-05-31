@@ -5,6 +5,10 @@
 OsmDotRoute で OSM データから経路を計算するまでの一連の手順をまとめる。
 API リファレンスではなく、**最初に動かすまで**を最短で辿れる実用ガイドを目的とする。
 
+> **インストール不要で試す**: コアエンジンを WebAssembly 化したライブデモを
+> **[GitHub Pages](https://grandge.github.io/OsmDotRoute/)** で公開中。
+> 経路探索・動的制約・Re-Route をそのままブラウザで体験できる。
+
 対象バージョン: Phase 3（`.odrg` ランタイム、System.* のみ依存、net9.0）。
 
 ---
@@ -179,7 +183,7 @@ var router = new Router(routerDb);
 var route = router.Calculate(
     VehicleProfile.Car,
     new GeoCoordinate(35.681, 139.767),   // 東京駅
-    new GeoCoordinate(35.658, 139.745));  // 渋谷駅
+    new GeoCoordinate(35.659, 139.700));  // 渋谷駅
 
 // 4. 結果（経路未発見・範囲外座標のときは null）
 if (route is null)
@@ -356,7 +360,7 @@ var router = new Router(routerDb);
 var route = router.Calculate(
     VehicleProfile.Car,
     new GeoCoordinate(35.681, 139.767),
-    new GeoCoordinate(35.658, 139.745));
+    new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null
     ? "経路なし"
@@ -384,7 +388,7 @@ var restrictions = new RestrictedAreaService();
 var router = new Router(routerDb, restrictions);
 
 var from = new GeoCoordinate(35.681, 139.767);
-var to   = new GeoCoordinate(35.658, 139.745);
+var to   = new GeoCoordinate(35.659, 139.700);
 
 var before = router.Calculate(VehicleProfile.Car, from, to);
 

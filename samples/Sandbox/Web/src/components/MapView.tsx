@@ -402,9 +402,13 @@ export const MapView = forwardRef<MapViewHandle, Props>(function MapView(
     if (!m) return;
     if (m.isStyleLoaded()) {
       fn(m);
-    } else {
-      m.once('load', () => fn(m));
+      return;
     }
+    // 'load' は初回のみ。isStyleLoaded() が false の場合は 'style.load' を待つ
+    // （load 発火後も isStyleLoaded() が false を返すケースへの対策）
+    m.once('style.load', () => {
+      if (mapRef.current === m) fn(m);
+    });
   }
 });
 

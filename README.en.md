@@ -36,7 +36,7 @@ var router = new Router(routerDb);
 var route = router.Calculate(
     VehicleProfile.Car,
     new GeoCoordinate(35.681, 139.767),
-    new GeoCoordinate(35.658, 139.745));
+    new GeoCoordinate(35.659, 139.700));
 
 Console.WriteLine(route is null
     ? "No route could be calculated."
@@ -101,11 +101,13 @@ is reflected from the next `Router.Calculate` call (REQ-RST-012).
 
 ## Try-it demo (Sandbox)
 
-A bundled demo (`samples/Sandbox`, local-only) lets you try the full flow in a browser UI:
-PBF download -> bbox extraction -> routing -> mesh/polygon restriction -> Re-Route.
+**[→ Try it now in your browser (GitHub Pages)](https://grandge.github.io/OsmDotRoute/)** — no install required
 
-A static-site build that runs the core engine compiled to WebAssembly entirely in the browser
-(no install) is also available:
+The core engine is compiled to WebAssembly and served as a static site on GitHub Pages.
+You can experience the full flow — PBF download → bbox extraction → routing →
+mesh/polygon restriction → Re-Route — entirely in the browser.
+
+To build locally:
 
 ```powershell
 cd samples/Sandbox/Web ; npm run build:wasm
