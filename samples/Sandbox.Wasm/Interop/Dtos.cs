@@ -43,6 +43,16 @@ internal sealed record RestrictionItemDto(
 
 internal sealed record RestrictionListDto(RestrictionItemDto[] Items);
 
+internal sealed record GmlImportOptionsDto(
+    string? Kind,
+    string? DifficultyType,
+    bool UseMapBounds,
+    CoordinateDto? MapBoundsSouthWest,
+    CoordinateDto? MapBoundsNorthEast,
+    string? Tag);
+
+internal sealed record GmlImportResultDto(string[] Ids, int AcceptedCount);
+
 /// <summary>
 /// WASM 環境では既定でトリミングが効くため、リフレクションベースの
 /// <see cref="System.Text.Json.JsonSerializer"/> ではなくソース生成（trim/AOT 安全）を用いる。
@@ -57,4 +67,6 @@ internal sealed record RestrictionListDto(RestrictionItemDto[] Items);
 [JsonSerializable(typeof(MeshRestrictionRequestDto))]
 [JsonSerializable(typeof(RestrictionIdDto))]
 [JsonSerializable(typeof(RestrictionListDto))]
+[JsonSerializable(typeof(GmlImportOptionsDto))]
+[JsonSerializable(typeof(GmlImportResultDto))]
 internal partial class SandboxJsonContext : JsonSerializerContext;

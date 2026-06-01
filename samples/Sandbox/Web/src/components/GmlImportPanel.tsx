@@ -1,15 +1,19 @@
-import { useState } from 'react';
-import { importGmlFile, type Kind } from '../api/client';
+import { useRef, useState } from 'react';
+import { importGml, type Kind } from '../api/client';
 import { panelStyle, h2Style, btnStyle, inputStyle, errorStyle, BUILTIN_DIFFICULTIES } from './styles';
-import { FileBrowserDialog } from './FileBrowserDialog';
+import { useI18n } from '../i18n';
 
 interface Props {
   currentBounds: { sw: [number, number]; ne: [number, number] } | null;
   onImported: () => void;
 }
 
+// KSJ スキーマ準拠 GML 3.2 ファイルをアップロードして block / difficulty 制約を一括登録する。
+// Server モードは multipart アップロード、WASM モードはブラウザ内パース（client.ts の差し替えで吸収）。
 export function GmlImportPanel({ currentBounds, onImported }: Props) {
-  const [filePath, setFilePath] = useState('');
+  const { t } = useI18n();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [kind, setKind] = useState<Kind>('difficulty');
   const [difficulty, setDifficulty] = useState<string>('flooding');
   const [useBounds, setUseBounds] = useState(true);
@@ -17,12 +21,11 @@ export function GmlImportPanel({ currentBounds, onImported }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<string | null>(null);
-  const [browseOpen, setBrowseOpen] = useState(false);
 
   async function handleImport() {
-    if (filePath.trim() === '') return;
+    if (!file) return;
     if (useBounds && !currentBounds) {
-      setError('現在のマップ範囲が未取得です（RouterDb を先に読み込んでください）。');
+      setError(t('gml.needBounds'));
       return;
     }
     setBusy(true);
@@ -30,8 +33,7 @@ export function GmlImportPanel({ currentBounds, onImported }: Props) {
     setLastResult(null);
     try {
       const t0 = performance.now();
-      const res = await importGmlFile({
-        filePath,
+      const res = await importGml(file, {
         kind,
         difficultyType: kind === 'difficulty' ? difficulty : undefined,
         useMapBounds: useBounds,
@@ -44,7 +46,7 @@ export function GmlImportPanel({ currentBounds, onImported }: Props) {
         tag: tag.trim() === '' ? undefined : tag.trim(),
       });
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-      setLastResult(`${res.acceptedCount} 件をインポートしました (${elapsed} 秒)`);
+      setLastResult(t('gml.imported', { n: res.acceptedCount, sec: elapsed }));
       onImported();
     } catch (e) {
       setError((e as Error).message);
@@ -55,35 +57,26 @@ export function GmlImportPanel({ currentBounds, onImported }: Props) {
 
   return (
     <section style={panelStyle}>
-      <h2 style={h2Style}>GML ファイル インポート</h2>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+      <h2 style={h2Style}>{t('gml.title')}</h2>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
         <input
-          style={{ flex: 1, padding: '6px 8px', fontFamily: 'monospace', fontSize: 12 }}
-          placeholder="C:/path/to/A31-12_24.xml"
-          value={filePath}
-          onChange={(e) => setFilePath(e.target.value)}
+          ref={fileInputRef}
+          type="file"
+          accept=".xml,.gml"
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setLastResult(null); }}
           disabled={busy}
+          style={{ flex: 1, fontSize: 12 }}
         />
-        <button onClick={() => setBrowseOpen(true)} disabled={busy} style={btnStyle}>ファイル参照…</button>
       </div>
-      {browseOpen && (
-        <FileBrowserDialog
-          title="GML ファイルを選択"
-          pattern="*.xml;*.gml"
-          rememberKey="mv-gml-dir"
-          onClose={() => setBrowseOpen(false)}
-          onSelect={(p) => { setFilePath(p); setBrowseOpen(false); }}
-        />
-      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 8px', fontSize: 13, alignItems: 'center' }}>
-        <label>種別</label>
+        <label>{t('common.kind')}</label>
         <select value={kind} onChange={(e) => setKind(e.target.value as Kind)} style={inputStyle}>
-          <option value="block">block (進入不可)</option>
-          <option value="difficulty">difficulty (難所)</option>
+          <option value="block">{t('kind.block')}</option>
+          <option value="difficulty">{t('kind.difficulty')}</option>
         </select>
         {kind === 'difficulty' && (
           <>
-            <label>難所タイプ</label>
+            <label>{t('common.difficultyType')}</label>
             <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} style={inputStyle}>
               {BUILTIN_DIFFICULTIES.map((d) => (
                 <option key={d} value={d}>{d}</option>
@@ -91,7 +84,7 @@ export function GmlImportPanel({ currentBounds, onImported }: Props) {
             </select>
           </>
         )}
-        <label>タグ (任意)</label>
+        <label>{t('common.tagOptional')}</label>
         <input value={tag} onChange={(e) => setTag(e.target.value)} style={inputStyle} />
       </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 13 }}>
@@ -100,11 +93,11 @@ export function GmlImportPanel({ currentBounds, onImported }: Props) {
           checked={useBounds}
           onChange={(e) => setUseBounds(e.target.checked)}
         />
-        現在のマップ範囲でフィルタする (REQ-RST-040)
+        {t('gml.filterByBounds')}
       </label>
       <div style={{ marginTop: 8 }}>
-        <button onClick={handleImport} disabled={busy || filePath.trim() === ''} style={btnStyle}>
-          {busy ? 'インポート中…' : 'インポート'}
+        <button onClick={handleImport} disabled={busy || !file} style={btnStyle}>
+          {busy ? t('gml.importing') : t('gml.import')}
         </button>
       </div>
       {lastResult && <p style={{ fontSize: 13, margin: '6px 0 0', color: '#15803d' }}>{lastResult}</p>}

@@ -131,6 +131,19 @@ export interface CoordinateDto {
   longitude: number;
 }
 
+export interface GmlImportOptions {
+  kind: Kind;
+  difficultyType?: string;
+  useMapBounds: boolean;
+  mapBoundsSouthWest?: CoordinateDto;
+  mapBoundsNorthEast?: CoordinateDto;
+  tag?: string;
+}
+
+export interface GmlImportResult {
+  acceptedCount: number;
+}
+
 export async function fetchMeshGrid(
   sw: [number, number],
   ne: [number, number],
@@ -179,6 +192,24 @@ export async function registerMeshRestriction(req: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     }),
+  );
+}
+
+export async function importGml(file: File, options: GmlImportOptions): Promise<GmlImportResult> {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('kind', options.kind);
+  if (options.difficultyType) fd.append('difficultyType', options.difficultyType);
+  fd.append('useMapBounds', String(options.useMapBounds));
+  if (options.useMapBounds && options.mapBoundsSouthWest && options.mapBoundsNorthEast) {
+    fd.append('swLat', String(options.mapBoundsSouthWest.latitude));
+    fd.append('swLon', String(options.mapBoundsSouthWest.longitude));
+    fd.append('neLat', String(options.mapBoundsNorthEast.latitude));
+    fd.append('neLon', String(options.mapBoundsNorthEast.longitude));
+  }
+  if (options.tag) fd.append('tag', options.tag);
+  return handle<GmlImportResult>(
+    await fetch('/api/restrictions/gml-upload', { method: 'POST', body: fd }),
   );
 }
 

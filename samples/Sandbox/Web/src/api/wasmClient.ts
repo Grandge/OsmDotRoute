@@ -6,12 +6,13 @@ import { getInterop, odrgUrl } from './wasmRuntime';
 import type {
   VersionResponse, RegionInfo, CachedPbfInfo, RestrictionItem, BrowseResult,
   StatsResponse, RouteResponse, SnapResponse, ExtractCompleteEvent, Kind, CoordinateDto,
+  GmlImportOptions, GmlImportResult,
 } from './client';
 
 export type {
   VersionResponse, ErrorResponse, RegionInfo, CachedPbfInfo, Kind, RestrictionItem,
   CoordinateDto, BrowseResult, StatsResponse, RouteResponse, SnapResponse,
-  ExtractPhaseEvent, ExtractCompleteEvent,
+  ExtractPhaseEvent, ExtractCompleteEvent, GmlImportOptions, GmlImportResult,
 } from './client';
 
 const NOT_SUPPORTED =
@@ -81,6 +82,16 @@ export async function registerMeshRestriction(req: {
 }): Promise<{ id: string }> {
   const interop = await getInterop();
   return JSON.parse(interop.AddMeshRestriction(JSON.stringify(req))) as { id: string };
+}
+
+export async function importGml(file: File, options: GmlImportOptions): Promise<GmlImportResult> {
+  const interop = await getInterop();
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const res = JSON.parse(interop.AddGmlRestriction(bytes, JSON.stringify(options))) as {
+    ids: string[];
+    acceptedCount: number;
+  };
+  return { acceptedCount: res.acceptedCount };
 }
 
 export async function listRestrictions(): Promise<{ items: RestrictionItem[] }> {

@@ -80,6 +80,67 @@ public static class RestrictionEndpoints
             return Results.Ok(new RestrictionIdResponse(id));
         });
 
+        // POST /api/restrictions/gml-upload — アップロードした GML を取込む（multipart/form-data）。
+        // フィールド: file(必須), kind, difficultyType, useMapBounds, swLat, swLon, neLat, neLon, tag。
+        // フォームを手動読取するため antiforgery 検証の対象外（IFormFile パラメータ束縛を避ける）。
+        app.MapPost("/api/restrictions/gml-upload", async (HttpRequest request, SandboxState state) =>
+        {
+            var restrictions = state.Restrictions;
+            if (restrictions is null)
+                return Results.Conflict(new ErrorResponse("not_loaded", "No graph loaded."));
+
+            if (!request.HasFormContentType)
+                return Results.BadRequest(new ErrorResponse("invalid_form", "multipart/form-data で送信してください。"));
+
+            var form = await request.ReadFormAsync();
+            var file = form.Files["file"];
+            if (file is null || file.Length == 0)
+                return Results.BadRequest(new ErrorResponse("missing_file", "GML ファイル (file) を指定してください。"));
+
+            var kind = (form["kind"].ToString() ?? "").Trim().ToLowerInvariant();
+            var difficultyType = form["difficultyType"].ToString();
+            var tag = form["tag"].ToString();
+            if (string.IsNullOrWhiteSpace(tag)) tag = null;
+
+            MapBounds? bounds = null;
+            if (string.Equals(form["useMapBounds"].ToString(), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TryParseBounds(form, out var b))
+                    return Results.BadRequest(new ErrorResponse("missing_bounds", "useMapBounds=true の場合は swLat/swLon/neLat/neLon が必要です。"));
+                bounds = b;
+            }
+
+            RestrictedAreaId[] ids;
+            try
+            {
+                await using var stream = file.OpenReadStream();
+                switch (kind)
+                {
+                    case "block":
+                        ids = restrictions.AddBlockAreaFromGmlStream(stream, bounds, tag);
+                        break;
+                    case "difficulty":
+                        if (string.IsNullOrWhiteSpace(difficultyType))
+                            return Results.BadRequest(new ErrorResponse("missing_difficulty_type", "kind=difficulty の場合は difficultyType が必要です。"));
+                        ids = restrictions.AddDifficultyAreaFromGmlStream(stream, difficultyType, bounds, tag);
+                        break;
+                    default:
+                        return Results.BadRequest(new ErrorResponse("invalid_kind", $"kind は block / difficulty のいずれか (受信: {kind})"));
+                }
+            }
+            catch (OsmDotRoute.Gml.InvalidGmlException ex)
+            {
+                return Results.BadRequest(new ErrorResponse("invalid_gml", ex.Message));
+            }
+            catch (NotSupportedException ex)
+            {
+                return Results.BadRequest(new ErrorResponse("not_supported", ex.Message));
+            }
+
+            var guids = ids.Select(i => i.Value).ToArray();
+            return Results.Ok(new GmlImportResponse(guids, guids.Length));
+        });
+
         // GET /api/restrictions — 一覧
         app.MapGet("/api/restrictions", (SandboxState state) =>
         {
@@ -128,6 +189,22 @@ public static class RestrictionEndpoints
             }
             return Results.NoContent();
         });
+    }
+
+    private static bool TryParseBounds(IFormCollection form, out MapBounds bounds)
+    {
+        bounds = default!;
+        const System.Globalization.NumberStyles ns = System.Globalization.NumberStyles.Float;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        if (double.TryParse(form["swLat"], ns, ci, out var swLat) &&
+            double.TryParse(form["swLon"], ns, ci, out var swLon) &&
+            double.TryParse(form["neLat"], ns, ci, out var neLat) &&
+            double.TryParse(form["neLon"], ns, ci, out var neLon))
+        {
+            bounds = new MapBounds(new GeoCoordinate(swLat, swLon), new GeoCoordinate(neLat, neLon));
+            return true;
+        }
+        return false;
     }
 
     private static object BuildItemDto(RestrictedArea area)

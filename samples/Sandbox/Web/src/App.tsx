@@ -7,7 +7,9 @@ import { PresetPanel } from './components/PresetPanel';
 import { RoutePanel, type PickMode } from './components/RoutePanel';
 import { MeshGridPanel } from './components/MeshGridPanel';
 import { PolygonEditorPanel } from './components/PolygonEditorPanel';
+import { GmlImportPanel } from './components/GmlImportPanel';
 import { RestrictionListPanel } from './components/RestrictionListPanel';
+import { RestrictionIOPanel } from './components/RestrictionIOPanel';
 import { panelStyle } from './components/styles';
 import {
   fetchVersion, fetchRoadNetwork, fetchCacheDir, fetchRestrictionsGeoJson,
@@ -305,6 +307,11 @@ export function App() {
               onUndoVertex={handleUndoVertex}
               onPolygonRegistered={handlePolygonRegistered}
             />
+            <GmlImportPanel
+              currentBounds={mapBounds}
+              onImported={refreshRestrictions}
+            />
+            <RestrictionIOPanel onChanged={refreshRestrictions} />
             <RestrictionListPanel
               refreshNonce={restrictionsNonce}
               onChanged={refreshRestrictions}

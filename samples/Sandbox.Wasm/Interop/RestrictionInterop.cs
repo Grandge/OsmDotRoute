@@ -74,6 +74,44 @@ public partial class Interop
         return JsonSerializer.Serialize(new RestrictionIdDto(id.ToString()), SandboxJsonContext.Default.RestrictionIdDto);
     }
 
+    /// <summary>
+    /// アップロードされた GML バイト列から制約を一括登録する（<see cref="GmlImportOptionsDto"/> JSON）
+    /// → <see cref="GmlImportResultDto"/> JSON。GML パースはブラウザ内（XmlReader）で完結する。
+    /// </summary>
+    [JSExport]
+    internal static string AddGmlRestriction(byte[] gmlBytes, string optionsJson)
+    {
+        var restrictions = RequireRestrictions();
+        var opt = JsonSerializer.Deserialize(optionsJson, SandboxJsonContext.Default.GmlImportOptionsDto)
+                  ?? throw new ArgumentException("Invalid GML import options JSON.");
+
+        var tag = string.IsNullOrWhiteSpace(opt.Tag) ? null : opt.Tag;
+        MapBounds? bounds = null;
+        if (opt.UseMapBounds)
+        {
+            if (opt.MapBoundsSouthWest is null || opt.MapBoundsNorthEast is null)
+            {
+                throw new ArgumentException("useMapBounds=true の場合は mapBoundsSouthWest / mapBoundsNorthEast が必要です。");
+            }
+            bounds = new MapBounds(
+                new GeoCoordinate(opt.MapBoundsSouthWest.Latitude, opt.MapBoundsSouthWest.Longitude),
+                new GeoCoordinate(opt.MapBoundsNorthEast.Latitude, opt.MapBoundsNorthEast.Longitude));
+        }
+
+        var kind = (opt.Kind ?? "").Trim().ToLowerInvariant();
+        using var stream = new MemoryStream(gmlBytes);
+        var ids = kind switch
+        {
+            "block" => restrictions.AddBlockAreaFromGmlStream(stream, bounds, tag),
+            "difficulty" => restrictions.AddDifficultyAreaFromGmlStream(
+                stream, RequireDifficultyType(opt.DifficultyType), bounds, tag),
+            _ => throw new ArgumentException($"kind は block / difficulty のいずれか (受信: {opt.Kind})"),
+        };
+
+        var result = new GmlImportResultDto(ids.Select(i => i.Value.ToString()).ToArray(), ids.Length);
+        return JsonSerializer.Serialize(result, SandboxJsonContext.Default.GmlImportResultDto);
+    }
+
     /// <summary>登録済み制約の一覧（<see cref="RestrictionListDto"/> JSON）。</summary>
     [JSExport]
     internal static string ListRestrictions()

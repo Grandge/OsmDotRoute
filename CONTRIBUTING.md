@@ -7,7 +7,7 @@ OsmDotRoute への貢献に興味を持っていただきありがとうござ�
 
 - .NET 9 SDK 以降
 - （サンプル Web UI / ブラウザ WASM デモを触る場合のみ）Node.js 18 以降
-- OS: コアライブラリとテストは Windows / Linux / macOS で動作。`samples/MapVerifier/MapVerifier.FilePicker` のみ `net9.0-windows`（Windows 専用）
+- OS: Windows / Linux / macOS で動作（コア・テスト・サンプルとも特定 OS 依存なし）
 
 ## リポジトリ構成
 
@@ -26,9 +26,6 @@ OsmDotRoute への貢献に興味を持っていただきありがとうござ�
 ```powershell
 dotnet build OsmDotRoute.sln -c Release
 ```
-
-> Windows 以外では `MapVerifier.FilePicker`（`net9.0-windows`）がビルドできません。
-> クロスプラットフォームで確認する場合はコア・テストのプロジェクトを個別に指定してください。
 
 ## テスト
 

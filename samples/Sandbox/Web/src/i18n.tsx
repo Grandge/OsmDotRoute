@@ -89,6 +89,21 @@ const en: Dict = {
   'rl.colDifficulty': 'Difficulty',
   'rl.colShape': 'Shape',
   'rl.colTag': 'Tag',
+  // GmlImportPanel
+  'gml.title': 'Import GML file',
+  'gml.import': 'Import',
+  'gml.importing': 'Importing...',
+  'gml.imported': 'Imported {n} item(s) ({sec}s)',
+  'gml.filterByBounds': 'Filter by current map view',
+  'gml.needBounds': 'Current map view is unavailable (load a graph first).',
+  // RestrictionIOPanel
+  'rio.title': 'Save / load restrictions',
+  'rio.save': 'Save to JSON',
+  'rio.load': 'Load from JSON',
+  'rio.hint': 'Save the current restrictions to a file, or restore them from a saved JSON.',
+  'rio.saved': 'Saved {n} restriction(s)',
+  'rio.loaded': 'Loaded {ok} restriction(s) ({skipped} skipped)',
+  'rio.invalidFile': 'Not a valid restrictions JSON file.',
   // PresetPanel
   'pp.title': 'Load a pre-built .odrg',
   'pp.presetTokyo': 'Around Tokyo Station',
@@ -195,6 +210,21 @@ const ja: Dict = {
   'rl.colDifficulty': '難所',
   'rl.colShape': '形状',
   'rl.colTag': 'タグ',
+  // GmlImportPanel
+  'gml.title': 'GML ファイル インポート',
+  'gml.import': 'インポート',
+  'gml.importing': 'インポート中…',
+  'gml.imported': '{n} 件をインポートしました ({sec} 秒)',
+  'gml.filterByBounds': '現在のマップ範囲でフィルタする',
+  'gml.needBounds': '現在のマップ範囲が未取得です（先にグラフを読み込んでください）。',
+  // RestrictionIOPanel
+  'rio.title': '制約の保存 / 読込',
+  'rio.save': 'JSON に保存',
+  'rio.load': 'JSON から読込',
+  'rio.hint': '現在の制約をファイルに保存、または保存済み JSON から復元します。',
+  'rio.saved': '{n} 件を保存しました',
+  'rio.loaded': '{ok} 件を読み込みました（{skipped} 件スキップ）',
+  'rio.invalidFile': '制約 JSON ファイルではありません。',
   // PresetPanel
   'pp.title': '事前ビルド .odrg を読み込む',
   'pp.presetTokyo': '東京駅周辺',

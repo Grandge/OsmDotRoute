@@ -1166,6 +1166,8 @@ Phase 1 §18.2「性能ベンチが市単位 RouterDb のみで実施」の課�
 
 OSS 公開時の「Try it」キラーデモとして、PBF DL → bbox 抽出 → 経路探索 → メッシュ/ポリゴン制約付与 → Re-Route の一連フローを 1 ツールで体験可能にする。MapVerifier は Phase 2/3 検証データ可視化（INT-/PAR- テスト突合）に特化して残置し、Sandbox はユーザー試用に特化（役割分担確定）。計画書 §3.8 では「静的 HTML + Leaflet」だったが、MapVerifier の実態（React + MapLibre GL）からのコンポーネント再利用を優先し React + MapLibre GL 構成に変更（ユーザー確認 2026-05-28）。
 
+> **注（2026-06-01）**: MapVerifier は役割を終えたため廃止し、その固有機能（GML インポート）を Sandbox に移植した。詳細は §10.8 を参照。
+
 ### 10.2 採用設計（サブステップ別）
 
 #### 10.2.1 サブステップ 3I.1: プロジェクト雛形
@@ -1210,7 +1212,7 @@ OSS 公開時の「Try it」キラーデモとして、PBF DL → bbox 抽出 �
 ### 10.4 トレードオフ・制約
 
 - ローカル限定運用（`127.0.0.1` バインド固定、外部公開機能なし、認証なし）。本番運用想定なし。
-- GML インポートは Sandbox 非対応（親プロ専用機能。MapVerifier には存在）。
+- GML インポートは 3I 時点では Sandbox 非対応（MapVerifier のみ保有）だったが、後日 §10.8 で Sandbox に移植（2026-06-01）。
 - `ExtractPipeline` が IProgress 非対応のため、抽出進捗はフェーズレベル（細粒度の % 表示なし）。
 - メッシュ表示のズーム閾値自動非表示（計画書 §5.5-34）は未実装。現状は手動 ON/OFF + サーバー側 10,000 セル上限ガードで代替。Phase 4+ で必要に応じ追加。
 
@@ -1286,6 +1288,41 @@ OSS 公開時の「Try it」キラーデモとして、PBF DL → bbox 抽出 �
 
 ---
 
+## 10.8 Sandbox 機能拡充（GML インポート + 制約 I/O）と MapVerifier 廃止
+
+**対応ステップ**: 3J 後続のユーザー要望対応（計画外の追加、要件 ID 未付番）
+**対応要件**: REQ-RST-025 / 026 / 040（GML 取込・難所タイプ・範囲フィルタ。コア API は既存）
+**実装日**: 2026-06-01
+**実装バージョン**: 本コミット
+**主要ファイル**: `samples/Sandbox/Web/src/components/GmlImportPanel.tsx` / `RestrictionIOPanel.tsx`、`samples/Sandbox/Server/Endpoints/RestrictionEndpoints.cs`、`samples/Sandbox.Wasm/Interop/RestrictionInterop.cs`
+
+### 10.8.1 意図
+
+MapVerifier は Phase 2/3 の検証データ可視化ツールとして残置していたが、Itinero 撤去（3C.4）後は Sandbox がほぼ上位互換となり、固有機能は GML インポートのみだった。役割を終えた MapVerifier を廃止し、その GML インポートを Sandbox へ移植する。あわせて、付与済みのメッシュ/ポリゴン制約をファイルへ保存・復元する機能を追加する（試用セッションを跨いだ制約の再利用）。
+
+### 10.8.2 採用設計
+
+- **GML インポート（入力方式をファイルアップロードに統一）**: MapVerifier はサーバー上のファイルパス指定方式だったが、Sandbox は WASM（ブラウザ完結）モードを持つためファイルシステムに依存できない。両モードで同一 UI・同一動作とするため、ブラウザの `<input type=file>` で選んだファイルを `Stream`/`byte[]` として渡す方式に統一した。
+  - Server: `POST /api/restrictions/gml-upload`（multipart/form-data、フォーム手動読取で antiforgery 検証対象外）→ コアの `AddBlockAreaFromGmlStream` / `AddDifficultyAreaFromGmlStream`。
+  - WASM: `[JSExport] AddGmlRestriction(byte[], optionsJson)` を追加。`MemoryStream` 経由で同コア API を呼ぶ。GML パース（`XmlReader`）はブラウザ内で完結（trim 後も到達可能性により `System.Private.Xml` が含まれる）。
+  - フロント: `client.ts` / `wasmClient.ts` に `importGml(file, options)` を追加（3J.5 の mode 別 alias 機構でコンポーネントは無改変差替）。
+- **制約 I/O（JSON 保存/読込）**: 既存の `listRestrictions` / `registerMeshRestriction` / `registerPolygonRestriction` のみで実現できるため、**フロントエンド完結**（Server / WASM とも追加 API なし）。保存はブラウザのダウンロード、読込はアップロード JSON を 1 件ずつ再登録。形式は `{ "format": "osmdotroute-restrictions", "version": 1, "items": [...] }`。
+- **MapVerifier 廃止**: `samples/MapVerifier/` 一式、`OsmDotRoute.sln` の `MapVerifier.Server` 参照、`Documents/map_verifier_design.md`、`start-map-verifier.ps1` を削除。
+
+### 10.8.3 トレードオフ・制約
+
+- ファイルアップロード統一により、大容量 GML（KSJ A31 など）は WASM モードではブラウザのメモリにロードされる。サーバーモードでも従来のサーバー側パス直読みではなくアップロード経由になる。
+- 制約 I/O の JSON はコア型ではなく Sandbox API の DTO 形状（`RestrictionItem`）に準拠。再登録時に ID は再採番される（保存時の ID は引き継がない）。
+- `OdrgReader` 等のコメントに残る「MapVerifier オーバーレイ表示用」の歴史的記述は、コード本体が Phase 2 検証・テストで現役のため据え置き（YAGNI）。
+
+### 10.8.4 検証方法
+
+- `dotnet build OsmDotRoute.sln`（Server / WASM 含む全プロジェクト）成功・警告 0。`tsc --noEmit`（`client.ts` / `wasmClient.ts` 両系）・`vite build`（server モード）成功。
+- ローカル Sandbox（Server モード）でユーザー目視確認済。GitHub Pages（WASM）版は CI デプロイ後に確認。
+- コア（`src/OsmDotRoute`）は無改変のため `dotnet test` 682 件への影響なし。
+
+---
+
 ## 11. Phase 3 確定と OSS 公開準備
 
 **対応ステップ**: 3H
@@ -1334,3 +1371,4 @@ OSS 公開時の「Try it」キラーデモとして、PBF DL → bbox 抽出 �
 | — | 2026-05-28 | §8 (3F) 肉付け。親プロ統合方針を「ガイド作成 + 親プロ側実施」に変更（ユーザー判断）。migration_from_itinero.md（API 対応表 20 項目 + before/after コード例）を成果物として作成。親プロ側で 9 ファイル移行完了・16 シナリオ .odrg 一括生成・UI 動作確認済。Extractor UTF-8 修正（commit `34424fa`）。§0.3 章対応表更新 | Claude (Opus 4.7) |
 | — | 2026-05-28 | §9 (3G) 肉付け。愛知県 (988k 頂点 / 1.4M エッジ) C0 Mean 117 ms/route + 東京都 (1.28M 頂点 / 1.78M エッジ) C0 Mean 288 ms/route を実測。Phase 1 §18.2 リベンジ完了。REQ-NFR-001 は市単位で達成、都道府県単位では CH 検討の判断材料を取得。PrefectureBench.cs 新規追加。§0.3 章対応表更新 | Claude (Opus 4.7) |
 | — | 2026-05-29 | §10.7 (3J) 肉付け。GitHub Pages デモを React 流用 + コア WASM 化で実装（原計画 §3.9 の Blazor 前提を修正）。コア改修: in-memory `.odrg` ロード (`LoadFromOdrg(ReadOnlyMemory<byte>)`) / プロファイル JSON ソース生成化 (trim/AOT 安全) / `GetProfileNames()`。`dotnet test` 682 件 pass。WASM ブリッジ (load/route/snap/制約/メッシュ/Re-Route) を Node ホストで検証。`build:wasm` 単一静的サイト生成 + Pages ワークフロー整備 (deploy は J-C で 3H まで無効)。§0.3 章対応表更新（10.5 → 10.7 改題） | Claude (Opus 4.7) |
+| — | 2026-06-01 | §10.8 追加。MapVerifier 廃止（dir / sln 参照 / map_verifier_design.md / start-map-verifier.ps1）に伴い、固有機能の GML インポートを Sandbox へ移植（入力をファイルアップロードに統一、Server=multipart / WASM=`AddGmlRestriction`）。メッシュ/ポリゴン制約の JSON 保存・読込（フロント完結）を追加。§10.1 / §10.4 の現状不一致を修正。CONTRIBUTING.md の MapVerifier.FilePicker 記述を除去 | Claude (Opus 4.8) |

@@ -9,6 +9,7 @@ export interface WasmInterop {
   Snap(json: string): string;
   AddPolygonRestriction(json: string): string;
   AddMeshRestriction(json: string): string;
+  AddGmlRestriction(bytes: Uint8Array, optionsJson: string): string;
   ListRestrictions(): string;
   RestrictionsGeoJson(): string;
   DeleteRestriction(id: string): void;
