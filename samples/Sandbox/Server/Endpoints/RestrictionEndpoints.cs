@@ -141,6 +141,19 @@ public static class RestrictionEndpoints
             return Results.Ok(new GmlImportResponse(guids, guids.Length));
         });
 
+        // POST /api/restrictions/save — 制約を「保存先フォルダ設定」のフォルダへ JSON 保存
+        app.MapPost("/api/restrictions/save", (SandboxState state, CacheService cache) =>
+        {
+            var restrictions = state.Restrictions;
+            if (restrictions is null)
+                return Results.Conflict(new ErrorResponse("not_loaded", "No graph loaded."));
+
+            var fileName = $"restrictions-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+            var path = Path.Combine(cache.CacheDir, fileName);
+            restrictions.SaveToJsonFile(path);
+            return Results.Ok(new RestrictionSaveResponse(path));
+        });
+
         // GET /api/restrictions — 一覧
         app.MapGet("/api/restrictions", (SandboxState state) =>
         {

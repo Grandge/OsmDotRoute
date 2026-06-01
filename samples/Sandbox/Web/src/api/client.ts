@@ -217,6 +217,15 @@ export async function listRestrictions(): Promise<{ items: RestrictionItem[] }> 
   return handle<{ items: RestrictionItem[] }>(await fetch('/api/restrictions'));
 }
 
+// Server モード: 制約を「保存先フォルダ設定」のフォルダにサーバー側で JSON 保存する。
+// downloaded=false（フォルダ保存）。path はサーバー上の絶対パス。
+export async function saveRestrictions(): Promise<{ path: string; downloaded: boolean }> {
+  const res = await handle<{ path: string }>(
+    await fetch('/api/restrictions/save', { method: 'POST' }),
+  );
+  return { path: res.path, downloaded: false };
+}
+
 export async function fetchRestrictionsGeoJson(): Promise<GeoJSON.FeatureCollection> {
   const res = await fetch('/api/restrictions/geojson');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

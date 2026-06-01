@@ -1,13 +1,12 @@
 import { useRef, useState } from 'react';
 import {
-  listRestrictions, registerMeshRestriction, registerPolygonRestriction,
+  saveRestrictions, registerMeshRestriction, registerPolygonRestriction,
   type RestrictionItem,
 } from '../api/client';
 import { panelStyle, h2Style, btnStyle, errorStyle } from './styles';
 import { useI18n } from '../i18n';
 
 const FORMAT = 'osmdotroute-restrictions';
-const FORMAT_VERSION = 1;
 
 interface SavedFile {
   format: string;
@@ -21,8 +20,8 @@ interface Props {
 }
 
 // メッシュ / ポリゴン制約を JSON ファイルへ保存・復元する。
-// 保存は現在の登録一覧をブラウザでダウンロード、読込は JSON を読んで各制約を再登録する。
-// listRestrictions / register* を流用するため Server / WASM 両モードで動作する。
+// 保存は saveRestrictions（Server=保存先フォルダへ書込 / WASM=ブラウザダウンロード）、
+// 読込はアップロード JSON を register* で再登録する。Server / WASM 両モードで動作する。
 export function RestrictionIOPanel({ onChanged }: Props) {
   const { t } = useI18n();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -35,17 +34,8 @@ export function RestrictionIOPanel({ onChanged }: Props) {
     setError(null);
     setInfo(null);
     try {
-      const { items } = await listRestrictions();
-      const payload: SavedFile = { format: FORMAT, version: FORMAT_VERSION, items };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      a.href = url;
-      a.download = `restrictions-${stamp}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setInfo(t('rio.saved', { n: items.length }));
+      const res = await saveRestrictions();
+      setInfo(res.downloaded ? t('rio.downloaded', { path: res.path }) : t('rio.savedTo', { path: res.path }));
     } catch (e) {
       setError((e as Error).message);
     } finally {

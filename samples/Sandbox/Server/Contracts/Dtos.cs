@@ -54,3 +54,5 @@ public sealed record MeshRestrictionRequest(
 public sealed record RestrictionIdResponse(Guid Id);
 
 public sealed record GmlImportResponse(Guid[] Ids, int AcceptedCount);
+
+public sealed record RestrictionSaveResponse(string Path);

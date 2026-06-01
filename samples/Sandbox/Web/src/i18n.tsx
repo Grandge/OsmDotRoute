@@ -101,7 +101,8 @@ const en: Dict = {
   'rio.save': 'Save to JSON',
   'rio.load': 'Load from JSON',
   'rio.hint': 'Save the current restrictions to a file, or restore them from a saved JSON.',
-  'rio.saved': 'Saved {n} restriction(s)',
+  'rio.savedTo': 'Saved to: {path}',
+  'rio.downloaded': 'Downloaded: {path}',
   'rio.loaded': 'Loaded {ok} restriction(s) ({skipped} skipped)',
   'rio.invalidFile': 'Not a valid restrictions JSON file.',
   // PresetPanel
@@ -222,7 +223,8 @@ const ja: Dict = {
   'rio.save': 'JSON に保存',
   'rio.load': 'JSON から読込',
   'rio.hint': '現在の制約をファイルに保存、または保存済み JSON から復元します。',
-  'rio.saved': '{n} 件を保存しました',
+  'rio.savedTo': '保存しました: {path}',
+  'rio.downloaded': 'ダウンロードしました: {path}',
   'rio.loaded': '{ok} 件を読み込みました（{skipped} 件スキップ）',
   'rio.invalidFile': '制約 JSON ファイルではありません。',
   // PresetPanel

@@ -298,6 +298,8 @@ var route = router.Calculate(VehicleProfile.Car, from, to);  // 復元した制�
 
 [Sandbox デモ](https://grandge.github.io/OsmDotRoute/)（「制約の保存 / 読込」パネル）も**同一形式**で読み書きするため、
 デモで作った制約を C# 側で読み込む／C# で生成した JSON をデモで開く、といった相互運用ができる。
+なおローカル版 Sandbox（サーバー実行）では、保存先は画面上の「保存先」フォルダ設定で指定したフォルダになる
+（ブラウザ版 GitHub Pages はダウンロードフォルダ）。
 
 ファイル形式は次の通り（`items` の各要素が 1 制約に対応）:
 

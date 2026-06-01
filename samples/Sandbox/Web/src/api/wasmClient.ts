@@ -99,6 +99,23 @@ export async function listRestrictions(): Promise<{ items: RestrictionItem[] }> 
   return JSON.parse(interop.ListRestrictions()) as { items: RestrictionItem[] };
 }
 
+// WASM モード: サーバーファイルシステムが無いためブラウザのダウンロードで保存する。
+// downloaded=true、path はダウンロードファイル名。
+export async function saveRestrictions(): Promise<{ path: string; downloaded: boolean }> {
+  const { items } = await listRestrictions();
+  const payload = { format: 'osmdotroute-restrictions', version: 1, items };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const fileName = `restrictions-${stamp}.json`;
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+  return { path: fileName, downloaded: true };
+}
+
 export async function fetchRestrictionsGeoJson(): Promise<GeoJSON.FeatureCollection> {
   const interop = await getInterop();
   return JSON.parse(interop.RestrictionsGeoJson()) as GeoJSON.FeatureCollection;
