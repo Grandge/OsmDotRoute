@@ -268,6 +268,71 @@ restrictions.AddDifficultyAreaFromGmlFile(
 `Landslide`（土砂崩れ）/ `Construction`（工事中）/ `Obstacle`（障害物）/
 `Congestion`（交通集中）/ `Snow`（積雪）/ `Ice`（凍結）。
 
+#### JSON ファイルで制約を保存・読込する
+
+付与済みのメッシュ／ポリゴン制約を **JSON ファイルに保存し、後で読み込んで一括復元**できる。
+同じ制約セットを毎回作り直さずに済むほか、JSON を手書き・外部生成して一括投入する用途にも使える。
+C# では `RestrictedAreaService` の以下のメソッドを使う:
+
+```csharp
+var restrictions = new RestrictedAreaService();
+restrictions.AddBlockArea(new MeshCode(53394611), tag: "typhoon-15");
+restrictions.AddDifficultyArea(polygon, DifficultyTypes.Flooding, tag: "ksj-a31");
+
+// 保存（ファイル / Stream / 文字列）
+restrictions.SaveToJsonFile(@"D:\restrictions\scenario-1.json");
+string json = restrictions.ToJsonString();
+
+// 読込（既存の制約に追加。置換したい場合は事前に ClearAll）
+var loaded = new RestrictedAreaService();
+RestrictedAreaId[] ids = loaded.AddFromJsonFile(@"D:\restrictions\scenario-1.json");
+// loaded.AddFromJsonStream(stream); / loaded.AddFromJsonString(json); も可
+
+var router = new Router(routerDb, loaded);
+var route = router.Calculate(VehicleProfile.Car, from, to);  // 復元した制約が即時反映
+```
+
+- 読込は**追加**動作（既存の制約は保持）。制約 ID は読込時に再採番される（保存時の `id` は無視）。
+- `kind=difficulty` の item に `difficultyType` が無い、ポリゴンの頂点が 3 未満、`format`/`version` が非対応などの場合は `FormatException`、JSON 自体が壊れている場合は `JsonException` を送出する。
+- ポリゴンの穴（`GeoPolygon.Holes`）は保存形式に含まれない（外周のみ）。
+
+[Sandbox デモ](https://grandge.github.io/OsmDotRoute/)（「制約の保存 / 読込」パネル）も**同一形式**で読み書きするため、
+デモで作った制約を C# 側で読み込む／C# で生成した JSON をデモで開く、といった相互運用ができる。
+
+ファイル形式は次の通り（`items` の各要素が 1 制約に対応）:
+
+```json
+{
+  "format": "osmdotroute-restrictions",
+  "version": 1,
+  "items": [
+    {
+      "kind": "block",
+      "shapeType": "mesh",
+      "meshCodes": [53394611],
+      "tag": "typhoon-15"
+    },
+    {
+      "kind": "difficulty",
+      "difficultyType": "flooding",
+      "shapeType": "polygon",
+      "outerBoundary": [
+        { "latitude": 35.68, "longitude": 139.76 },
+        { "latitude": 35.68, "longitude": 139.78 },
+        { "latitude": 35.66, "longitude": 139.78 },
+        { "latitude": 35.66, "longitude": 139.76 }
+      ],
+      "tag": "ksj-a31"
+    }
+  ]
+}
+```
+
+- `kind`: `block`（進入不可）／ `difficulty`（難所）。`difficulty` のときは `difficultyType`（上記の難所タイプ）を指定する。
+- `shapeType`: `mesh` なら `meshCodes`（JIS X0410 メッシュコード配列）、`polygon` なら `outerBoundary`（3 頂点以上の外周。緯度・経度）を指定する。
+- `tag`: 任意。タグ単位の一括解除に使える。
+- 読込時は制約 ID を再採番するため、保存時の `id` は引き継がれない（読み込んだ JSON に `id` があっても無視される）。
+
 ---
 
 ## 6. プロファイルの指定方法

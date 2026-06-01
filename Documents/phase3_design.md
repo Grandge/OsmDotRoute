@@ -1306,7 +1306,8 @@ MapVerifier は Phase 2/3 の検証データ可視化ツールとして残置し
   - Server: `POST /api/restrictions/gml-upload`（multipart/form-data、フォーム手動読取で antiforgery 検証対象外）→ コアの `AddBlockAreaFromGmlStream` / `AddDifficultyAreaFromGmlStream`。
   - WASM: `[JSExport] AddGmlRestriction(byte[], optionsJson)` を追加。`MemoryStream` 経由で同コア API を呼ぶ。GML パース（`XmlReader`）はブラウザ内で完結（trim 後も到達可能性により `System.Private.Xml` が含まれる）。
   - フロント: `client.ts` / `wasmClient.ts` に `importGml(file, options)` を追加（3J.5 の mode 別 alias 機構でコンポーネントは無改変差替）。
-- **制約 I/O（JSON 保存/読込）**: 既存の `listRestrictions` / `registerMeshRestriction` / `registerPolygonRestriction` のみで実現できるため、**フロントエンド完結**（Server / WASM とも追加 API なし）。保存はブラウザのダウンロード、読込はアップロード JSON を 1 件ずつ再登録。形式は `{ "format": "osmdotroute-restrictions", "version": 1, "items": [...] }`。
+- **制約 I/O（JSON 保存/読込）**: Sandbox フロントは既存の `listRestrictions` / `registerMeshRestriction` / `registerPolygonRestriction` のみで実現（保存はブラウザのダウンロード、読込はアップロード JSON を 1 件ずつ再登録）。形式は `{ "format": "osmdotroute-restrictions", "version": 1, "items": [...] }`。
+  - **C# ライブラリ API も追加**（2026-06-01 追補）: `RestrictedAreaService` に `ToJsonString` / `SaveToJsonStream` / `SaveToJsonFile` と `AddFromJsonString` / `AddFromJsonStream` / `AddFromJsonFile` を新設。Sandbox と同一形式で相互運用可能。トリミング / WASM 安全のためソース生成シリアライザ `RestrictionJsonContext`（`ProfileJsonContext` と同方針）を使用。読込は追加動作・ID 再採番、検証失敗は `FormatException` / `JsonException`。往復・相互運用・検証の単体テスト 11 件追加（計 693 件 pass）。
 - **MapVerifier 廃止**: `samples/MapVerifier/` 一式、`OsmDotRoute.sln` の `MapVerifier.Server` 参照、`Documents/map_verifier_design.md`、`start-map-verifier.ps1` を削除。
 
 ### 10.8.3 トレードオフ・制約
@@ -1319,7 +1320,7 @@ MapVerifier は Phase 2/3 の検証データ可視化ツールとして残置し
 
 - `dotnet build OsmDotRoute.sln`（Server / WASM 含む全プロジェクト）成功・警告 0。`tsc --noEmit`（`client.ts` / `wasmClient.ts` 両系）・`vite build`（server モード）成功。
 - ローカル Sandbox（Server モード）でユーザー目視確認済。GitHub Pages（WASM）版は CI デプロイ後に確認。
-- コア（`src/OsmDotRoute`）は無改変のため `dotnet test` 682 件への影響なし。
+- 初回（GML 移植 + Sandbox 制約 I/O）はコア無改変。続く C# JSON API 追補でコアに `RestrictedAreaService` の JSON I/O + `RestrictionJsonContext` を追加し、単体テスト 11 件を追加（`dotnet test` 693 件 pass）。
 
 ---
 
@@ -1372,3 +1373,4 @@ MapVerifier は Phase 2/3 の検証データ可視化ツールとして残置し
 | — | 2026-05-28 | §9 (3G) 肉付け。愛知県 (988k 頂点 / 1.4M エッジ) C0 Mean 117 ms/route + 東京都 (1.28M 頂点 / 1.78M エッジ) C0 Mean 288 ms/route を実測。Phase 1 §18.2 リベンジ完了。REQ-NFR-001 は市単位で達成、都道府県単位では CH 検討の判断材料を取得。PrefectureBench.cs 新規追加。§0.3 章対応表更新 | Claude (Opus 4.7) |
 | — | 2026-05-29 | §10.7 (3J) 肉付け。GitHub Pages デモを React 流用 + コア WASM 化で実装（原計画 §3.9 の Blazor 前提を修正）。コア改修: in-memory `.odrg` ロード (`LoadFromOdrg(ReadOnlyMemory<byte>)`) / プロファイル JSON ソース生成化 (trim/AOT 安全) / `GetProfileNames()`。`dotnet test` 682 件 pass。WASM ブリッジ (load/route/snap/制約/メッシュ/Re-Route) を Node ホストで検証。`build:wasm` 単一静的サイト生成 + Pages ワークフロー整備 (deploy は J-C で 3H まで無効)。§0.3 章対応表更新（10.5 → 10.7 改題） | Claude (Opus 4.7) |
 | — | 2026-06-01 | §10.8 追加。MapVerifier 廃止（dir / sln 参照 / map_verifier_design.md / start-map-verifier.ps1）に伴い、固有機能の GML インポートを Sandbox へ移植（入力をファイルアップロードに統一、Server=multipart / WASM=`AddGmlRestriction`）。メッシュ/ポリゴン制約の JSON 保存・読込（フロント完結）を追加。§10.1 / §10.4 の現状不一致を修正。CONTRIBUTING.md の MapVerifier.FilePicker 記述を除去 | Claude (Opus 4.8) |
+| — | 2026-06-01 | §10.8 追補。制約 JSON I/O の **C# ライブラリ API** を `RestrictedAreaService` に追加（`ToJsonString` / `SaveToJson*` / `AddFromJson*` + ソース生成 `RestrictionJsonContext`、Sandbox と同一形式で相互運用）。単体テスト 11 件追加（693 件 pass）。usage_guide.md に C# サンプル追記。Sandbox デモ版を 1.1.0 に更新 | Claude (Opus 4.8) |

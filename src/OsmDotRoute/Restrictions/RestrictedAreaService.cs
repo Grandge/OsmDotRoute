@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OsmDotRoute.Geometry;
 using OsmDotRoute.Gml;
 using OsmDotRoute.Mesh;
@@ -419,6 +420,175 @@ public sealed class RestrictedAreaService
     {
         return _entries.Values.Select(e => e.Area).ToArray();
     }
+
+    // --- JSON 永続化（保存 / 読込） ---
+
+    private const string JsonFormatId = "osmdotroute-restrictions";
+    private const int JsonFormatVersion = 1;
+
+    /// <summary>
+    /// 登録済み制約を JSON 文字列にシリアライズする。形式は Sandbox デモの保存形式と互換
+    /// （<c>{ "format": "osmdotroute-restrictions", "version": 1, "items": [...] }</c>）。
+    /// </summary>
+    /// <remarks>ポリゴンの穴（<see cref="GeoPolygon.Holes"/>）は保存形式に含まれない（外周のみ保存）。</remarks>
+    /// <returns>制約一覧を表す JSON 文字列</returns>
+    public string ToJsonString()
+        => JsonSerializer.Serialize(BuildDocument(), RestrictionJsonContext.Default.RestrictionDocument);
+
+    /// <summary>登録済み制約を JSON として Stream へ書き出す（<see cref="ToJsonString"/> 参照）。</summary>
+    /// <param name="stream">書き込み可能 Stream</param>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> が <c>null</c></exception>
+    public void SaveToJsonStream(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        JsonSerializer.Serialize(stream, BuildDocument(), RestrictionJsonContext.Default.RestrictionDocument);
+    }
+
+    /// <summary>登録済み制約を JSON ファイルへ保存する（<see cref="ToJsonString"/> 参照）。</summary>
+    /// <param name="filePath">保存先ファイルパス</param>
+    /// <exception cref="ArgumentException"><paramref name="filePath"/> が null または空</exception>
+    public void SaveToJsonFile(string filePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        using var stream = File.Create(filePath);
+        SaveToJsonStream(stream);
+    }
+
+    /// <summary>
+    /// JSON 文字列から制約を一括追加する（<see cref="ToJsonString"/> の逆操作）。
+    /// 既存の制約は保持され、追加分の ID は新規採番される（置換したい場合は事前に <see cref="ClearAll"/>）。
+    /// </summary>
+    /// <param name="json">制約一覧を表す JSON 文字列</param>
+    /// <returns>追加された制約の ID 配列（items と同順）</returns>
+    /// <exception cref="ArgumentException"><paramref name="json"/> が null または空</exception>
+    /// <exception cref="FormatException">format / version が非対応、または item の内容が不正</exception>
+    /// <exception cref="JsonException">JSON のパースに失敗</exception>
+    public RestrictedAreaId[] AddFromJsonString(string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+        return RegisterDocument(JsonSerializer.Deserialize(json, RestrictionJsonContext.Default.RestrictionDocument));
+    }
+
+    /// <summary>JSON Stream から制約を一括追加する（<see cref="AddFromJsonString"/> 参照）。</summary>
+    /// <param name="stream">JSON を含む読み取り可能 Stream</param>
+    /// <returns>追加された制約の ID 配列</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> が <c>null</c></exception>
+    /// <exception cref="FormatException">format / version が非対応、または item の内容が不正</exception>
+    /// <exception cref="JsonException">JSON のパースに失敗</exception>
+    public RestrictedAreaId[] AddFromJsonStream(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        return RegisterDocument(JsonSerializer.Deserialize(stream, RestrictionJsonContext.Default.RestrictionDocument));
+    }
+
+    /// <summary>JSON ファイルから制約を一括追加する（<see cref="AddFromJsonString"/> 参照）。</summary>
+    /// <param name="filePath">読み込む JSON ファイルパス</param>
+    /// <returns>追加された制約の ID 配列</returns>
+    /// <exception cref="ArgumentException"><paramref name="filePath"/> が null または空</exception>
+    /// <exception cref="FileNotFoundException">ファイルが存在しない</exception>
+    /// <exception cref="FormatException">format / version が非対応、または item の内容が不正</exception>
+    /// <exception cref="JsonException">JSON のパースに失敗</exception>
+    public RestrictedAreaId[] AddFromJsonFile(string filePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException("制約 JSON ファイルが見つかりません。", filePath);
+        }
+        using var stream = File.OpenRead(filePath);
+        return AddFromJsonStream(stream);
+    }
+
+    private RestrictionDocument BuildDocument()
+        => new(JsonFormatId, JsonFormatVersion, ListAll().Select(ToRecord).ToArray());
+
+    private static RestrictionRecord ToRecord(RestrictedArea area)
+    {
+        var (kind, difficultyType) = area switch
+        {
+            BlockArea => ("block", (string?)null),
+            DifficultyArea d => ("difficulty", d.DifficultyType),
+            _ => throw new NotSupportedException($"未対応の制約種別: {area.GetType().Name}"),
+        };
+        var polygon = (area as BlockArea)?.Polygon ?? (area as DifficultyArea)?.Polygon;
+        var meshCodes = (area as BlockArea)?.MeshCodes ?? (area as DifficultyArea)?.MeshCodes;
+
+        return polygon is not null
+            ? new RestrictionRecord(kind, difficultyType, "polygon", null,
+                polygon.OuterBoundary.Select(c => new CoordinateRecord(c.Latitude, c.Longitude)).ToArray(), area.Tag)
+            : new RestrictionRecord(kind, difficultyType, "mesh",
+                meshCodes!.Select(m => m.Value).ToArray(), null, area.Tag);
+    }
+
+    private RestrictedAreaId[] RegisterDocument(RestrictionDocument? doc)
+    {
+        if (doc is null)
+        {
+            throw new FormatException("制約 JSON が null です。");
+        }
+        if (!string.Equals(doc.Format, JsonFormatId, StringComparison.Ordinal))
+        {
+            throw new FormatException($"未対応の format です（期待: {JsonFormatId}, 受信: {doc.Format}）。");
+        }
+        if (doc.Version != JsonFormatVersion)
+        {
+            throw new FormatException($"未対応の version です（期待: {JsonFormatVersion}, 受信: {doc.Version}）。");
+        }
+        if (doc.Items is null || doc.Items.Length == 0)
+        {
+            return [];
+        }
+
+        var ids = new RestrictedAreaId[doc.Items.Length];
+        for (var i = 0; i < doc.Items.Length; i++)
+        {
+            ids[i] = RegisterRecord(doc.Items[i], i);
+        }
+        return ids;
+    }
+
+    private RestrictedAreaId RegisterRecord(RestrictionRecord rec, int index)
+    {
+        var kind = (rec.Kind ?? "").Trim().ToLowerInvariant();
+        var shape = (rec.ShapeType ?? "").Trim().ToLowerInvariant();
+
+        switch (shape)
+        {
+            case "mesh":
+                if (rec.MeshCodes is null || rec.MeshCodes.Length == 0)
+                {
+                    throw new FormatException($"items[{index}]: shapeType=mesh には meshCodes が必要です。");
+                }
+                var codes = rec.MeshCodes.Select(v => new MeshCode(v)).ToArray();
+                return kind switch
+                {
+                    "block" => AddBlockArea(codes, rec.Tag),
+                    "difficulty" => AddDifficultyArea(codes, RequireDifficultyType(rec.DifficultyType, index), rec.Tag),
+                    _ => throw new FormatException($"items[{index}]: kind は block / difficulty のいずれか (受信: {rec.Kind})"),
+                };
+
+            case "polygon":
+                if (rec.OuterBoundary is null || rec.OuterBoundary.Length < 3)
+                {
+                    throw new FormatException($"items[{index}]: shapeType=polygon には 3 頂点以上の outerBoundary が必要です。");
+                }
+                var polygon = new GeoPolygon(rec.OuterBoundary.Select(c => new GeoCoordinate(c.Latitude, c.Longitude)).ToArray());
+                return kind switch
+                {
+                    "block" => AddBlockArea(polygon, rec.Tag),
+                    "difficulty" => AddDifficultyArea(polygon, RequireDifficultyType(rec.DifficultyType, index), rec.Tag),
+                    _ => throw new FormatException($"items[{index}]: kind は block / difficulty のいずれか (受信: {rec.Kind})"),
+                };
+
+            default:
+                throw new FormatException($"items[{index}]: shapeType は mesh / polygon のいずれか (受信: {rec.ShapeType})");
+        }
+    }
+
+    private static string RequireDifficultyType(string? difficultyType, int index)
+        => string.IsNullOrWhiteSpace(difficultyType)
+            ? throw new FormatException($"items[{index}]: kind=difficulty には difficultyType が必要です。")
+            : difficultyType;
 
     // --- internal クエリ API（Step 9 の EdgeWeightCalculator から使用） ---
 
