@@ -137,7 +137,8 @@ DI 統合を使う場合は加えて:
 | Phase 0 | 要件定義 | 完了（2026-05-18） |
 | Phase 1 | 経路探索エンジン独自化（Itinero をデータ層として利用） | 完了 |
 | Phase 2 | 中間グラフ形式 `.odrg` 策定 | 完了 |
-| Phase 3 | `.odrg` ランタイム化・Itinero 依存完全撤去・bicycle/truck・ベンチ・親プロ統合・デモ・OSS 公開準備 | **進行中（OSS 公開準備）** |
+| Phase 3 | `.odrg` ランタイム化・Itinero 依存完全撤去・bicycle/truck・ベンチ・親プロ統合・デモ・OSS 公開 | 完了（2026-06-02） |
+| Phase 4 | プロファイル追加（Emergency / Disaster 等）・マルチプラットフォーム対応 | 予定 |
 
 ランタイムから Itinero 依存は撤去済み（System.* のみで完結）。
 

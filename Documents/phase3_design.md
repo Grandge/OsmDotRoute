@@ -60,18 +60,17 @@ Phase 2 設計書 §8「Phase 3 申し送り事項」が本書の出発点。Pha
 | 9. 都道府県単位ベンチ | 3G | **肉付け完了**（3G、2026-05-28） |
 | 10. ユーザー試用デモツール `OsmDotRoute.Sandbox` | 3I（5 サブステップ 3I.1〜3I.5） | **肉付け完了**（3I.5、2026-05-28） |
 | 10.7. GitHub Pages デモ（React 流用 + コア WASM 化） | 3J（6 サブステップ 3J.1〜3J.6） | **肉付け完了**（3J.6、2026-05-29） |
-| 11. Phase 3 確定と OSS 公開準備 | 3H | 未着手 |
+| 11. Phase 3 確定と OSS 公開準備 | 3H | **完了**（3H、2026-06-02） |
 | 12. 改訂履歴 | 各ステップ完了時 | 初版（v0.1） |
 
-**Phase 4+ 設計書（将来作成検討）に持ち越す章**：
+**Phase 4 スコープ（2026-06-02 ユーザー決定で 2 項目に限定）**：
 
-- CH（Contraction Hierarchies）対応
-- ターン制限（PBF Relation `type=restriction`）対応
-- 双方向 Dijkstra / A\* 等の高速化アルゴリズム
-- メッシュ 100 m 階層対応（要件定義書 v1.4 で延期、第 6 次メッシュ）
-- マルチプラットフォーム配布検証（macOS / Linux 詳細）
-- Emergency / Disaster プロファイル（REQ-PRF-005 / REQ-PRF-006、P3）
-- NuGet 公開後の運用フィードバック反映
+- **プロファイル追加**: Emergency / Disaster プロファイル（REQ-PRF-005 / REQ-PRF-006、P3）ほかユーザー定義プロファイル拡充
+- **マルチプラットフォーム対応**: macOS / Linux の配布・検証の本格化
+
+> 以下は従来 Phase 4+ 候補として挙げていたが、**計画から削除**（2026-06-02）。必要が生じた時点で改めて起票する:
+> CH（Contraction Hierarchies）/ ターン制限（PBF Relation `type=restriction`）/ 双方向 Dijkstra・A\* 等の高速化 / メッシュ 100 m 階層 / NuGet 公開後の運用フィードバック。
+> （本文中に残る「Phase 4+ への申し送り」注記は当時の開発観察記録であり、Phase 4 計画スコープとは別。）
 
 ### 0.4 章内のテンプレート
 
@@ -1328,13 +1327,18 @@ MapVerifier は Phase 2/3 の検証データ可視化ツールとして残置し
 
 **対応ステップ**: 3H
 **対応要件**: REQ-PKG-003, REQ-LIC-004
-**Phase 2 申し送り**: 設計書 §8.3 表 3H 行
-**実装日**: （未着手）
-**実装バージョン**: （未着手）
+**実装日**: 2026-06-02（Phase 3 完了）
+**実装バージョン**: ユーザー採番
+
+> **完了サマリ（2026-06-02）**: 本ステップをもって **Phase 3 を完了**とする。
+> - **OSS 公開**: リポジトリ `github.com/Grandge/OsmDotRoute` は public 化済（REQ-PKG-002 解除）。GitHub Pages デモ稼働、README（日英）/ LICENSE / LICENSE-THIRD-PARTY / CONTRIBUTING / `comparison_with_itinero.md` 整備済。
+> - **NuGet**: 3 パッケージ（OsmDotRoute / .Pbf / .Extensions.DependencyInjection）の pack 通過＋メタデータ整備済。**nuget.org 実公開は保留**（有料コード署名証明書の社内承認待ち・見込み薄。Phase 3 完了の必須条件からは除外）。
+> - **クロスプラットフォーム検証**: Windows(x64) / Linux(WSL2 x64) / macOS(Apple Silicon ARM64) すべてで 693/693 pass。`.odrg` の MMF/`GetSpan<T>` 経路が ARM64・16KB ページでも破綻しないことを実証。
+> - **注**: 3H の詳細作業記録（NuGet メタ整備・WSL2・macOS 検証・自動ミラー基盤・本章 §11.6）は、NuGet 保留に伴いブランチ `feature/phase3-3h-packaging` に**アーカイブ**（main 未マージ）。macOS 自動検証リポジトリ `Grandge/OsmDotRoute-ci-macos` は稼働中。仕組みは別途運用メモ参照。
 
 ### 11.1 意図
 
-（未記述：ステップ 3H 完了時に肉付け。GitHub 個人アカウント上での OSS 公開準備、README + Sandbox クイックスタート + Itinero 比較ドキュメント、LICENSE / CI / ODbL ガイドライン）
+GitHub 個人アカウント上での OSS 公開準備（README + Sandbox クイックスタート + Itinero 比較ドキュメント、LICENSE / CI / ODbL ガイドライン）と、配布前のクロスプラットフォーム健全性確認。詳細な実装記録はアーカイブブランチ側（上記サマリ参照）。
 
 ### 11.2 採用設計
 

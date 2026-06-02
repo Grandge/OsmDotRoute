@@ -138,7 +138,8 @@ For the `osmdotroute-extractor` tool that generates `.odrg`, see
 | Phase 0 | Requirements definition | Done (2026-05-18) |
 | Phase 1 | Custom routing engine (Itinero kept as data layer) | Done |
 | Phase 2 | Custom intermediate graph format `.odrg` | Done |
-| Phase 3 | `.odrg` runtime, full Itinero removal, bicycle/truck, benchmarks, parent integration, demo, OSS release prep | **In progress (OSS release prep)** |
+| Phase 3 | `.odrg` runtime, full Itinero removal, bicycle/truck, benchmarks, parent integration, demo, OSS release | Done (2026-06-02) |
+| Phase 4 | Profile additions (Emergency / Disaster, etc.), multi-platform support | Planned |
 
 The Itinero dependency has been removed from the runtime (System.* only).
 
