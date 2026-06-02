@@ -114,7 +114,7 @@ cd samples/Sandbox/Web ; npm run build:wasm
 
 ## インストール
 
-NuGet 公開前のため、現状は **ソース参照** での利用を想定しています。
+現時点で NuGet（nuget.org）への公開予定はありません。**ソース参照** での利用を想定しています。
 次のようにプロジェクト参照してください（ランタイムは System.* のみ依存）。
 
 ```xml

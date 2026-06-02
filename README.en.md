@@ -115,7 +115,7 @@ cd samples/Sandbox/Web ; npm run build:wasm
 
 ## Installation
 
-NuGet packages are not yet published, so use it via **source reference** for now
+There are currently no plans to publish to NuGet (nuget.org). Use it via **source reference**
 (runtime depends on System.* only). Add a project reference:
 
 ```xml
