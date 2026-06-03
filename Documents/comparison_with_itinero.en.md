@@ -58,7 +58,7 @@ OsmDotRoute narrows its breadth and concentrates its design resources on the **d
 | Edge geometry | Copies tend to occur | **Contiguous buffer + `ReadOnlySpan<GeoCoordinate>`** (zero-allocation) |
 | File access | Reads the whole file | **`MemoryMappedFile` + `ReadOnlySpan<T>`** (zero-copy, minimal resident memory) |
 | Input | OSM PBF / intermediate RouterDb, etc. | **Direct OSM PBF extraction only** (to the runtime via a `.odrg`) |
-| Turn restrictions | Supported | Not supported (format reserved only, Phase 4+) |
+| Turn restrictions | Supported | Not supported (format reserved only) |
 
 OsmDotRoute's `.odrg` is designed as a "**data foundation for evaluating dynamic restrictions fast.**"
 By pre-baking the edge R-tree and AABBs, it finds intersections between polygon/mesh restrictions and
@@ -73,7 +73,7 @@ During Dijkstra edge expansion, a single HashSet lookup (O(1)) suffices.
 | --- | --- | --- |
 | Search | Dijkstra / A\* / **CH** / bidirectional / many-to-many / Isochrone / matrix | **Dijkstra only** |
 
-OsmDotRoute currently offers Dijkstra only. A\* / bidirectional / CH are future work (Phase 4+).
+OsmDotRoute offers Dijkstra only; A\* / bidirectional / CH are not implemented.
 
 The key point here is that **"dynamic add/remove" and "CH precomputation" are a poor match.**
 CH speeds things up by precomputation, but recomputation cost arises every time a restriction changes,
@@ -132,8 +132,7 @@ conditions as this benchmark is not possible, and we present the OsmDotRoute val
 | Prefecture-scale routing | (not measured) | Aichi 117 ms / Tokyo 288 ms (city scale is under 8 ms) |
 
 At prefecture scale, Dijkstra-only exceeds 100 ms (Tokyo 288 ms).
-This is an area where Itinero, with CH, has the advantage for large/high-frequency queries, and
-OsmDotRoute treats it as material for deciding whether to introduce CH in Phase 4+.
+This is an area where Itinero, with CH, has the advantage for large/high-frequency queries.
 
 ### 5.4 Implications for large-volume / multi-agent use
 
@@ -228,18 +227,7 @@ Note that OSM data itself is under ODbL, so distribution requires the attributio
 
 ---
 
-## 11. Future plans (Phase 4+)
-
-Many of the points where OsmDotRoute currently falls short are candidates for future resolution.
-
-- Speedup algorithms such as CH (Contraction Hierarchies) / bidirectional Dijkstra
-- Turn restrictions (PBF Relation `type=restriction`)
-- User-defined profile support in the extraction tool
-- NuGet publishing, multi-platform (macOS / Linux) verification
-
----
-
-## 12. Acknowledgments
+## 11. Acknowledgments
 
 In its early development (Phase 1), OsmDotRoute borrowed the graph structure from Itinero's
 `RouterDb.Network` to validate the routing engine. It then migrated to the custom graph format `.odrg`

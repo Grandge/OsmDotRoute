@@ -57,7 +57,7 @@ OsmDotRoute は幅を絞り、**動的制約のホットパス**に設計資源�
 | エッジ形状       | コピーが発生しやすい                                              | **連続バッファ + `ReadOnlySpan<GeoCoordinate>`**（ゼロアロケーション）       |
 | ファイルアクセス | ファイル全読み                                                    | **`MemoryMappedFile` + `ReadOnlySpan<T>`**（ゼロコピー、常駐メモリ最小化） |
 | 入力             | OSM PBF / 中間 RouterDb 等                                        | **OSM PBF 直接抽出のみ**（`.odrg` 経由でランタイムへ）                       |
-| ターン制限       | 対応                                                              | 未対応（Phase 4+ で形式予約のみ）                                                    |
+| ターン制限       | 対応                                                              | 未対応（形式予約のみ）                                                    |
 
 OsmDotRoute の `.odrg` は「**動的制約を高速に評価するためのデータ土台**」として設計されている。
 エッジ R-tree と AABB を事前 bake することで、ポリゴン／メッシュ制約とエッジの交差を
@@ -72,7 +72,7 @@ Dijkstra のエッジ展開時は HashSet ルックアップ 1 回（O(1)）で�
 | ---- | ------------------------------------------------------------------------ | ----------------------- |
 | 探索 | Dijkstra / A\* / **CH** / 双方向 / 多対多 / Isochrone / マトリクス | **Dijkstra のみ** |
 
-OsmDotRoute は現時点で Dijkstra のみ。A\* / 双方向 / CH は将来課題（Phase 4+）。
+OsmDotRoute は Dijkstra のみで、A\* / 双方向 / CH は実装していない。
 
 ここで重要なのは、**「動的制約 add/remove」と「CH 事前計算」は相性が悪い**こと。
 CH は事前計算で高速化する手法だが、通行制限が変わるたびに再計算コストが発生するため、
@@ -129,8 +129,7 @@ add/remove して即時反映する標準的な手段はない。したがって
 | 都道府県単位の経路計算 | （未測定）                                     | 愛知県 117 ms / 東京都 288 ms（市単位は 8 ms 未満）                |
 
 都道府県単位では Dijkstra のみだと 100 ms を超える（東京都 288 ms）。
-大規模・高頻度クエリでは CH を持つ Itinero に分がある領域であり、OsmDotRoute は Phase 4+ で
-CH 導入を検討する判断材料としている。
+大規模・高頻度クエリでは CH を持つ Itinero に分がある領域である。
 
 ### 5.4 大量クエリ・マルチエージェント用途での含意
 
@@ -226,18 +225,7 @@ System.* 完結の OsmDotRoute が有利。
 
 ---
 
-## 11. 将来計画（Phase 4+）
-
-現時点で OsmDotRoute が劣る項目の多くは、将来の解消候補である。
-
-- CH（Contraction Hierarchies）/ 双方向 Dijkstra など高速化アルゴリズム
-- ターン制限（PBF Relation `type=restriction`）
-- ユーザー定義プロファイルの抽出ツール対応
-- NuGet 公開、マルチプラットフォーム（macOS / Linux）検証
-
----
-
-## 12. 謝辞
+## 11. 謝辞
 
 OsmDotRoute は開発初期（Phase 1）に、グラフ構造を Itinero の `RouterDb.Network` から借用して
 経路探索エンジンの動作確認を行った。その後 Phase 2 / Phase 3 で独自グラフ形式 `.odrg` へ移行し、
