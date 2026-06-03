@@ -2,7 +2,7 @@
 
 **バージョン**: ユーザー採番（未採番）
 **作成日**: 2026-06-03
-**ステータス**: 計画ドラフト（ユーザー合意待ち）
+**ステータス**: 完了（2026-06-03、Windows/Linux/macOS で Phase 4 = 753 pass 検証済み）
 **対象**: Phase 4 スコープ第 2 項「マルチプラットフォーム対応」（第 1 項「プロファイル追加」は完了・push 済み）
 **関連ドキュメント**:
 
@@ -92,9 +92,36 @@ OS / アーキ依存リスクは `.odrg` の MMF / `byte*` 直アクセス経路
 
 ---
 
-## 3. 実施結果
+## 3. 実施結果（2026-06-03 完了）
 
-（各ステップ完了時に追記）
+3 プラットフォーム（Windows x64・Linux x64・macOS ARM64）で Phase 4（753 pass）の検証を完了した。
+
+### 3.1 Step M1：macOS ミラー基盤の main 移植
+
+3H ブランチから検証基盤 3 ファイルを取り出し main へ移植（commit `b896438`）。ブランチマージはせず Phase 4 成果を保持。
+
+- `.github/workflows/mirror.yml` / `.mirror/ci-macos.yml` / `Documents/macos_ci_mirror.md`
+- いずれもコード非改変（YAML/Markdown）。staged blob は LF 格納で Linux ランナーへの CRLF 混入なしを確認。
+
+### 3.2 Step M2：macOS ARM64 検証（GitHub Actions ミラー）
+
+- **初回の自動ミラーは PAT 認証エラーで失敗**（`Invalid username or token`）。原因は `MIRROR_TOKEN` secret 登録時の**末尾改行混入**（PowerShell パイプ `"PAT" | gh secret set --body -` が改行を付与）。トークン自体は有効・期限内だった。
+- 対処：`gh secret set MIRROR_TOKEN --body "<PAT>"`（リテラル形式、改行なし）で再登録 → ミラー成功。
+- `Grandge/OsmDotRoute-ci-macos`（public）へ Phase 4 スナップショット（`b896438`）が force-push され、旧 693 スナップショットを置換。
+- **macOS-latest（Apple Silicon / ARM64）で `Failed: 0, Passed: 753, Skipped: 0`**（ci-macos run `26862278254`、mirror run `26862273008`）。
+- → `.odrg` の MMF / `GetSpan<T>` 経路が ARM64・16KB ページ環境で Phase 4 コードでも破綻しないことを実機で確認。
+- 以後の main push では自動ミラー＆検証が走る（secret 修復済み）。
+
+### 3.3 Step M3：Linux x64 検証（WSL2 Ubuntu-24.04 / .NET 9.0.314）
+
+- `dotnet test tests/OsmDotRoute.Tests -c Release` → **`Failed: 0, Passed: 753, Skipped: 0`**。`/mnt/d` 経由で Windows 実データが可視のため**データ依存テストもスキップされず通過**（実データ抽出→経路探査を実質カバー）。
+- 配布 3 本（OsmDotRoute / OsmDotRoute.Pbf / OsmDotRoute.Extensions.DependencyInjection）の `dotnet pack -c Release` が**警告ゼロ**で `.nupkg` 生成。
+- Extractor のバイナリ SHA256 比較（任意項目）は省略：3H で x64 の `.odrg` 決定性を確認済みかつ Phase 4 は `.odrg` 評価機構・フォーマット不変のため再現性は維持される。
+
+### 3.4 知見・申し送り
+
+- **secret の改行混入に注意**：PowerShell で PAT を secret 登録する際はパイプ（`|`）ではなく `--body "<値>"` リテラル形式を使う。`mirror.yml` の URL に改行混入トークンが入ると `Invalid username or token` で 403 失敗する。[macos_ci_mirror.md](macos_ci_mirror.md) §6.3 / §8 のトラブル表に該当。
+- macOS 検証は `OsmDotRoute-ci-macos` を継続使用。自動ミラーは本コミット以降 main push 毎に稼働。
 
 ---
 
@@ -111,3 +138,4 @@ OS / アーキ依存リスクは `.odrg` の MMF / `byte*` 直アクセス経路
 | Ver | 日付 | 変更 |
 | --- | --- | --- |
 | ドラフト | 2026-06-03 | 初版。3H 検証基盤の main 移植＋Phase 4 コードの macOS(Actions)/Linux(WSL2) 再検証を 4 ステップで計画。macOS 検証先は既存 `OsmDotRoute-ci-macos` を継続使用（初回ミラーで旧スナップショット置換）。ユーザー決定（完了条件・自動ミラー有効化・NuGet スコープ外）を §1 に記録。バージョンはユーザー採番 |
+| 完了 | 2026-06-03 | Step M1〜M4 完了。§3 に実施結果を記録：macOS ARM64 / Linux x64 とも Phase 4 = 753 pass、pack 3 本警告ゼロ。PAT secret の改行混入トラブルと対処を §3.2 / §3.4 に申し送り。バージョンはユーザー採番 |

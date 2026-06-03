@@ -266,8 +266,8 @@
 
 - [x] [P1] [Phase1] **REQ-NFR-005**: .NET 9 上で動作すること。(Ver. 0.18)
 - [x] [P1] [Phase1] **REQ-NFR-006**: Windows 10/11 (x64) で動作すること。(Ver. 0.18)
-- [ ] [P3] [Phase4+] **REQ-NFR-007**: Linux / macOS 対応は要望が出た時点で個別判断する（当面非対応）。(Ver. -)
-- [ ] [P3] [Phase4+] **REQ-NFR-008**: .NET 8 LTS 等の旧バージョン互換対応は要望が出た時点で個別判断する。(Ver. -)
+- [x] [P3] [Phase4] **REQ-NFR-007**: Linux / macOS 対応。**Phase 4 でマルチプラットフォーム検証完了**（Linux x64 = WSL2 + CI ubuntu-latest、macOS ARM64 = GitHub Actions ミラー `OsmDotRoute-ci-macos`、いずれも 753 pass / 0 fail / 0 skip）。`.odrg` の MMF / `GetSpan<T>` 経路が ARM64・16KB ページ環境でも破綻しないことを実機確認。NuGet 配布自体は別途保留（REQ-PKG-004）。詳細は [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) 参照。(Ver. -、ユーザー採番)
+- [ ] [P3] [Phase4+] **REQ-NFR-008**: .NET 8 LTS 等の旧バージョン互換対応は要望が出た時点で個別判断する（Phase 4 のマルチプラットフォーム対応は OS 横断のみで .NET バージョン横断は未着手）。(Ver. -)
 
 ### 6.3 対応地域・単位系 (REQ-NFR — 地域)
 
@@ -545,7 +545,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 **スコープ（2026-06-02 ユーザー決定で 2 項目に限定）**:
 - **プロファイル追加**: REQ-PRF-005〜006（emergency / disaster）＋ユーザー定義プロファイル拡充
-- **マルチプラットフォーム対応**: REQ-NFR-007〜008（Linux / macOS）の配布・検証本格化
+- **マルチプラットフォーム対応**: REQ-NFR-007（Linux / macOS）の検証本格化【完了 2026-06-03、Windows/Linux/macOS で 753 pass】。REQ-NFR-008（.NET バージョン横断）は本スコープ外で Phase 4+ 継続
 
 ### Phase 4 以降（将来検討）
 
@@ -625,6 +625,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
+| （採番待ち） | 2026-06-03 | **Phase 4 マルチプラットフォーム対応完了**。REQ-NFR-007（Linux / macOS）を完了マーク。3H で構築した macOS CI 自動ミラー基盤（`mirror.yml` / `.mirror/ci-macos.yml`）を Phase 4 成果を保ったまま main へ移植し、自動同期を有効化。**macOS ARM64（GitHub Actions ミラー `OsmDotRoute-ci-macos`）・Linux x64（WSL2 + CI）とも Phase 4 = 753 pass / 0 fail / 0 skip**、配布 3 本の pack も警告ゼロを確認。REQ-NFR-008（.NET バージョン横断）は本スコープ外で継続。詳細は [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md)。バージョンはユーザー採番 | Claude (Opus 4.8) |
 | （採番待ち） | 2026-06-03 | **Phase 4 プロファイル追加完了**。REQ-PRF-005 を救急車 `ambulance`（小型）+ 消防車 `fire_engine`（大型）の 2 プロファイルに分割して完了マーク（ID は分割せず両プロファイルに充当）、REQ-PRF-006 災害用 `disaster`（難所耐性中心）を完了マーク。Extractor CLI `--profiles` の外部 JSON プロファイル対応で REQ-PRF-009 を bake 経路へ拡張（`ProfileResolver`）。全 753 pass（Phase 3 末 693 → +60、回帰ゼロ）。設計は [phase4_design.md](phase4_design.md) §2、利用手順は [profile_guide.md](profile_guide.md) 参照。バージョンはユーザー採番 | Claude (Opus 4.8) |
 | 0.1 (draft) | 2026-05-18 | 初版ドラフト作成 | Claude (Opus 4.7) |
 | 0.2 (draft) | 2026-05-18 | 要件 ID（REQ-XXX-NNN）形式に再構成、ジャンル別整理、Phase/Ver 記法導入、地域メッシュコード対応反映 | Claude (Opus 4.7) |
@@ -649,7 +650,6 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 - [x] ユーザーレビュー
 - [x] 各要件 ID へのフィードバック・修正反映
-- [x] **車両プロファイル Phase 分割**の確定（REQ-PRF-003〜006、Bicycle/Truck を Phase 2、緊急車両/災害用車両を Phase 3 に確定）
 - [x] **メッシュ階層対応範囲**の確定（REQ-RST-016、Phase 1 で 1km / 500m / 250m の 3 階層対応。100m は v1.4 で Phase 2 以降へ延期）
 - [x] **親プロジェクト側の Phase 1 希望時期**: 気にしない方針で確定（Phase 1 の所要時間が短いと見込まれるため、独自スケジュールで進める）
 - [x] ステータスを「ドラフト」から「確定」に変更
