@@ -15,6 +15,9 @@ public sealed class VehicleProfile
     private static readonly Lazy<VehicleProfile> PedestrianLazy = new(() => LoadEmbedded("pedestrian.json"));
     private static readonly Lazy<VehicleProfile> BicycleLazy = new(() => LoadEmbedded("bicycle.json"));
     private static readonly Lazy<VehicleProfile> TruckLazy = new(() => LoadEmbedded("truck.json"));
+    private static readonly Lazy<VehicleProfile> AmbulanceLazy = new(() => LoadEmbedded("ambulance.json"));
+    private static readonly Lazy<VehicleProfile> FireEngineLazy = new(() => LoadEmbedded("fire_engine.json"));
+    private static readonly Lazy<VehicleProfile> DisasterLazy = new(() => LoadEmbedded("disaster.json"));
 
     private readonly JsonProfileDefinition _definition;
     private readonly ProfileEvaluator _evaluator;
@@ -49,6 +52,31 @@ public sealed class VehicleProfile
     /// living_street/track/footway は通行不可または徐行扱い。
     /// </summary>
     public static VehicleProfile Truck => TruckLazy.Value;
+
+    /// <summary>
+    /// 同梱の救急車プロファイル（REQ-PRF-005、Phase 4）。
+    /// Profiles/ambulance.json から遅延ロード（埋込リソース）。
+    /// 緊急走行特例：一方通行逆走可（ignoreOneway）、emergency アクセスタグ評価、歩道(footway/path)も低速通行可。
+    /// 小型寸法：車両総重量 4.0t / 全高 2.6m / 全幅 2.0m（高規格救急車相当）。難所耐性は car より高め（landslide は通行不可）。
+    /// </summary>
+    public static VehicleProfile Ambulance => AmbulanceLazy.Value;
+
+    /// <summary>
+    /// 同梱の消防車プロファイル（REQ-PRF-005、Phase 4）。
+    /// Profiles/fire_engine.json から遅延ロード（埋込リソース）。
+    /// 緊急走行特例：一方通行逆走可（ignoreOneway）、emergency/hgv アクセスタグ評価、歩道(footway/path)も徐行通行可。
+    /// 大型寸法：車両総重量 8.0t / 全高 2.9m / 全幅 2.1m（水槽付消防ポンプ車相当）。難所耐性は <see cref="Ambulance"/> より控えめ（大型ゆえ冠水・渋滞に弱い）、landslide は通行不可。
+    /// </summary>
+    public static VehicleProfile FireEngine => FireEngineLazy.Value;
+
+    /// <summary>
+    /// 同梱の災害用車両プロファイル（REQ-PRF-006 disaster、Phase 4）。
+    /// Profiles/disaster.json から遅延ロード（埋込リソース）。
+    /// 災害対策基本法の緊急通行車両（重機含む）相当。寸法は truck 同等（20t / 3.8m / 2.5m）だが、
+    /// 難所耐性を強化（flooding/liquefaction/construction/obstacle の speedFactor を高め）。
+    /// 災害規制区間の動的な指定は上位レイヤー（RestrictedArea 付け外し）の責務とし、ignoreOneway は false。landslide は通行不可。
+    /// </summary>
+    public static VehicleProfile Disaster => DisasterLazy.Value;
 
     /// <summary>内部評価器（Dijkstra・難所判定で使用）</summary>
     internal ProfileEvaluator Evaluator => _evaluator;

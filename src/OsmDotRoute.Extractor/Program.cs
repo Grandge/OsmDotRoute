@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using OsmDotRoute;
+using OsmDotRoute.Extractor;
 using OsmDotRoute.Extractor.Cli;
 using OsmDotRoute.Extractor.Pipeline;
 
@@ -38,11 +39,22 @@ static int Run(ExtractOptions options)
     VehicleProfile[] profiles;
     try
     {
-        profiles = options.Profiles.Select(ResolveProfile).ToArray();
+        profiles = options.Profiles.Select(ProfileResolver.Resolve).ToArray();
     }
     catch (ArgumentException ex)
     {
         Console.Error.WriteLine(ex.Message);
+        return 2;
+    }
+
+    // プロファイル名の一意性チェック（R5）。.odrg の BAKED_PROFILE スロットは name で解決されるため重複不可。
+    var duplicateName = profiles
+        .GroupBy(p => p.Name)
+        .FirstOrDefault(g => g.Count() > 1);
+    if (duplicateName is not null)
+    {
+        Console.Error.WriteLine(
+            $"プロファイル名が重複しています: '{duplicateName.Key}'。各プロファイルの name は一意である必要があります。");
         return 2;
     }
 
@@ -79,7 +91,9 @@ static int Run(ExtractOptions options)
         createdAt = DateTimeOffset.UtcNow.ToString("o"),
         createdBy = "OsmDotRoute.Extractor",
         sourcePbf = options.Input.Name,
-        profiles = options.Profiles.ToArray(),
+        // 外部 JSON プロファイル指定時はファイルパスではなく実際のプロファイル名（JSON の name）を記録する。
+        // .odrg の BAKED_PROFILE 名テーブルと一致させ、ランタイムのスロット解決を保証する。
+        profiles = profiles.Select(p => p.Name).ToArray(),
         bbox = new
         {
             minLon = bbox.MinLon,
@@ -117,16 +131,6 @@ static int Run(ExtractOptions options)
 
     return 0;
 }
-
-static VehicleProfile ResolveProfile(string name) =>
-    name.ToLowerInvariant() switch
-    {
-        "car" => VehicleProfile.Car,
-        "pedestrian" => VehicleProfile.Pedestrian,
-        "bicycle" => VehicleProfile.Bicycle,
-        "truck" => VehicleProfile.Truck,
-        _ => throw new ArgumentException($"未対応プロファイル: '{name}'。'car' / 'pedestrian' / 'bicycle' / 'truck' のみ対応"),
-    };
 
 static int RunPatchBbox(PatchBboxOptions options)
 {
