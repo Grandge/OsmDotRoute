@@ -185,8 +185,8 @@
 - [x] [P1] [Phase1] **REQ-PRF-002**: 同梱車両プロファイル `pedestrian`（歩行者）を提供すること。実装は JSON 外部ファイル、内容は Itinero `Vehicle.Pedestrian` 相当の OSM タグ解釈を踏襲。(Ver. 0.18)
 - [ ] [P2] [Phase3] **REQ-PRF-003**: 同梱車両プロファイル `bicycle`（自転車）を提供すること。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動。Phase 2 はデータ供給側に集中させるため）
 - [ ] [P2] [Phase3] **REQ-PRF-004**: 同梱車両プロファイル `truck`（10 t トラック）を提供すること。**独自設計**（Itinero / OSRM 流用ではなく日本道路法ベース、最大積載量 10 t・車両総重量 20 t 級・高さ/幅制限・`hgv=*` / `access=destination` 等を考慮）。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動、Truck=10 t を確定)
-- [ ] [P3] [Phase3] **REQ-PRF-005**: 同梱車両プロファイル `emergency`（緊急車両：救急車・消防車相当）を提供すること。(Ver. -)
-- [ ] [P3] [Phase3] **REQ-PRF-006**: 同梱車両プロファイル `disaster`（災害用車両：特殊許可ルート・通行制限緩和を考慮）を提供すること。(Ver. -)
+- [x] [P3] [Phase4] **REQ-PRF-005**: 同梱車両プロファイル（緊急車両：救急車・消防車相当）を提供すること。**救急車 `ambulance`（小型 4.0t / 2.6m / 2.0m）と消防車 `fire_engine`（大型 8.0t / 2.9m / 2.1m）を別プロファイルに分割**して提供（2026-06-03 ユーザー決定、ID は分割せず 1 要件 = 2 プロファイル）。緊急走行特例として `ignoreOneway=true`（逆走可）、`emergency` アクセスタグ評価、歩道（footway/path/pedestrian）も限定速度で通行可。`landslide` は物理的不可のため canPass=false 維持。Phase 4 で完了、設計は [phase4_design.md](phase4_design.md) §2 参照。(Ver. -、ユーザー採番)
+- [x] [P3] [Phase4] **REQ-PRF-006**: 同梱車両プロファイル `disaster`（災害用車両）を提供すること。**難所耐性中心**（flooding/liquefaction/construction/obstacle の speedFactor を truck より高めに設定）。寸法は truck 同等（20t / 3.8m / 2.5m）で緩和せず、災害規制区間の動的指定は上位レイヤー（RestrictedArea 付け外し）の責務とするため `ignoreOneway=false`。`landslide` は canPass=false 維持。Phase 4 で完了、設計は [phase4_design.md](phase4_design.md) §2 参照。(Ver. -、ユーザー採番)
 
 #### 5.3.b プロファイル外部ファイル化（リビルド不要の調整可能性）
 
@@ -533,7 +533,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 **目標**: Itinero への完全独立。GitHub 公開可能な状態に。
 
-**スコープ**: REQ-PRF-005〜006, REQ-MAP-007〜009, REQ-PKG-003, REQ-LIC-004, REQ-DEP-003
+**スコープ**: REQ-MAP-007〜009, REQ-PKG-003, REQ-LIC-004, REQ-DEP-003（REQ-PRF-005〜006 は Phase 4 に移動）
 
 **完了判定**:
 - ライブラリ全体から Itinero 依存が無い（REQ-MAP-009, REQ-DEP-003）
@@ -541,9 +541,15 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 **公開アクション**: GitHub 個人アカウントで OSS 公開
 
+### Phase 4（着手中、2026-06-03〜）
+
+**スコープ（2026-06-02 ユーザー決定で 2 項目に限定）**:
+- **プロファイル追加**: REQ-PRF-005〜006（emergency / disaster）＋ユーザー定義プロファイル拡充
+- **マルチプラットフォーム対応**: REQ-NFR-007〜008（Linux / macOS）の配布・検証本格化
+
 ### Phase 4 以降（将来検討）
 
-- REQ-NFR-004 (CH 対応), REQ-NFR-007〜008 (Linux/macOS、旧 .NET), REQ-NFR-011 (グローバル対応)
+- REQ-NFR-004 (CH 対応), REQ-NFR-011 (グローバル対応)
 - REQ-RTE-009 (高速化アルゴリズム)
 - REQ-RST-016 (メッシュ階層拡張)
 - REQ-PRF-015〜016 (プロファイル C# 拡張 API、Lua 互換層)
@@ -619,6 +625,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
+| （採番待ち） | 2026-06-03 | **Phase 4 プロファイル追加完了**。REQ-PRF-005 を救急車 `ambulance`（小型）+ 消防車 `fire_engine`（大型）の 2 プロファイルに分割して完了マーク（ID は分割せず両プロファイルに充当）、REQ-PRF-006 災害用 `disaster`（難所耐性中心）を完了マーク。Extractor CLI `--profiles` の外部 JSON プロファイル対応で REQ-PRF-009 を bake 経路へ拡張（`ProfileResolver`）。全 753 pass（Phase 3 末 693 → +60、回帰ゼロ）。設計は [phase4_design.md](phase4_design.md) §2、利用手順は [profile_guide.md](profile_guide.md) 参照。バージョンはユーザー採番 | Claude (Opus 4.8) |
 | 0.1 (draft) | 2026-05-18 | 初版ドラフト作成 | Claude (Opus 4.7) |
 | 0.2 (draft) | 2026-05-18 | 要件 ID（REQ-XXX-NNN）形式に再構成、ジャンル別整理、Phase/Ver 記法導入、地域メッシュコード対応反映 | Claude (Opus 4.7) |
 | 1.0 (確定) | 2026-05-18 | 車両プロファイル Phase 分割確定、メッシュ階層 1km〜100m の 4 階層対応確定、ユーザー合意済み | Claude (Opus 4.7) |

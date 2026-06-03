@@ -160,8 +160,9 @@ profiles : car,pedestrian,bicycle,truck
 - `--profiles` で指定したプロファイルだけが `.odrg` に bake される。
   **[3] の経路探査では、ここで bake した名前のプロファイルしか使えない**
   （例: `car,pedestrian` だけ bake した `.odrg` で `VehicleProfile.Truck` は使えない）。
-- 現状 `--profiles` が受け付けるのは組込み 4 種（`car` / `pedestrian` / `bicycle` / `truck`）のみ。
-  未対応名を渡すとエラー終了する。
+- `--profiles` は組込み 7 種（`car` / `pedestrian` / `bicycle` / `truck` / `ambulance` / `fire_engine` / `disaster`）の名前指定に加え、
+  **ユーザー定義 JSON ファイルのパスも受理する**（組込み名とファイルパスの混在可。例 `--profiles car,.\my_profile.json`）。
+  未対応名かつ存在しないパスを渡すとエラー終了する。詳細は [プロファイル活用ガイド](profile_guide.md) を参照。
 - ランタイムで bake 済みプロファイル名を確認するには `RouterDb.GetProfileNames()` を使う。
 
 ---
@@ -349,7 +350,13 @@ VehicleProfile.Car         // 自動車
 VehicleProfile.Pedestrian  // 歩行者
 VehicleProfile.Bicycle     // 自転車（平均 15km/h、cycleway/path 優先、motorway/trunk 不可）
 VehicleProfile.Truck       // 10t トラック（日本道路法ベース。総重量 20t/全高 3.8m/全幅 2.5m）
+VehicleProfile.Ambulance   // 救急車（小型 4.0t/2.6m/2.0m、緊急走行で逆走可・歩道低速通行可）
+VehicleProfile.FireEngine  // 消防車（大型 8.0t/2.9m/2.1m、緊急走行で逆走可・歩道徐行通行可）
+VehicleProfile.Disaster    // 災害用車両（truck 同等寸法、難所耐性を強化）
 ```
+
+> 緊急/災害プロファイルの設計意図と、独自プロファイルの作り方は
+> [プロファイル活用ガイド](profile_guide.md) を参照。
 
 > 経路探査で使えるのは、その `.odrg` に bake 済みのプロファイルだけ（§4 参照）。
 > 例えば Truck を使うには抽出時に `--profiles ...,truck` を含める必要がある。
@@ -364,10 +371,10 @@ VehicleProfile custom = VehicleProfile.LoadFromJsonFile(@"D:\profiles\delivery.j
 VehicleProfile custom2 = VehicleProfile.LoadFromJsonString(jsonText);
 ```
 
-> **現状の制約**: ランタイムは任意プロファイルを読み込めるが、`.odrg` に bake できるのは
-> 組込み 4 種のみ（抽出 CLI が組込み名固定）。そのため独自プロファイルで経路探査するには、
-> その `Name` が `.odrg` に bake 済みのいずれかと一致している必要がある。
-> 抽出ツールのユーザー定義プロファイル対応は Phase 4+ の TODO。
+> 抽出 CLI はユーザー定義 JSON ファイルの bake に対応している（`--profiles` にパス指定）。
+> 独自プロファイルで経路探査するには、抽出時にその JSON を bake し、ランタイムで読み込んだ
+> プロファイルの `Name` が `.odrg` に bake 済みの名前と一致している必要がある。
+> 手順の詳細は [プロファイル活用ガイド](profile_guide.md)（特に未 bake 時の留意点）を参照。
 
 ### プロファイル JSON スキーマ
 
@@ -410,7 +417,7 @@ VehicleProfile custom2 = VehicleProfile.LoadFromJsonString(jsonText);
 | `speedBounds` | 速度の下限・上限クランプ |
 | `difficulty` | 難所タイプごとの `speedFactor`（速度係数）と `canPass`（通行可否） |
 | `difficultyDefault` | 未定義の難所タイプの既定値 |
-| `vehicleLimits` | （Truck 用）`maxWeightTon` / `maxHeightMeter` / `maxWidthMeter` 超過エッジを通行不可化 |
+| `vehicleLimits` | `maxWeightTon` / `maxHeightMeter` / `maxWidthMeter` 超過エッジを通行不可化（truck・緊急/災害車両で使用） |
 
 ---
 

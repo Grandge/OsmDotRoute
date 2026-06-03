@@ -165,8 +165,9 @@ Output file: D:\odrg\tokyo.odrg
 - Only the profiles you pass to `--profiles` are baked into the `.odrg`.
   **Route finding in [3] can only use the names baked here**
   (e.g. you cannot use `VehicleProfile.Truck` on a `.odrg` baked with only `car,pedestrian`).
-- Currently `--profiles` accepts only the 4 built-in names (`car` / `pedestrian` / `bicycle` / `truck`).
-  Passing an unsupported name exits with an error.
+- `--profiles` accepts the 7 built-in names (`car` / `pedestrian` / `bicycle` / `truck` / `ambulance` / `fire_engine` / `disaster`)
+  **as well as paths to user-defined JSON profile files** (built-in names and file paths may be mixed,
+  e.g. `--profiles car,.\my_profile.json`). Passing an unsupported name that is also not an existing path exits with an error.
 - To check the baked profile names at runtime, use `RouterDb.GetProfileNames()`.
 
 ---
@@ -286,7 +287,13 @@ VehicleProfile.Car         // car
 VehicleProfile.Pedestrian  // pedestrian
 VehicleProfile.Bicycle     // bicycle (avg 15 km/h, prefers cycleway/path, blocks motorway/trunk)
 VehicleProfile.Truck       // 10t truck (Japanese road law: gross 20t / height 3.8m / width 2.5m)
+VehicleProfile.Ambulance   // ambulance (small 4.0t/2.6m/2.0m; emergency: reverse one-way, low-speed footway access)
+VehicleProfile.FireEngine  // fire engine (large 8.0t/2.9m/2.1m; emergency: reverse one-way, crawl-speed footway access)
+VehicleProfile.Disaster    // disaster vehicle (truck-sized; reinforced difficulty tolerance)
 ```
+
+> For the design intent of the emergency/disaster profiles and how to author your own,
+> see the [Profile guide](profile_guide.md).
 
 > Route finding can only use profiles baked into that `.odrg` (see §4).
 > For example, to use Truck you must include `--profiles ...,truck` at extraction time.
@@ -301,10 +308,10 @@ VehicleProfile custom = VehicleProfile.LoadFromJsonFile(@"D:\profiles\delivery.j
 VehicleProfile custom2 = VehicleProfile.LoadFromJsonString(jsonText);
 ```
 
-> **Current limitation**: the runtime can load arbitrary profiles, but only the 4 built-in profiles
-> can be baked into a `.odrg` (the extraction CLI has fixed built-in names). So to route with a
-> custom profile, its `Name` must match one already baked into the `.odrg`.
-> Support for user-defined profiles in the extraction tool is a Phase 4+ TODO.
+> The extraction CLI supports baking user-defined JSON files (pass the path to `--profiles`).
+> To route with a custom profile, bake its JSON at extraction time and make sure the `Name` of the
+> profile loaded at runtime matches one baked into the `.odrg`.
+> See the [Profile guide](profile_guide.md) (especially the notes on un-baked profiles) for the full workflow.
 
 ### Profile JSON schema
 
@@ -347,7 +354,7 @@ The main fields, using `car.json` as an example (naming is camelCase):
 | `speedBounds` | Lower/upper speed clamp |
 | `difficulty` | Per difficulty type: `speedFactor` (speed factor) and `canPass` (passable or not) |
 | `difficultyDefault` | Default for undefined difficulty types |
-| `vehicleLimits` | (Truck) blocks edges exceeding `maxWeightTon` / `maxHeightMeter` / `maxWidthMeter` |
+| `vehicleLimits` | blocks edges exceeding `maxWeightTon` / `maxHeightMeter` / `maxWidthMeter` (used by truck and emergency/disaster profiles) |
 
 ---
 
