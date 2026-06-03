@@ -58,6 +58,28 @@ public class CalculateRouteTests : IClassFixture<NativeRouterDbFixture>
     }
 
     [Fact]
+    public void Calculate_ZeroSearchDistance_ReturnsNull()
+    {
+        // searchDistanceM=0 ではスナップ不能 → 経路は得られない（引数がスナップへ伝播していることの検証）
+        var (from, to) = _fixture.MediumPair;
+        Assert.Null(_fixture.Router.Calculate(VehicleProfile.Car, from, to, searchDistanceM: 0f));
+    }
+
+    [Fact]
+    public void Calculate_CustomSearchDistance_MatchesDefault()
+    {
+        // 既定 500m を十分に含む広い半径なら、既定指定と同一の経路になる
+        var (from, to) = _fixture.MediumPair;
+        var byDefault = _fixture.Router.Calculate(VehicleProfile.Car, from, to);
+        var byCustom = _fixture.Router.Calculate(VehicleProfile.Car, from, to, searchDistanceM: 1000f);
+
+        Assert.NotNull(byDefault);
+        Assert.NotNull(byCustom);
+        Assert.Equal(byDefault!.TotalDistanceM, byCustom!.TotalDistanceM, precision: 5);
+        Assert.Equal(byDefault.Shape.Length, byCustom.Shape.Length);
+    }
+
+    [Fact]
     public void Calculate_RouteShape_StartsAtSnapFromAndEndsAtSnapTo()
     {
         var (from, to) = _fixture.MediumPair;

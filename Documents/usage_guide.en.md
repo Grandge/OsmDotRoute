@@ -207,13 +207,66 @@ foreach (var p in route.Shape.Span)
 }
 ```
 
-Main members of `Route`:
+### What the returned `route` contains
+
+`Calculate` first **snaps the origin and destination to the nearest road**, then runs Dijkstra for
+the shortest path and returns the result as a single `Route` object. For the Tokyo Station →
+Shibuya Station example above, `route` holds just these three pieces of information (by design,
+these three fully describe the route — this is not an API reference).
 
 | Member | Type | Meaning |
 | --- | --- | --- |
-| `TotalDistanceM` | `double` | Total distance (meters) |
-| `TotalDurationSec` | `double` | Total duration (seconds, based on profile speeds) |
-| `Shape` | `ReadOnlyMemory<GeoCoordinate>` | Vertices of the route geometry |
+| `TotalDistanceM` | `double` | Total distance of the whole route (meters), from the snapped origin to the snapped destination. |
+| `TotalDurationSec` | `double` | Total duration (seconds): the sum of each edge length ÷ the speed defined by the profile (a theoretical value that excludes signals and congestion). |
+| `Shape` | `ReadOnlyMemory<GeoCoordinate>` | The vertices of the route geometry — a lat/lon sequence that **starts at the snapped origin and ends at the snapped destination**. |
+
+**When `route` is `null`** — `null` is returned when no route exists (unreachable), or when the
+origin/destination is outside the `.odrg` coverage and could not be snapped. No exception is
+thrown, so callers must check `route is null` first.
+
+**Relationship between `TotalDistanceM` and `TotalDurationSec`** — the duration is the distance
+converted directly via speed, and depends on the per-road-class speed settings of the profile
+(`VehicleProfile.Car`, etc.). For the same route, calculating with `Pedestrian` yields nearly the
+same distance but a much longer duration. If a dynamic restriction makes the route pass through a
+difficulty area (e.g. flooding), that segment's speed factor (`speedFactor`) is applied and the
+duration increases.
+
+**Using `Shape`** — it is a polyline that includes road curvature, ready to hand directly to map
+rendering or agent movement animation. Since it is a `ReadOnlyMemory<GeoCoordinate>`, iterate with
+`route.Shape.Span`, get the count with `route.Shape.Length`, and access elements with
+`route.Shape.Span[i]` (a zero-copy design to avoid allocation in high-volume calculations; changed
+from `IReadOnlyList` in Phase 3). Note that each `GeoCoordinate` is in `Latitude`, `Longitude`
+order (the `foreach` in the code example above already prints every vertex).
+
+### Snap distance for origin and destination
+
+`Calculate` **snaps the origin and destination each to the nearest road** before searching. This
+search radius defaults to **500 m**. An origin/destination with no road within the radius cannot be
+snapped, and `Calculate` returns `null`.
+
+To change the radius, pass the fourth argument `searchDistanceM` (meters):
+
+```csharp
+// Default (500 m)
+var route = router.Calculate(VehicleProfile.Car, from, to);
+
+// Widen the snap radius to 2000 m (e.g. to pick up coordinates far from any road)
+var wide = router.Calculate(VehicleProfile.Car, from, to, searchDistanceM: 2000f);
+
+// Narrow the radius to 50 m (when a road is expected right next to the coordinate and you want to avoid mismatches)
+var tight = router.Calculate(VehicleProfile.Car, from, to, searchDistanceM: 50f);
+```
+
+- **Widening** the radius lets you snap coordinates that are far from the road network, but raises
+  the risk of attaching to an unintended distant road.
+- **Narrowing** the radius makes it more likely to hit only the correct nearby road, but a
+  slightly distant coordinate becomes more likely to fail snapping (`null`).
+- Passing `0` or less to `searchDistanceM` always fails snapping and returns `null`.
+- You cannot specify different radii for the origin and the destination (the same radius applies to
+  both endpoints).
+
+> If you only want to snap a single coordinate with a custom radius, you can also use `SnapToRoad`
+> (a helper API below; it likewise defaults to 500 m) without running a route search.
 
 Helper APIs:
 

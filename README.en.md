@@ -4,11 +4,14 @@ English | [日本語](README.md)
 
 A .NET-native OSM routing library. It provides Dijkstra-based path finding with
 **dynamic travel restrictions** (no-entry / difficult-to-traverse areas).
-A successor to Itinero 1.x, spun off from the parent project
-"Disaster Waste Processing Simulation."
 
-Its defining strength: it loads a pre-extracted custom binary `.odrg` at runtime and lets you
-**add/remove travel restrictions during a running simulation and re-route instantly**.
+It targets **scenarios that require a large volume of route calculations in a short time, such as
+multi-agent simulations**. A pre-extracted custom binary `.odrg` is read with zero copies via
+`MemoryMappedFile` + `ReadOnlySpan<T>`, so many agents can query the same graph repeatedly with
+minimal allocation — high-frequency, high-volume routing is handled at low overhead.
+
+On top of that, its defining strength is that it lets you **add/remove travel restrictions during a
+running simulation and re-route instantly** (no rebuild required).
 
 > For the differences between OsmDotRoute and Itinero and which one fits your use case, see the
 > [Comparison & Selection Guide](Documents/comparison_with_itinero.en.md).
@@ -139,21 +142,17 @@ For the `osmdotroute-extractor` tool that generates `.odrg`, see
 | Phase 1 | Custom routing engine (Itinero kept as data layer) | Done |
 | Phase 2 | Custom intermediate graph format `.odrg` | Done |
 | Phase 3 | `.odrg` runtime, full Itinero removal, bicycle/truck, benchmarks, parent integration, demo, OSS release | Done (2026-06-02) |
-| Phase 4 | Profile additions (Emergency / Disaster, etc.), multi-platform support | Planned |
+| Phase 4 | Profile additions (Emergency / Disaster, etc.), multi-platform support | Done (2026-06-03) |
 
-The Itinero dependency has been removed from the runtime (System.* only).
+All originally planned feature work is complete through Phase 4. **For the foreseeable future only
+bug fixes will be made; no new features are planned.**
+The Itinero dependency has been removed from the runtime (System.* only), and all tests pass on
+macOS ARM64 / Linux x64 as well.
 
 ## Versioning policy
 
 During the 0.x line, **breaking API changes are allowed on minor version bumps** (REQ-API-008).
 Strict semantic versioning applies from the 1.0 release onward.
-
-## Relationship with the parent project
-
-The first customer is the parent project "Disaster Waste Processing Simulation."
-However, OsmDotRoute is designed as a **general-purpose OSM routing library**, with the disaster
-use case positioned as one application. We do not move or copy the parent project's code, data, or
-documents into this repository (the dependency direction is one-way: parent -> this library).
 
 ## Contributing
 

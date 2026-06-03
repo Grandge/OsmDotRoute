@@ -50,18 +50,20 @@ public sealed class Router
     /// <param name="profile">車両プロファイル</param>
     /// <param name="from">起点座標</param>
     /// <param name="to">終点座標</param>
+    /// <param name="searchDistanceM">
+    /// 起点・終点を最寄り道路へスナップする検索半径（メートル、既定 500m）。
+    /// この半径内に道路が無い起点／終点はスナップできず <c>null</c> を返す。
+    /// </param>
     /// <returns>経路、または <c>null</c></returns>
-    public Route? Calculate(VehicleProfile profile, GeoCoordinate from, GeoCoordinate to)
+    public Route? Calculate(
+        VehicleProfile profile, GeoCoordinate from, GeoCoordinate to, float searchDistanceM = 500f)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
-        // ステップ 5b 現時点ではスナップ半径を 500m に固定。Phase 1 中に「動的スナップ半径」要件が出れば再考。
-        const float SearchDistanceM = 500f;
-
-        var sourceSnap = _routerDb.Snapper.Snap(profile.Name, from, SearchDistanceM);
+        var sourceSnap = _routerDb.Snapper.Snap(profile.Name, from, searchDistanceM);
         if (sourceSnap is null) return null;
 
-        var targetSnap = _routerDb.Snapper.Snap(profile.Name, to, SearchDistanceM);
+        var targetSnap = _routerDb.Snapper.Snap(profile.Name, to, searchDistanceM);
         if (targetSnap is null) return null;
 
         var calculator = new EdgeWeightCalculator(_routerDb.Graph, profile.Evaluator, _restrictions);

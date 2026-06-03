@@ -202,13 +202,63 @@ foreach (var p in route.Shape.Span)
 }
 ```
 
-`Route` の主なメンバ:
+### `Calculate` が返す `route` の中身
+
+`Calculate` は、起点・終点それぞれを**最寄りの道路にスナップ**してから Dijkstra で最短経路を
+探索し、結果を 1 つの `Route` オブジェクトにまとめて返す。上の東京駅 → 渋谷駅の例なら、
+`route` には次の 3 つの情報だけが入っている（API リファレンスではなく、この 3 つで経路を
+記述しきる設計）。
 
 | メンバ | 型 | 内容 |
 | --- | --- | --- |
-| `TotalDistanceM` | `double` | 総距離（メートル） |
-| `TotalDurationSec` | `double` | 総所要時間（秒、プロファイル速度ベース） |
-| `Shape` | `ReadOnlyMemory<GeoCoordinate>` | 経路形状の頂点列 |
+| `TotalDistanceM` | `double` | 経路全体の総距離（メートル）。起点スナップ点から終点スナップ点までの実距離。 |
+| `TotalDurationSec` | `double` | 総所要時間（秒）。各エッジの長さ ÷ プロファイルが定める速度の積算（信号待ち・渋滞は含まない理論値）。 |
+| `Shape` | `ReadOnlyMemory<GeoCoordinate>` | 経路形状の頂点列。**起点スナップ点で始まり終点スナップ点で終わる**、緯度経度の並び。 |
+
+**`route` が `null` のとき** — 経路が存在しない（到達不能）、または起点／終点が `.odrg` の
+収録範囲外でスナップできなかった場合は `null` が返る。例外は投げないので、利用側は必ず
+`route is null` を先に判定する。
+
+**`TotalDistanceM` / `TotalDurationSec` の関係** — 所要時間は距離をそのまま速度換算した値で、
+プロファイル（`VehicleProfile.Car` など）の道路種別ごとの速度設定に依存する。同じ経路でも
+`Pedestrian` で計算すれば距離はほぼ同じでも所要時間は大きく伸びる。動的制約で難所
+（冠水など）を通る経路になった場合は、その区間の速度係数（`speedFactor`）が反映されて
+所要時間が増える。
+
+**`Shape` の使い方** — 道路の曲がりを含む折れ線（ポリライン）で、地図描画やエージェントの
+移動アニメーションにそのまま渡せる。`ReadOnlyMemory<GeoCoordinate>` なので、反復は
+`route.Shape.Span`、要素数は `route.Shape.Length`、個別アクセスは `route.Shape.Span[i]` を使う
+（大量計算でのアロケーションを避けるためのゼロコピー設計。Phase 3 で `IReadOnlyList` から変更）。
+各 `GeoCoordinate` は `Latitude`（緯度）・`Longitude`（経度）の順であることに注意
+（上のコード例の `foreach` 部分がそのまま全頂点の出力になっている）。
+
+### 起点・終点のスナップ距離
+
+`Calculate` は起点・終点をそれぞれ**最寄りの道路へスナップ**してから探索する。この検索半径は
+**既定 500m**。半径内に道路が見つからない起点／終点はスナップできず、`Calculate` は `null` を返す。
+
+半径を変えたいときは第 4 引数 `searchDistanceM`（メートル）で指定する:
+
+```csharp
+// 既定（500m）
+var route = router.Calculate(VehicleProfile.Car, from, to);
+
+// スナップ半径を 2000m に広げる（道路から離れた座標を拾いたい場合など）
+var wide = router.Calculate(VehicleProfile.Car, from, to, searchDistanceM: 2000f);
+
+// 半径を 50m に絞る（指定座標のすぐ近くに道路がある前提で、誤マッチを避けたい場合）
+var tight = router.Calculate(VehicleProfile.Car, from, to, searchDistanceM: 50f);
+```
+
+- 半径を**広げる**と、道路網から離れた座標でもスナップできる一方、意図しない遠方の道路に
+  吸着するリスクが上がる。
+- 半径を**狭める**と、近接した正しい道路だけに当たりやすくなる一方、少し離れた座標が
+  スナップ不能（`null`）になりやすい。
+- `searchDistanceM` に `0` 以下を渡すと常にスナップ不能となり `null` を返す。
+- 起点だけ／終点だけで別々の半径を指定することはできない（両端に同じ半径が適用される）。
+
+> 単独の座標を半径指定でスナップしたいだけなら、経路探索を伴わない `SnapToRoad`（後述の補助 API、
+> 同じく既定 500m）も使える。
 
 補助 API:
 
