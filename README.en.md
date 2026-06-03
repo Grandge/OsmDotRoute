@@ -151,8 +151,8 @@ macOS ARM64 / Linux x64 as well.
 
 ## Versioning policy
 
-During the 0.x line, **breaking API changes are allowed on minor version bumps** (REQ-API-008).
-Strict semantic versioning applies from the 1.0 release onward.
+From 1.0.0 onward, **strict semantic versioning applies** (REQ-API-008).
+Breaking API changes are made only on major version bumps.
 
 ## Contributing
 
