@@ -1,0 +1,54 @@
+name: Mirror to macOS CI repo
+
+# 本体 main の更新を専用 macOS 検証リポジトリ Grandge/OsmDotRoute-ci-macos へ一方向ミラーする。
+# - Documents/（親プロジェクト情報を含む内部文書）を除外
+# - samples/Data/tokyo.odrg（テスト未参照の大容量サンプル）を除外
+# - samples/Data/tsushima.odrg はテスト必須フィクスチャのため含める
+# - .github/ は除外し、検証用の .mirror/ci-macos.yml だけを .github/workflows/ci-macos.yml として注入する
+#   （本体側のワークフローをミラーで暴発させない）
+# 認証は secret MIRROR_TOKEN（ci-macos リポジトリへの contents:write 権限を持つ PAT）。
+# PAT による push は GITHUB_TOKEN と異なりミラー側の on:push ワークフローを起動できる。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    # フォークや（万一の）ミラー側での誤起動を防ぐため本体リポジトリ限定。
+    if: github.repository == 'Grandge/OsmDotRoute'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Build mirror snapshot
+        run: |
+          set -euo pipefail
+          STAGE="${RUNNER_TEMP}/mirror"
+          mkdir -p "$STAGE"
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='Documents/' \
+            --exclude='samples/Data/tokyo.odrg' \
+            --exclude='.github/' \
+            --exclude='.mirror/' \
+            ./ "$STAGE/"
+          mkdir -p "$STAGE/.github/workflows"
+          cp .mirror/ci-macos.yml "$STAGE/.github/workflows/ci-macos.yml"
+
+      - name: Push to mirror
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          STAGE="${RUNNER_TEMP}/mirror"
+          cd "$STAGE"
+          git init -b main -q
+          git config user.name "Grandge"
+          git config user.email "s.sys01@gmail.com"
+          git add -A
+          git commit -q -m "mirror: sync from ${GITHUB_SHA}"
+          git push --force -q "https://x-access-token:${MIRROR_TOKEN}@github.com/Grandge/OsmDotRoute-ci-macos.git" main
