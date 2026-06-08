@@ -1,10 +1,10 @@
 # OsmDotRoute Phase 4 設計書
 
-**バージョン**: ユーザー採番（未採番）
+**バージョン**: ユーザー採番（未採番、Ver 1.1.0 = 親プロFB 追補ぶん）
 **作成日**: 2026-06-03
-**最終更新**: 2026-06-03
-**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
-**対象**: OsmDotRoute Phase 4 のうち**プロファイル追加**の設計記録（REQ-PRF-005 = 救急車 `ambulance` / 消防車 `fire_engine`、REQ-PRF-006 = 災害用車両 `disaster`、＋ユーザー定義プロファイルの bake 経路拡張）
+**最終更新**: 2026-06-09（親プロFB 追補 §3 追加）
+**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。**親プロFB 追補（REQ-FMT-006 = Route.CumulativeDurationsSec）完了**（2026-06-09、Ver 1.1.0、全 761 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
+**対象**: OsmDotRoute Phase 4 のうち**プロファイル追加**と**親プロFB 追補**の設計記録（REQ-PRF-005 = 救急車 `ambulance` / 消防車 `fire_engine`、REQ-PRF-006 = 災害用車両 `disaster`、＋ユーザー定義プロファイルの bake 経路拡張、REQ-FMT-006 = Route 区間別累積所要秒）
 **関連ドキュメント**:
 
 - [要件定義書](requirement_definition.md)（REQ-PRF-005 / REQ-PRF-006）
@@ -34,7 +34,8 @@ Phase 4 のスコープは 2026-06-02 ユーザー決定で **(1) プロファ�
 | --- | --- | --- |
 | 1. Phase 4 概要（プロファイル追加） | 全ステップ通底 | 記述済 |
 | 2. 救急車 / 消防車 / 災害用プロファイルと外部 JSON bake 対応 | Step 1〜4 | **肉付け完了**（2026-06-03） |
-| 3. 改訂履歴 | 各ステップ完了時 | 初版 |
+| 3. 親プロFB 追補: Route.CumulativeDurationsSec（REQ-FMT-006） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.0） |
+| 4. 改訂履歴 | 各ステップ完了時 | 初版 |
 
 > Step 5（利用者向け解説ドキュメント）/ Step 6（設計書・要件反映）は成果物が本書および [profile_guide.md](profile_guide.md) / [requirement_definition.md](requirement_definition.md) 自体であり、§2 にその位置付けを記す。
 
@@ -176,9 +177,108 @@ ProfileResolver.Resolve(nameOrPath):
 
 ---
 
-## 3. 改訂履歴
+## 3. 親プロFB 追補: Route.CumulativeDurationsSec（REQ-FMT-006）
+
+**対応ステップ**: 単発 Step（親プロFB 追補、Phase 4 後追い）
+**対応要件**: REQ-FMT-006（経路出力型 `Route` に Shape 点別累積所要秒を追加）
+**起源**: 親プロジェクト「災害廃棄物処理シミュレーション」開発エージェントからの機能要望 [`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)
+**実装日**: 2026-06-09
+**実装バージョン**: Ver 1.1.0（マイナー採番、新規プロパティ追加）
+**主要ファイル**:
+
+- [`src/OsmDotRoute/Route.cs`](../src/OsmDotRoute/Route.cs)（`CumulativeDurationsSec` プロパティ、4 引数コンストラクタ追加、3 引数互換コンストラクタは線形補間フォールバック）
+- [`src/OsmDotRoute/Routing/DijkstraEngine.cs`](../src/OsmDotRoute/Routing/DijkstraEngine.cs)（`DijkstraResult.VertexCumulativeDurationsSec` を追加、復元時に `cost[v]` を頂点列順で格納）
+- [`src/OsmDotRoute/Routing/RouteBuilder.cs`](../src/OsmDotRoute/Routing/RouteBuilder.cs)（Shape 構築と並行して累積秒列を構築。エッジ内中間シェイプ点は多角線距離按分で補間）
+- [`tests/OsmDotRoute.Tests/CumulativeDurationsTests.cs`](../tests/OsmDotRoute.Tests/CumulativeDurationsTests.cs)（不変条件 6 種：整列・端点・単調・難所反映・SameEdge・互換コンストラクタ）
+
+### 3.1 意図
+
+親プロジェクトの**移動アニメーション**で、移動困難エリア（冠水 / 液状化 / 工事中等）を通過する際に**特定区間だけエージェントが目に見えて遅くなる**表現を実現したい。現状の `Route` は総距離・総所要時間・経路形状のみで区間別所要が公開されておらず、利用側でアニメーションを「時間 → 位置」で補間する手段がなかった（`Route.TotalDurationSec` 全体に均された均一速度になる）。
+
+OsmDotRoute の Dijkstra 内部では各エッジに対し難所 `SpeedFactor` 反映済みの所要時間（`EvaluateEdgeDurationSec` / `EvaluateEdgePartialDurationSec`）を算出している。値はすでに存在するが、`Route` への集約段で区間内訳が失われていた。利用側で再構築するには `VehicleProfile.Evaluator.EvaluateDifficulty`（internal）に依存するため、ライブラリ側で **Shape と整列した累積秒列を公開** するのが最も自然と判断した。
+
+### 3.2 採用設計
+
+#### 3.2.1 公開 API: `Route.CumulativeDurationsSec`
+
+```csharp
+public ReadOnlyMemory<double> CumulativeDurationsSec { get; }
+```
+
+- `Shape` と 1:1 整列（`Length == Shape.Length`）。
+- `[0] == 0.0`、`[^1] == TotalDurationSec`（厳密一致、同じ積算ロジック由来）。
+- 単調非減少。
+- 区間 i（`Shape[i] → Shape[i+1]`）の所要秒 = `CumulativeDurationsSec.Span[i+1] - CumulativeDurationsSec.Span[i]`（区間別 API は提供せず減算で導出）。
+- 移動困難エリアの速度低下が区間所要に反映される（エッジ単位 SpeedFactor 由来）。
+- 親側アニメーションは累積秒に対する二分探索で「経過時間 → Shape 位置」を求められる（`Shape` の累積距離補間と同じ要領）。
+
+#### 3.2.2 構築ロジック（[RouteBuilder.cs](../src/OsmDotRoute/Routing/RouteBuilder.cs)）
+
+`DijkstraResult` に `VertexCumulativeDurationsSec`（`VertexPath` と整列、要素は `cost[v]` = ソーススナップ点から各通過頂点までの累積秒）を追加し、`RouteBuilder` が次の規則で Shape と並行して累積秒列を組み立てる：
+
+| Shape 構成要素 | 累積秒の出所 |
+| --- | --- |
+| 先頭: ソーススナップ点 | `0.0`（固定） |
+| ソース側端点頂点（`vertexPath[0]`） | `VertexCumulativeDurationsSec[0]`（= `cost[vertexPath[0]]`） |
+| 中間エッジの中間シェイプ点 | エッジ内多角線距離按分: `startTime + (cumPolylineDist / totalPolylineDist) × (endTime - startTime)` |
+| 中間エッジの終端頂点（`vertexPath[i]`） | `VertexCumulativeDurationsSec[i]`（厳密一致） |
+| 末尾: ターゲットスナップ点 | `TotalDurationSec`（固定、`bestCost` と一致） |
+| SameEdge 直通 | `[0.0, TotalDurationSec]`（2 点） |
+
+エッジ内速度（SpeedFactor 反映済）は一定なので、エッジ内中間点には多角線距離按分が正確（係数はエッジ単位なので按分しても整合）。これにより `[^1] == TotalDurationSec` の端点不変条件が浮動小数点誤差なしに成立する。
+
+### 3.3 設計判断の根拠
+
+| 論点 | 確定 | 理由 |
+| --- | --- | --- |
+| 累積形 vs 区間別形 | **累積のみ提供** | 親側アニメは「経過時間 → 位置」で累積列に二分探索を掛ける用途。減算で区間別は導出可能なため API 表面を絞った（親側要望書 §2 の推奨に沿う）。 |
+| 端点厳密一致 | **`[^1] == TotalDurationSec` 厳密** | 利用側コードが `==` で端点比較できることを保証する。`TotalDurationSec` と累積列の最後の値が同じ `bestCost` 由来で、エッジ内按分も端点を保ったまま行うため浮動小数点誤差なしに成立する。 |
+| エッジ内補間 | **多角線距離按分** | OsmDotRoute はエッジ単位で 1 つの所要を算出する（エッジ内速度は SpeedFactor 込みで一定）。よって距離按分が正確であり、別途速度モデルを持ち込む必要がない。退化線分（全座標一致）は `startTime` フォールバックで分岐。 |
+| 互換コンストラクタ | **3 引数コンストラクタを温存（線形補間フォールバック）** | 既存利用コード（テスト等）は無改修で動作させる。線形補間はあくまでフォールバックであり、`RouteBuilder` 経由の本番経路では 4 引数コンストラクタが使われ正確な区間別累積秒が入る。 |
+| 帰属 | **Phase 4 追補（親プロFB 枠）** | Phase 4 のスコープは元々「プロファイル追加 + マルチプラ対応」2 項目だが、第 1 顧客である親プロからの実需要を Phase 5 新設や Phase 4+ 未確定枠に押し込むより、Phase 4 内で「追補」として処理する方が責任所在が明確（ユーザー判断 2026-06-09）。 |
+
+### 3.4 トレードオフ・制約
+
+- **ソース / ターゲットスナップエッジの中間シェイプ非露出**: 現行 `RouteBuilder` はソース・ターゲット側のスナップ部分エッジについて中間シェイプを Shape に含めていない（Phase 1 設計の既知の単純化）。累積秒列も Shape と整列するため、スナップ部分エッジは「スナップ点 → 端点頂点」の 2 点のみで時間を割り振る。スナップ部分エッジの内部速度変化（同一エッジ内の難所判定はエッジ全体で 1 回なので速度は均一）は表現できないが、エッジ全体の SpeedFactor は反映済み。アニメーションの精度として実用上の問題は出ない見込み。
+- **シェイプ多角線実長 vs `DistanceM`**: `Route.TotalDistanceM` はエッジ `DistanceM`（Phase 3 の Haversine 焼成値）の積算で、Shape の多角線実長と完全一致しない（既存制約、Phase 1 設計書記載）。累積秒の按分はエッジ内多角線実長で行うため、利用側で「累積秒の傾き × 距離」を計算しても `TotalDistanceM` とは微差が出うる。本機能は **時間軸補間専用** であり距離軸の整合性は保証しないので、利用側は時間ベースで補間する。
+- **退化エッジの扱い**: エッジ内多角線距離が 0 となる退化ケース（全シェイプ点が同一座標）は、中間点に `startTime` を割り当てる。実データではほぼ発生しないが、`totalDist <= 0` 分岐で防衛。
+- **API 表面の最小化**: 区間別所要 `SegmentDurationsSec`、エッジ ID 列、難所係数の露出などは提供しない。区間別所要は減算で導出可能、その他は利用側ユースケースに対し過剰な情報露出となるため。
+
+### 3.5 検証方法
+
+#### 3.5.1 不変条件テスト 6 件（[CumulativeDurationsTests.cs](../tests/OsmDotRoute.Tests/CumulativeDurationsTests.cs)）
+
+| # | テスト | 検証する不変条件 |
+| --- | --- | --- |
+| 1 | `Cumulative_Length_MatchesShapeLength` | 整列: `CumulativeDurationsSec.Length == Shape.Length` |
+| 2 | `Cumulative_Endpoints_AreExactlyZeroAndTotalDuration` | 端点: `[0] == 0.0`、`[^1] == TotalDurationSec`（厳密一致） |
+| 3 | `Cumulative_IsMonotonicNonDecreasing` | 単調性: 全 i で `[i] <= [i+1]` |
+| 4 | `Cumulative_DifficultyAreaCoveringRoute_TimingReflectedPerPoint` | 難所反映: 全エッジ flooding で被覆 → 各点累積秒が baseline の 1/0.3 ≈ 3.333 倍（許容 3.27〜3.40） |
+| 5 | `Cumulative_SamePoint_TrivialRouteRespectsEndpoints` | SameEdge: 同一点起点終点でも端点不変条件が成立 |
+| 6 | `Cumulative_LegacyConstructor_GeneratesLinearFallbackWithExactEndpoints` | 互換コンストラクタ: 3 引数経路でも端点厳密一致と単調性を維持 |
+
+#### 3.5.2 全体回帰
+
+`dotnet test tests/OsmDotRoute.Tests` で **761 件 pass / 0 fail / 0 skip**（2026-06-09 確認）。Phase 4 マルチプラ完了時の 753 件から +8（不変条件 6 + 別途追加分、回帰ゼロ）。
+
+#### 3.5.3 設計上の歯止め
+
+- **公開 API 後方互換**: `Route` の 3 引数コンストラクタを温存、新規プロパティ追加のみ。既存利用コード（親プロ Phase 1〜3 統合コード含む）は無改修で動作。
+- **内部実装の追加のみ**: `DijkstraResult` は record で 1 フィールド追加、`RouteBuilder` の Shape 構築ロジックは並行配列を組むだけで Shape 出力自体は不変。Phase 1〜3 の経路探索結果は完全不変（テストで実証）。
+- **エッジ単位 SpeedFactor の整合性**: `EvaluateEdgeDurationSec` / `EvaluateEdgePartialDurationSec` の既存実装をそのまま利用するため、Phase 1〜3 の制約評価セマンティクスが累積秒列にも自動で反映される（テスト 4 で実証）。
+
+### 3.6 実装メモ
+
+- **親プロ側の利用計画**（要望書 §4 参考、本要望のスコープ外）: 親側で `MapService.RouteResult` に累積所要を載せ、`AgentRouteChanged` ペイロードで前端へ送り、`SimulationPage.tsx` のアニメーションを **距離比例 → 時間比例（累積所要の二分探索）** に切り替える。親側交通負荷係数（25km/h 校正）は親側で `TotalDurationSec` に対して適用するため、本 API は素の累積秒を返すだけでよい。
+- **要件 ID の採番**: 親プロ側提案の **REQ-FMT-006**（Format ジャンル）を採用。REQ-FMT-001〜003（総距離 / 総所要 / Shape）の延長線上の追加であり、ジャンルとして REQ-FMT が自然。
+- **メタデータへの影響なし**: `.odrg` フォーマット・BAKED_PROFILE スロット・プロファイル評価機構には一切手を入れない。本機能はランタイム経路出力型の追加のみで成立する。
+
+---
+
+## 4. 改訂履歴
 
 | Ver | 日付 | 変更 |
 | --- | --- | --- |
+| 親プロFB 追補 | 2026-06-09 | §3「Route.CumulativeDurationsSec（REQ-FMT-006）」を追加。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望に応えて Route に Shape 点別累積所要秒を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` + `RouteBuilder` でエッジ内多角線距離按分による補間。不変条件テスト 6 種で整列・端点・単調・難所反映・SameEdge・互換コンストラクタを実証、全 761 pass（回帰ゼロ）。Ver 1.1.0 マイナー採番 |
 | 初版 | 2026-06-03 | Phase 4 プロファイル追加（Step 1〜4 完了）を §0〜§2 に起こし。救急車 `ambulance` / 消防車 `fire_engine` / 災害用 `disaster` の設計値・根拠・トレードオフ・検証（753 pass）、Extractor 外部 JSON プロファイル対応（`ProfileResolver`）を記録。Step 5（利用者ガイド）/ Step 6（要件反映）の位置付けを §2.6 に追記。バージョンはユーザー採番 |
 </content>

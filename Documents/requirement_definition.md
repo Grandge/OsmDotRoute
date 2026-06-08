@@ -245,6 +245,7 @@
 - [x] [P1] [Phase1] **REQ-FMT-001**: 経路出力型 `Route` に総距離（メートル単位、`double`）を含めること。(Ver. 0.18)
 - [x] [P1] [Phase1] **REQ-FMT-002**: 経路出力型 `Route` に総所要時間（秒単位、`double`）を含めること。(Ver. 0.18)
 - [x] [P1] [Phase1] **REQ-FMT-003**: 経路出力型 `Route` に経路形状（`IReadOnlyList<GeoCoordinate>`）を含めること。(Ver. 0.18)
+- [x] [P2] [Phase4] **REQ-FMT-006**: 経路出力型 `Route` に Shape 点別の累積所要時間（秒、`ReadOnlyMemory<double>`、プロパティ名 `CumulativeDurationsSec`）を含めること。`Shape` と 1:1 整列、`[0]==0`、`[^1]==TotalDurationSec`（厳密一致）、単調非減少、移動困難エリアの速度低下（エッジ単位 SpeedFactor 由来）が区間所要時間に反映されること。区間 i（`Shape[i]→Shape[i+1]`）の所要時間は隣接累積秒の差で導出可能（区間別 API は提供しない）。親プロジェクト「災害廃棄物処理シミュレーション」の区間別速度低下アニメーション要望を起源とする（`Documents/feature_request_per_segment_durations.md`）。(Ver. 1.1.0)
 
 #### 5.6.b 形式変換ユーティリティ
 
@@ -392,7 +393,10 @@ namespace OsmDotRoute
     public readonly record struct MeshCode(long Value) { /* 8〜10 桁の数値。桁数で階層を自動判定（Phase 1 範囲） */ }
     public enum MeshLevel { Mesh3rd /* 1km */, HalfMesh /* 500m */, QuarterMesh /* 250m */ }
     public readonly record struct MapBounds(GeoCoordinate SouthWest, GeoCoordinate NorthEast) { /* GML 入力フィルタ等のマップ範囲、境界含む Contains 提供 */ }
-    public sealed class Route { /* TotalDistanceM, TotalDurationSec, Shape: IReadOnlyList<GeoCoordinate> */ }
+    public sealed class Route {
+        /* TotalDistanceM, TotalDurationSec, Shape: ReadOnlyMemory<GeoCoordinate>,
+           CumulativeDurationsSec: ReadOnlyMemory<double> (REQ-FMT-006、Ver 1.1.0) */
+    }
 }
 ```
 
@@ -490,7 +494,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 | 種別 | 内容 | 関連要件 |
 |---|---|---|
-| `OsmDotRoute.Route` 型 | 総距離・総所要時間・経路形状 | REQ-FMT-001 〜 REQ-FMT-003 |
+| `OsmDotRoute.Route` 型 | 総距離・総所要時間・経路形状・Shape 点別累積所要秒（`CumulativeDurationsSec`、Ver 1.1.0〜） | REQ-FMT-001 〜 REQ-FMT-003、REQ-FMT-006 |
 | ~~GeoJSON LineString~~ | ~~経路の地図表示用~~ | ~~REQ-FMT-004~~（**廃止・v1.7**、利用者側で `Route.Shape` から数行で変換可能なため YAGNI 判断、設計書 §13 参照） |
 | GeoJSON FeatureCollection | 道路ネットワーク全体 | REQ-RTE-004 |
 
@@ -543,9 +547,10 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 ### Phase 4（着手中、2026-06-03〜）
 
-**スコープ（2026-06-02 ユーザー決定で 2 項目に限定）**:
+**スコープ（2026-06-02 ユーザー決定で 2 項目に限定、2026-06-09 親プロFB 追補で 1 項目追加）**:
 - **プロファイル追加**: REQ-PRF-005〜006（emergency / disaster）＋ユーザー定義プロファイル拡充
 - **マルチプラットフォーム対応**: REQ-NFR-007（Linux / macOS）の検証本格化【完了 2026-06-03、Windows/Linux/macOS で 753 pass】。REQ-NFR-008（.NET バージョン横断）は本スコープ外で Phase 4+ 継続
+- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望への対応（2026-06-09 採用、Ver 1.1.0、`Documents/feature_request_per_segment_durations.md` 起源）
 
 ### Phase 4 以降（将来検討）
 
@@ -625,6 +630,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
+| （採番待ち） | 2026-06-09 | **REQ-FMT-006 追加 / Phase 4 親プロFB 追補（Ver 1.1.0）**。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（`Documents/feature_request_per_segment_durations.md`）に応えて `Route.CumulativeDurationsSec`（`ReadOnlyMemory<double>`、Shape 点別累積所要秒）を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` 追加 + `RouteBuilder` でエッジ内多角線距離按分による補間。Phase 4 スコープに「親プロFB 追補」枠を追加（§9 Phase 4 第 3 ブレット）、§7.1 API シグネチャ概要・§8.2 出力フォーマット表は §5.6.a を参照。全 761 pass（既存 753 + 不変条件テスト 6 + 別途追加分、回帰ゼロ）。バージョンはユーザー採番（1.1.0 マイナー） | Claude (Opus 4.7) |
 | （採番待ち） | 2026-06-03 | **Phase 4 マルチプラットフォーム対応完了**。REQ-NFR-007（Linux / macOS）を完了マーク。3H で構築した macOS CI 自動ミラー基盤（`mirror.yml` / `.mirror/ci-macos.yml`）を Phase 4 成果を保ったまま main へ移植し、自動同期を有効化。**macOS ARM64（GitHub Actions ミラー `OsmDotRoute-ci-macos`）・Linux x64（WSL2 + CI）とも Phase 4 = 753 pass / 0 fail / 0 skip**、配布 3 本の pack も警告ゼロを確認。REQ-NFR-008（.NET バージョン横断）は本スコープ外で継続。詳細は [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md)。バージョンはユーザー採番 | Claude (Opus 4.8) |
 | （採番待ち） | 2026-06-03 | **Phase 4 プロファイル追加完了**。REQ-PRF-005 を救急車 `ambulance`（小型）+ 消防車 `fire_engine`（大型）の 2 プロファイルに分割して完了マーク（ID は分割せず両プロファイルに充当）、REQ-PRF-006 災害用 `disaster`（難所耐性中心）を完了マーク。Extractor CLI `--profiles` の外部 JSON プロファイル対応で REQ-PRF-009 を bake 経路へ拡張（`ProfileResolver`）。全 753 pass（Phase 3 末 693 → +60、回帰ゼロ）。設計は [phase4_design.md](phase4_design.md) §2、利用手順は [profile_guide.md](profile_guide.md) 参照。バージョンはユーザー採番 | Claude (Opus 4.8) |
 | 0.1 (draft) | 2026-05-18 | 初版ドラフト作成 | Claude (Opus 4.7) |

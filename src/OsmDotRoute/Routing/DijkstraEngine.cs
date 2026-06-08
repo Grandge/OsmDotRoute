@@ -82,7 +82,7 @@ internal sealed class DijkstraEngine
             else if (Math.Abs(fTarget - fSource) < double.Epsilon)
             {
                 // 完全同一点
-                return new DijkstraResult(0, 0, Array.Empty<uint>(), Array.Empty<uint>(), SameEdge: true);
+                return new DijkstraResult(0, 0, Array.Empty<uint>(), Array.Empty<uint>(), Array.Empty<double>(), SameEdge: true);
             }
         }
 
@@ -200,7 +200,7 @@ internal sealed class DijkstraEngine
         // 経路復元（同一エッジ直接通過の場合は頂点列なし）
         if (bestSameEdge)
         {
-            return new DijkstraResult(bestCost, bestDist, Array.Empty<uint>(), Array.Empty<uint>(), SameEdge: true);
+            return new DijkstraResult(bestCost, bestDist, Array.Empty<uint>(), Array.Empty<uint>(), Array.Empty<double>(), SameEdge: true);
         }
 
         var vertexPath = new List<uint>();
@@ -218,7 +218,14 @@ internal sealed class DijkstraEngine
         vertexPath.Reverse();
         edgePath.Reverse();
 
-        return new DijkstraResult(bestCost, bestDist, vertexPath, edgePath, SameEdge: false);
+        // 各通過頂点での起点（ソーススナップ点）からの累積所要秒（REQ-FMT-006、Shape 点別累積秒の素材）
+        var vertexCumulativeDurationsSec = new double[vertexPath.Count];
+        for (int i = 0; i < vertexPath.Count; i++)
+        {
+            vertexCumulativeDurationsSec[i] = cost[vertexPath[i]];
+        }
+
+        return new DijkstraResult(bestCost, bestDist, vertexPath, edgePath, vertexCumulativeDurationsSec, SameEdge: false);
     }
 }
 
@@ -229,10 +236,12 @@ internal sealed class DijkstraEngine
 /// <param name="TotalDistanceM">総距離（メートル）。エッジ <c>DistanceM</c> 値の合算（多角線の実長ではない）</param>
 /// <param name="VertexPath">通過頂点列（ソース側端点 → ターゲット側端点）。同一エッジ直通の場合は空</param>
 /// <param name="EdgePath">通過エッジ ID 列（先頭がソーススナップエッジ、末尾が <c>VertexPath</c> 末尾頂点への流入エッジ）。同一エッジ直通の場合は空</param>
+/// <param name="VertexCumulativeDurationsSec"><see cref="VertexPath"/> と整列した、ソーススナップ点から各通過頂点までの累積所要秒。同一エッジ直通の場合は空</param>
 /// <param name="SameEdge">ソース・ターゲットが同一エッジ上で直接通過した場合 <c>true</c></param>
 internal sealed record DijkstraResult(
     double TotalDurationSec,
     double TotalDistanceM,
     IReadOnlyList<uint> VertexPath,
     IReadOnlyList<uint> EdgePath,
+    IReadOnlyList<double> VertexCumulativeDurationsSec,
     bool SameEdge);
