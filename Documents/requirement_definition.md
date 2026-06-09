@@ -208,7 +208,8 @@
   - `snow`（積雪）
   - `ice`（凍結）
 - [x] [P1] [Phase1] **REQ-PRF-013**: ユーザーが独自の難所タイプ（任意の文字列キー、英数字とアンダースコアのみ）をプロファイル JSON で追加可能とすること。(Ver. 0.18)
-- [x] [P1] [Phase1] **REQ-PRF-014**: プロファイル定義に存在しない難所タイプが指定された場合、`difficultyDefault`（規定: `speedFactor=1.0`, `canPass=true`）を適用すること。(Ver. 0.18)
+- [x] [P1] [Phase1] **REQ-PRF-014**: プロファイル定義に存在しない難所タイプが指定された場合、`difficultyDefault`（規定: `speedFactor=1.0`, `canPass=true`）を適用すること。(Ver. 0.18) **【v1.1.1 改訂】難所タイプ照合は case-insensitive（Ordinal-IgnoreCase）。`"Flooding"` / `"FLOODING"` 等の表記揺れでも正準小文字キー（`DifficultyTypes` 定数）と一致する。プロファイル JSON 内に case 違いで重複するキー（`"flooding"` と `"Flooding"` の併存等）は `InvalidProfileException` で拒否する。** (Ver. 1.1.1、親プロFB 起源の不具合修正)
+- [x] [P2] [Phase4] **REQ-PRF-017**: 利用者が難所タイプの定義有無を事前確認できる観測性 API を `VehicleProfile` 公開面に提供すること。具体的には `IReadOnlyCollection<string> KnownDifficultyTypes`（定義済キー一覧）と `bool HasDifficulty(string)`（case-insensitive 含有判定）の 2 つ。これは REQ-PRF-014 のサイレント・フォールバック挙動を利用者側で能動的に検知できるようにする観測性フックである（親プロFB 起源、`Documents/feature_request_per_segment_durations.md` 検証中に発覚した不具合への再発防止策）。(Ver. 1.1.1)
 
 #### 5.3.d 将来拡張
 
@@ -550,7 +551,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 **スコープ（2026-06-02 ユーザー決定で 2 項目に限定、2026-06-09 親プロFB 追補で 1 項目追加）**:
 - **プロファイル追加**: REQ-PRF-005〜006（emergency / disaster）＋ユーザー定義プロファイル拡充
 - **マルチプラットフォーム対応**: REQ-NFR-007（Linux / macOS）の検証本格化【完了 2026-06-03、Windows/Linux/macOS で 753 pass】。REQ-NFR-008（.NET バージョン横断）は本スコープ外で Phase 4+ 継続
-- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望への対応（2026-06-09 採用、Ver 1.1.0、`Documents/feature_request_per_segment_durations.md` 起源）
+- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec、Ver 1.1.0）/ REQ-PRF-014 改訂・REQ-PRF-017 追加（難所タイプ照合 case-insensitive 化＋観測性 API、Ver 1.1.1）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（[`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)）と、その検証中に発覚した不具合報告を取り込み
 
 ### Phase 4 以降（将来検討）
 
@@ -630,6 +631,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
+| （採番待ち） | 2026-06-09 | **REQ-PRF-014 改訂 + REQ-PRF-017 追加（Ver 1.1.1、親プロFB 不具合修正）**。親プロジェクト（v1.1.0 アニメ目視検証中）から「難所タイプ照合が case-sensitive のため `"Flooding"` 等の表記揺れで速度低下がサイレントに無効化される」不具合報告を受領（[`debug_flooding_x10_for_animation_verification.md`](debug_flooding_x10_for_animation_verification.md) 経由の往復で発覚）。`ProfileEvaluator.EvaluateDifficulty` の照合を Ordinal-IgnoreCase 化（REQ-PRF-014 改訂）、case-only 重複キーを `InvalidProfileException` で拒否、観測性 API `VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` を新規追加（REQ-PRF-017）。`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` の XML doc に「サイレント・フォールバック」挙動を明記。全 777 pass（v1.1.0 末の 761 から +16、回帰ゼロ）。バージョン 1.1.1（パッチ採番） | Claude (Opus 4.7) |
 | （採番待ち） | 2026-06-09 | **REQ-FMT-006 追加 / Phase 4 親プロFB 追補（Ver 1.1.0）**。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（`Documents/feature_request_per_segment_durations.md`）に応えて `Route.CumulativeDurationsSec`（`ReadOnlyMemory<double>`、Shape 点別累積所要秒）を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` 追加 + `RouteBuilder` でエッジ内多角線距離按分による補間。Phase 4 スコープに「親プロFB 追補」枠を追加（§9 Phase 4 第 3 ブレット）、§7.1 API シグネチャ概要・§8.2 出力フォーマット表は §5.6.a を参照。全 761 pass（既存 753 + 不変条件テスト 6 + 別途追加分、回帰ゼロ）。バージョンはユーザー採番（1.1.0 マイナー） | Claude (Opus 4.7) |
 | （採番待ち） | 2026-06-03 | **Phase 4 マルチプラットフォーム対応完了**。REQ-NFR-007（Linux / macOS）を完了マーク。3H で構築した macOS CI 自動ミラー基盤（`mirror.yml` / `.mirror/ci-macos.yml`）を Phase 4 成果を保ったまま main へ移植し、自動同期を有効化。**macOS ARM64（GitHub Actions ミラー `OsmDotRoute-ci-macos`）・Linux x64（WSL2 + CI）とも Phase 4 = 753 pass / 0 fail / 0 skip**、配布 3 本の pack も警告ゼロを確認。REQ-NFR-008（.NET バージョン横断）は本スコープ外で継続。詳細は [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md)。バージョンはユーザー採番 | Claude (Opus 4.8) |
 | （採番待ち） | 2026-06-03 | **Phase 4 プロファイル追加完了**。REQ-PRF-005 を救急車 `ambulance`（小型）+ 消防車 `fire_engine`（大型）の 2 プロファイルに分割して完了マーク（ID は分割せず両プロファイルに充当）、REQ-PRF-006 災害用 `disaster`（難所耐性中心）を完了マーク。Extractor CLI `--profiles` の外部 JSON プロファイル対応で REQ-PRF-009 を bake 経路へ拡張（`ProfileResolver`）。全 753 pass（Phase 3 末 693 → +60、回帰ゼロ）。設計は [phase4_design.md](phase4_design.md) §2、利用手順は [profile_guide.md](profile_guide.md) 参照。バージョンはユーザー採番 | Claude (Opus 4.8) |

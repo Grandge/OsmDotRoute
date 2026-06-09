@@ -21,6 +21,13 @@ internal sealed class ProfileEvaluator
     private readonly JsonVehicleLimits? _vehicleLimits;
 
     /// <summary>
+    /// 難所タイプ → ルールの case-insensitive 照合用ルックアップ（v1.1.1、親プロFB 不具合修正、REQ-PRF-014 改訂）。
+    /// JSON デシリアライズ既定の case-sensitive 比較では <c>"Flooding"</c> 等の表記揺れで
+    /// サイレントに <c>difficultyDefault</c> へ落ちる問題があったため、Ordinal-IgnoreCase で正規化する。
+    /// </summary>
+    private readonly Dictionary<string, JsonDifficultyRule> _difficultyLookup;
+
+    /// <summary>
     /// プロファイル定義から評価器を構築する。検証は <see cref="ValidateAndCompile"/> で行う。
     /// </summary>
     /// <exception cref="InvalidProfileException">プロファイル定義が不正</exception>
@@ -39,6 +46,10 @@ internal sealed class ProfileEvaluator
         _maxspeedDefaultMph = string.Equals(def.MaxspeedUnitDefault, "mph", StringComparison.OrdinalIgnoreCase);
         _speedMultiplier = def.SpeedMultiplier ?? 1.0;
         _vehicleLimits = def.VehicleLimits;
+
+        _difficultyLookup = def.Difficulty is { } diff
+            ? new Dictionary<string, JsonDifficultyRule>(diff, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, JsonDifficultyRule>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -140,6 +151,11 @@ internal sealed class ProfileEvaluator
     /// <summary>
     /// 難所タイプ評価。プロファイルに該当タイプ定義があればそれを、無ければ <c>difficultyDefault</c> を返す（REQ-PRF-014）。
     /// </summary>
+    /// <remarks>
+    /// 照合は **case-insensitive**（Ordinal-IgnoreCase、v1.1.1〜）。
+    /// 例: 正準キー <c>"flooding"</c> を持つプロファイルに対し、<c>"Flooding"</c> / <c>"FLOODING"</c> 等の表記揺れでも一致する。
+    /// v1.1.0 までは case-sensitive で、表記不一致がサイレントに <c>difficultyDefault</c> へ落ちる不具合があった（親プロFB 起因）。
+    /// </remarks>
     public DifficultyEvaluation EvaluateDifficulty(string difficultyType)
     {
         if (string.IsNullOrWhiteSpace(difficultyType))
@@ -147,14 +163,36 @@ internal sealed class ProfileEvaluator
             return new DifficultyEvaluation((float)_difficultyDefault.SpeedFactor, _difficultyDefault.CanPass);
         }
 
-        if (_def.Difficulty is { } table
-            && table.TryGetValue(difficultyType, out var rule))
+        if (_difficultyLookup.TryGetValue(difficultyType, out var rule))
         {
             return new DifficultyEvaluation((float)rule.SpeedFactor, rule.CanPass);
         }
 
         return new DifficultyEvaluation((float)_difficultyDefault.SpeedFactor, _difficultyDefault.CanPass);
     }
+
+    /// <summary>
+    /// このプロファイルが <c>difficulty</c> セクションで定義する難所タイプキー集合（v1.1.1、観測性 API）。
+    /// </summary>
+    /// <remarks>
+    /// 正準キーは小文字（<see cref="OsmDotRoute.DifficultyTypes"/> 参照）だが、本コレクションは JSON 定義のままの表記で返す。
+    /// 利用者は登録予定の難所タイプキーがこのコレクションに含まれるかを起動時等で確認することで、
+    /// タイプミス由来のサイレント・フォールバックを早期検知できる。照合自体は <see cref="EvaluateDifficulty"/> で
+    /// case-insensitive に行われるため、本コレクションも <see cref="HasDifficulty"/> 経由での照合を推奨する。
+    /// </remarks>
+    public IReadOnlyCollection<string> KnownDifficultyTypes => _difficultyLookup.Keys;
+
+    /// <summary>
+    /// 指定した難所タイプがこのプロファイルの <c>difficulty</c> セクションで明示的に定義されているかを返す（v1.1.1、観測性 API）。
+    /// </summary>
+    /// <remarks>
+    /// 照合は case-insensitive。<c>false</c> のとき、その難所タイプを <see cref="EvaluateDifficulty"/> に渡すと
+    /// <c>difficultyDefault</c>（既定 <c>speedFactor=1.0, canPass=true</c>）にフォールバックする（REQ-PRF-014）。
+    /// 利用者が「速度低下が見込める難所タイプか」を事前確認したい場合のフックとして提供する。
+    /// </remarks>
+    /// <param name="difficultyType">難所タイプ文字列。<c>null</c> / 空 / 空白のみは <c>false</c> を返す</param>
+    public bool HasDifficulty(string difficultyType)
+        => !string.IsNullOrWhiteSpace(difficultyType) && _difficultyLookup.ContainsKey(difficultyType);
 
     private static OnewayDirection ParseOneway(IReadOnlyDictionary<string, string> osmTags)
     {
@@ -333,12 +371,25 @@ internal sealed class ProfileEvaluator
 
         if (def.Difficulty is { } diff)
         {
+            // 範囲チェック
             foreach (var (key, rule) in diff)
             {
                 if (rule.SpeedFactor < 0 || rule.SpeedFactor > 1)
                 {
                     throw new InvalidProfileException(
                         $"プロファイル '{def.Name}' の 'difficulty[{key}].speedFactor' は 0.0〜1.0 の範囲が必要です（実値: {rule.SpeedFactor}）。");
+                }
+            }
+
+            // case-only 重複キー検出（v1.1.1、照合 case-insensitive 化に伴う一意性担保）
+            var caseInsensitiveSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in diff.Keys)
+            {
+                if (!caseInsensitiveSeen.Add(key))
+                {
+                    throw new InvalidProfileException(
+                        $"プロファイル '{def.Name}' の 'difficulty' に case 違いで重複するキーがあります（'{key}'）。"
+                        + "難所タイプ照合は case-insensitive のため、正準小文字キーに統一してください。");
                 }
             }
         }

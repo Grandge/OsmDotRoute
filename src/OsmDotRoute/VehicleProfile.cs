@@ -82,6 +82,28 @@ public sealed class VehicleProfile
     internal ProfileEvaluator Evaluator => _evaluator;
 
     /// <summary>
+    /// このプロファイルが <c>difficulty</c> セクションで定義する難所タイプキーの一覧（v1.1.1、観測性 API）。
+    /// </summary>
+    /// <remarks>
+    /// 利用者は起動時等にこのコレクションを確認することで、<see cref="RestrictedAreaService.AddDifficultyArea(GeoPolygon, string, string?)"/> 等で
+    /// 渡そうとしている難所タイプキーが当該プロファイルで効くか（speedFactor が適用されるか）を事前検証できる。
+    /// 該当タイプが未定義の場合、<c>difficultyDefault</c>（既定 <c>speedFactor=1.0</c>）にフォールバックし**速度低下が発生しない**（REQ-PRF-014）。
+    /// 照合は case-insensitive のため、要素は JSON 定義のままの表記で返るが、含有判定には <see cref="HasDifficulty"/> を推奨する。
+    /// </remarks>
+    public IReadOnlyCollection<string> KnownDifficultyTypes => _evaluator.KnownDifficultyTypes;
+
+    /// <summary>
+    /// 指定した難所タイプがこのプロファイルで明示的に定義されているかを返す（v1.1.1、観測性 API、case-insensitive 照合）。
+    /// </summary>
+    /// <remarks>
+    /// 戻り値が <c>false</c> のとき、その難所タイプを <see cref="RestrictedAreaService.AddDifficultyArea(GeoPolygon, string, string?)"/> 等で
+    /// 登録しても <see cref="ProfileEvaluator"/> 内部で <c>difficultyDefault</c> にフォールバックし**速度低下が一切適用されない**（REQ-PRF-014）。
+    /// 「冠水エリアを置いたのにアニメ上で減速しない」等のサイレント無効化を事前検知する用途で利用する。
+    /// </remarks>
+    /// <param name="difficultyType">難所タイプ文字列（<see cref="DifficultyTypes"/> 参照）。<c>null</c> / 空 / 空白のみは <c>false</c></param>
+    public bool HasDifficulty(string difficultyType) => _evaluator.HasDifficulty(difficultyType);
+
+    /// <summary>
     /// JSON ファイルからユーザー定義プロファイルを読み込む（REQ-PRF-009）。
     /// </summary>
     /// <param name="filePath">JSON ファイルパス</param>

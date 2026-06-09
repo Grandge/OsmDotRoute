@@ -12,6 +12,13 @@ namespace OsmDotRoute;
 /// 動的制約（進入不可エリア・難所エリア）の登録・削除・一覧取得を提供するサービス（REQ-API-004）。
 /// 制約変更は次回の <see cref="Router.Calculate"/> 呼び出しから即時反映される（REQ-RST-012）。
 /// </summary>
+/// <remarks>
+/// 難所エリア（<see cref="AddDifficultyArea(GeoPolygon, string, string?)"/> 系）の <c>difficultyType</c> 引数は
+/// <see cref="DifficultyTypes"/> 定数（正準小文字キー）の利用を推奨する。プロファイル評価側の照合は
+/// v1.1.1 以降 case-insensitive のため <c>"Flooding"</c> 等の表記揺れでも一致するが、
+/// **未定義の難所タイプはサイレントに <c>difficultyDefault</c>（既定 <c>speedFactor=1.0</c>）にフォールバック**し、
+/// 速度低下が一切適用されない（REQ-PRF-014）。タイプミス検知には <see cref="VehicleProfile.HasDifficulty"/> を併用すること。
+/// </remarks>
 public sealed class RestrictedAreaService
 {
     private readonly Dictionary<RestrictedAreaId, AreaEntry> _entries = new();

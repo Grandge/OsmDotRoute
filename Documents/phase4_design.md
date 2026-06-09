@@ -1,10 +1,10 @@
 # OsmDotRoute Phase 4 設計書
 
-**バージョン**: ユーザー採番（未採番、Ver 1.1.0 = 親プロFB 追補ぶん）
+**バージョン**: ユーザー採番（未採番、Ver 1.1.0 = 親プロFB 追補ぶん、Ver 1.1.1 = 親プロFB 不具合修正ぶん）
 **作成日**: 2026-06-03
-**最終更新**: 2026-06-09（親プロFB 追補 §3 追加）
-**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。**親プロFB 追補（REQ-FMT-006 = Route.CumulativeDurationsSec）完了**（2026-06-09、Ver 1.1.0、全 761 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
-**対象**: OsmDotRoute Phase 4 のうち**プロファイル追加**と**親プロFB 追補**の設計記録（REQ-PRF-005 = 救急車 `ambulance` / 消防車 `fire_engine`、REQ-PRF-006 = 災害用車両 `disaster`、＋ユーザー定義プロファイルの bake 経路拡張、REQ-FMT-006 = Route 区間別累積所要秒）
+**最終更新**: 2026-06-09（親プロFB 不具合修正 §4 追加）
+**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。**親プロFB 追補（REQ-FMT-006 = Route.CumulativeDurationsSec）完了**（2026-06-09、Ver 1.1.0、全 761 pass）。**親プロFB 不具合修正（REQ-PRF-014 改訂 + REQ-PRF-017 = 難所タイプ case-insensitive 化＋観測性 API）完了**（2026-06-09、Ver 1.1.1、全 777 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
+**対象**: OsmDotRoute Phase 4 のうち**プロファイル追加**と**親プロFB 追補**の設計記録（REQ-PRF-005 = 救急車 `ambulance` / 消防車 `fire_engine`、REQ-PRF-006 = 災害用車両 `disaster`、＋ユーザー定義プロファイルの bake 経路拡張、REQ-FMT-006 = Route 区間別累積所要秒、REQ-PRF-014 改訂 / REQ-PRF-017 = 難所タイプ照合 case-insensitive 化＋観測性 API）
 **関連ドキュメント**:
 
 - [要件定義書](requirement_definition.md)（REQ-PRF-005 / REQ-PRF-006）
@@ -35,7 +35,8 @@ Phase 4 のスコープは 2026-06-02 ユーザー決定で **(1) プロファ�
 | 1. Phase 4 概要（プロファイル追加） | 全ステップ通底 | 記述済 |
 | 2. 救急車 / 消防車 / 災害用プロファイルと外部 JSON bake 対応 | Step 1〜4 | **肉付け完了**（2026-06-03） |
 | 3. 親プロFB 追補: Route.CumulativeDurationsSec（REQ-FMT-006） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.0） |
-| 4. 改訂履歴 | 各ステップ完了時 | 初版 |
+| 4. 親プロFB 不具合修正: 難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017 追加） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.1） |
+| 5. 改訂履歴 | 各ステップ完了時 | 初版 |
 
 > Step 5（利用者向け解説ドキュメント）/ Step 6（設計書・要件反映）は成果物が本書および [profile_guide.md](profile_guide.md) / [requirement_definition.md](requirement_definition.md) 自体であり、§2 にその位置付けを記す。
 
@@ -69,7 +70,7 @@ Phase 3 §5 で確立した「JSON プロファイル + `ProfileEvaluator` + `Ba
 - [`src/OsmDotRoute/Profiles/ambulance.json`](../src/OsmDotRoute/Profiles/ambulance.json)（埋込、小型 4.0t / 2.6m / 2.0m、emergency / 歩道低速通行 / ignoreOneway）
 - [`src/OsmDotRoute/Profiles/fire_engine.json`](../src/OsmDotRoute/Profiles/fire_engine.json)（埋込、大型 8.0t / 2.9m / 2.1m）
 - [`src/OsmDotRoute/Profiles/disaster.json`](../src/OsmDotRoute/Profiles/disaster.json)（埋込、truck 同等寸法 + 難所耐性強化）
-- [`src/OsmDotRoute/VehicleProfile.cs`](../src/OsmDotRoute/VehicleProfile.cs)（`Ambulance` / `FireEngine` / `Disaster` 静的プロパティ追加、Lazy<T> パターン踏襲）
+- [`src/OsmDotRoute/VehicleProfile.cs`](../src/OsmDotRoute/VehicleProfile.cs)（`Ambulance` / `FireEngine` / `Disaster` 静的プロパティ追加、`Lazy<T>` パターン踏襲）
 - [`src/OsmDotRoute/OsmDotRoute.csproj`](../src/OsmDotRoute/OsmDotRoute.csproj)（3 JSON を `EmbeddedResource` 登録）
 - [`src/OsmDotRoute.Extractor/ProfileResolver.cs`](../src/OsmDotRoute.Extractor/ProfileResolver.cs)（新規。組込み 7 名 + 外部 JSON ファイルパス解決）
 - [`src/OsmDotRoute.Extractor/Program.cs`](../src/OsmDotRoute.Extractor/Program.cs)（`ProfileResolver.Resolve` 適用、プロファイル名一意性チェック、メタ JSON に実プロファイル名を記録）
@@ -275,10 +276,126 @@ public ReadOnlyMemory<double> CumulativeDurationsSec { get; }
 
 ---
 
-## 4. 改訂履歴
+## 4. 親プロFB 不具合修正: 難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017）
+
+**対応ステップ**: 単発 Step（親プロFB 不具合修正、Phase 4 追補内）
+**対応要件**: REQ-PRF-014（既存仕様の case-insensitive 化改訂）、REQ-PRF-017（新規・観測性 API 提供）
+**起源**: 親プロジェクト開発エージェントからの不具合報告（v1.1.0 アニメ目視検証中に発覚）。`Documents/debug_flooding_x10_for_animation_verification.md` 経由の往復で「`flooding` を 0.03 に絞ってもアニメが減速しない → 親プロは `"Flooding"` PascalCase を渡しており case-sensitive 照合で `difficultyDefault` にサイレント・フォールバックしていた」と判明
+**実装日**: 2026-06-09
+**実装バージョン**: Ver 1.1.1（パッチ採番、後方互換バグ修正＋小規模 API 追加）
+**主要ファイル**:
+
+- [`src/OsmDotRoute/Profiles/ProfileEvaluator.cs`](../src/OsmDotRoute/Profiles/ProfileEvaluator.cs)（`_difficultyLookup` を `Ordinal-IgnoreCase` 比較器で構築、`EvaluateDifficulty` の照合経路を差し替え、内部 `KnownDifficultyTypes` / `HasDifficulty` 追加、`ValidateAndCompile` で case-only 重複キー検出）
+- [`src/OsmDotRoute/VehicleProfile.cs`](../src/OsmDotRoute/VehicleProfile.cs)（公開 `IReadOnlyCollection<string> KnownDifficultyTypes` / `bool HasDifficulty(string)` を追加、`Evaluator` 委譲）
+- [`src/OsmDotRoute/DifficultyTypes.cs`](../src/OsmDotRoute/DifficultyTypes.cs)（XML doc に「正準小文字推奨・case-insensitive 照合・未定義タイプは silent fallback」を明記）
+- [`src/OsmDotRoute/Restrictions/RestrictedAreaService.cs`](../src/OsmDotRoute/Restrictions/RestrictedAreaService.cs)（クラス XML doc に同旨の注意を追加）
+- [`src/OsmDotRoute/Route.cs`](../src/OsmDotRoute/Route.cs)（`CumulativeDurationsSec` の `<remarks>` にデバッグ tips を追加）
+- [`tests/OsmDotRoute.Tests/DifficultyTypeCaseInsensitivityTests.cs`](../tests/OsmDotRoute.Tests/DifficultyTypeCaseInsensitivityTests.cs)（新規 16 テスト：Theory 4 × 2、HasDifficulty 各種、KnownDifficultyTypes、重複キー、E2E PascalCase 減速反映）
+
+### 4.1 意図
+
+親プロからの不具合報告の本質は「**設定ミスがサイレントに既定値へ落ちて、機能が動いていないことに気づけない**」という観測性の欠如にある。
+
+直接の症状（PascalCase で照合外れ）は親プロ側で `ToLowerInvariant()` 適用済みだが、これは「親プロが気づいて回避した」だけであり、ライブラリ利用者の他の誰かも同じ罠に再び落ちる構造が残っている。本修正の狙いは：
+
+1. **直接修正**: 表記揺れを ライブラリ側で吸収（照合を case-insensitive に）。利用者が正準キー以外を渡しても、十分に予測可能な範囲なら救済する。
+2. **観測性向上**: 「使えるタイプかを事前確認できる」公開 API を追加し、サイレントな失敗を能動的に検知できるようにする。
+3. **意図しない混入の拒否**: case 違いで衝突する JSON 定義は実装時に弾く（profile 作者のミス検知）。
+
+### 4.2 採用設計
+
+#### 4.2.1 照合の case-insensitive 化（REQ-PRF-014 改訂）
+
+`ProfileEvaluator` のコンストラクタで、`def.Difficulty`（`Dictionary<string, JsonDifficultyRule>`、JSON デシリアライズ既定 = Ordinal）を `StringComparer.OrdinalIgnoreCase` 比較器付き Dictionary `_difficultyLookup` に **コピー** する。`EvaluateDifficulty` は `_difficultyLookup.TryGetValue` のみに依存（元の `_def.Difficulty` 参照を廃止）。
+
+```csharp
+_difficultyLookup = def.Difficulty is { } diff
+    ? new Dictionary<string, JsonDifficultyRule>(diff, StringComparer.OrdinalIgnoreCase)
+    : new Dictionary<string, JsonDifficultyRule>(StringComparer.OrdinalIgnoreCase);
+```
+
+性能インパクトは無視できる（Dictionary 構築 1 回、評価時は同じ O(1) ハッシュ参照、ハッシュ計算が大小無視になるが文字列長 ≤ 16 が典型なので差分は無関係）。
+
+#### 4.2.2 case-only 重複キーの拒否
+
+case-insensitive 化により、JSON 内に `"flooding"` と `"Flooding"` が併存すると一意性が崩れる（Dictionary ctor が例外を投げる、または最後の登録が優先される実装依存挙動になる）。これは明示的に **`InvalidProfileException` で拒否** する。
+
+検出は `ValidateAndCompile` で `HashSet<string>(StringComparer.OrdinalIgnoreCase)` の `Add` 失敗を見るだけ。エラーメッセージで「正準小文字キーに統一してください」を案内する。
+
+#### 4.2.3 観測性 API（REQ-PRF-017 新規）
+
+公開 `VehicleProfile` に 2 つのプロパティ／メソッドを追加：
+
+| API | シグネチャ | 用途 |
+| --- | --- | --- |
+| `KnownDifficultyTypes` | `IReadOnlyCollection<string>` | プロファイルが定義する全難所タイプキー（JSON 表記そのまま）の列挙 |
+| `HasDifficulty(string)` | `bool` | 指定タイプが定義済みか（case-insensitive 含有判定） |
+
+利用例（親プロ側起動時診断）:
+
+```csharp
+foreach (var registeredType in scenarioDifficultyTypes)
+{
+    if (!profile.HasDifficulty(registeredType))
+        logger.LogWarning("Profile '{name}' does not define difficulty type '{type}'; "
+                        + "speedFactor=1.0 fallback will apply (no slowdown).",
+                          profile.Name, registeredType);
+}
+```
+
+`ILogger` を本ライブラリには持ち込まず（依存を増やさない）、利用者の任意 logger に委ねる設計とした（提案 2 の「警告ログ自動出力」を採用せず、観測性 API という間接策に倒した理由）。
+
+### 4.3 設計判断の根拠
+
+| 論点 | 確定 | 理由 |
+| --- | --- | --- |
+| 照合方式 | **case-insensitive（OrdinalIgnoreCase）** | 利用者の自然な期待（`"Flooding"` でも効くだろう）に揃える。Culture-aware 比較は不要（難所タイプキーは ASCII 識別子限定、REQ-PRF-013）、Ordinal で十分かつ最速 |
+| 後方互換 | **完全互換**（既存小文字キー利用者は無影響） | 既存テスト全 761 件が **未修正のまま** pass する状態を維持。新規テスト 16 件は v1.1.1 で初めて意味を持つ |
+| 観測性手段 | **自前 logger 不採用、API 経由で利用者が検証** | コアに `ILogger<T>` を入れると Microsoft.Extensions.Logging.Abstractions 依存が増え、DI 統合プロジェクトと整合させる手間が出る。API 経由なら依存ゼロで観測性確保 |
+| バージョン | **1.1.1 パッチ採番** | バグ修正＋ API 微増。SemVer 厳密適用なら API 追加はマイナーだが、v1.x 期間の小規模 API 追加はパッチ扱いで運用（README の「0.x 期間中の破壊的 API 変更はマイナー版アップで許容」と整合的） |
+| 帰属 | **Phase 4 追補内・不具合修正** | v1.1.0 と同じ親プロFB 枠で受け止める。Phase 5 新設は別議論（Phase 4 のスコープを「親プロFB 全般」に解釈拡張） |
+
+### 4.4 トレードオフ・制約
+
+- **`KnownDifficultyTypes` の表記揺れ**: 戻り値の各要素は JSON 定義そのままの表記（小文字推奨だが、ユーザー定義プロファイルで PascalCase 等が入る可能性あり）。利用者が含有判定する際は `HasDifficulty(string)` 経由（case-insensitive）を推奨し、文字列の単純 `Contains` は避けるよう XML doc で案内。
+- **`InvalidProfileException` の破壊性**: v1.1.0 まで「同一プロファイル JSON に `"flooding"` と `"Flooding"` を併記」が偶然動いていた（後勝ち）ケースがもしあれば、v1.1.1 で例外になる。標準同梱 7 プロファイル＋本プロジェクトの 9 テスト用 JSON は全て正準小文字なので影響ゼロ。リスクは利用者側 JSON のみ（実害があれば破壊変更扱い）。
+- **「未定義タイプはサイレントに既定値」自体は維持**: REQ-PRF-014 の「定義に存在しない難所タイプ → `difficultyDefault`」は REQ-PRF-013（ユーザー定義タイプ）と表裏一体の仕様で、未知タイプを一律例外にはできない。観測性 API でこのトレードオフを利用者側で能動検知できる形に倒したのが本修正の本質。
+- **CumulativeDurationsSec の XML doc に依存**: v1.1.0 の `Route.CumulativeDurationsSec` 利用者は、減速が見えない事象を見たとき本不具合を疑えるよう doc remarks に明記したが、doc を読まない利用者には届かない。`HasDifficulty` を起動時診断で呼ぶ習慣を [profile_guide.md](profile_guide.md) 等にも展開する余地がある（次回ガイド改訂時に反映）。
+
+### 4.5 検証方法
+
+#### 4.5.1 単体・統合テスト（v1.1.0 末 761 → +16 → 777 pass）
+
+| グループ | テスト件数 | 観点 |
+| --- | --- | --- |
+| `EvaluateDifficulty_AnyCase_MatchesLowercaseProfileEntry` | 4（Theory） | `"flooding" / "Flooding" / "FLOODING" / "fLoOdInG"` のいずれも `car.json` の `"flooding"` エントリ（speedFactor=0.3）に一致 |
+| `EvaluateDifficulty_TrulyUnknownType_StillFallsToDefault` | 1 | 未定義 `"meteor_strike"` は従来通り `difficultyDefault`（speedFactor=1.0）に落ちる（REQ-PRF-014 既存仕様維持） |
+| `HasDifficulty_*` | 8（Theory 含む） | 正準小文字 / 表記揺れ 3 種 / 未知タイプ / null・空・空白の各ケース |
+| `KnownDifficultyTypes_Car_ContainsAllBuiltinKeys` | 1 | `DifficultyTypes` 組込み 8 種が全て列挙される（`Count == 8`） |
+| `LoadFromJsonString_CaseOnlyDuplicateKeys_ThrowsInvalidProfileException` | 1 | `"flooding"` と `"Flooding"` 併記 JSON が即時拒否される |
+| `Calculate_DifficultyArea_PascalCase_SlowsDownSameAsLowercase` | 1 | **E2E 回帰固定**: PascalCase 指定で経路所要が小文字指定と一致、かつ baseline の 3 倍超に増加（= サイレント・フォールバックではない） |
+
+`dotnet test tests/OsmDotRoute.Tests` で **777 pass / 0 fail / 0 skip**（2026-06-09 確認）。
+
+#### 4.5.2 設計上の歯止め
+
+- **既存 761 件の無改変 pass**: 既存テストは全て正準小文字キー（`DifficultyTypes.Flooding` 等の const 経由）を使うため、case-insensitive 化の影響を受けず未修正で pass。回帰がないことの最強実証。
+- **公開 API 後方互換**: `Route` / `RestrictedAreaService` / `Router` の既存メソッドシグネチャに変更なし。`VehicleProfile` への追加は新規プロパティ＋メソッドのみ（既存メンバー不変）。
+- **API 表面の最小化**: ロガー注入 / Action コールバック / 警告イベント等を見送り、`bool HasDifficulty(string)` ＋ `IReadOnlyCollection<string> KnownDifficultyTypes` の 2 つに絞った。利用者の検証ロジックは利用者責務とすることで、ライブラリのコアを薄く保つ。
+
+### 4.6 実装メモ
+
+- **親プロ側で既に回避済み**: 親プロは `ToLowerInvariant()` で正規化済みなので、本修正の有無に関わらず親プロは動く。本修正は「将来の利用者の事故防止＋親プロ側の正規化ロジック削除可能性」を狙う。親プロが正規化ロジックを削除するかは親プロ判断（残しても安全）。
+- **アニメ目視用デバッグ JSON の継続価値**: `Documents/debug/car_debug_flooding_x10.json`（v1.1.0 検証用、git 未追跡）は今回の不具合修正と独立した「視覚的増幅（0.3 → 0.03）」目的の資産。バグは修正されたが、アニメ tuning 時に「明白な減速」を見たい場面では依然有用なため削除しない（利用者が任意で削除する）。
+- **`debug_flooding_x10_for_animation_verification.md` の扱い**: 親プロ向けデバッグ手順書はユーザー（本プロジェクトオーナー）が削除予定（[[feedback]] 「相手が読んだ後に私が削除します」）。ここでは手を入れない。
+- **学び**: 親プロ側エージェントの不具合報告 §6 が秀逸（「既定値へのサイレント・フォールバックは設定ミスを正常動作に偽装する」）。これは Phase 5 以降の同種設計判断（例: 未知プロファイル名・未知 access タグ値）でも参照する原則として留意する。
+
+---
+
+## 5. 改訂履歴
 
 | Ver | 日付 | 変更 |
 | --- | --- | --- |
+| 親プロFB 不具合修正 | 2026-06-09 | §4「難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017）」を追加。親プロ側不具合報告（v1.1.0 アニメ目視検証中に発覚した `"Flooding"` PascalCase でのサイレント・フォールバック）を受けて、`ProfileEvaluator` の照合経路を `Ordinal-IgnoreCase` 化、case-only 重複キー検出、`VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` 観測性 API を追加。XML doc 4 箇所（`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` / `EvaluateDifficulty`）でサイレント・フォールバック挙動を明記。新規テスト 16 件、全 777 pass（回帰ゼロ）。Ver 1.1.1 パッチ採番 |
 | 親プロFB 追補 | 2026-06-09 | §3「Route.CumulativeDurationsSec（REQ-FMT-006）」を追加。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望に応えて Route に Shape 点別累積所要秒を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` + `RouteBuilder` でエッジ内多角線距離按分による補間。不変条件テスト 6 種で整列・端点・単調・難所反映・SameEdge・互換コンストラクタを実証、全 761 pass（回帰ゼロ）。Ver 1.1.0 マイナー採番 |
 | 初版 | 2026-06-03 | Phase 4 プロファイル追加（Step 1〜4 完了）を §0〜§2 に起こし。救急車 `ambulance` / 消防車 `fire_engine` / 災害用 `disaster` の設計値・根拠・トレードオフ・検証（753 pass）、Extractor 外部 JSON プロファイル対応（`ProfileResolver`）を記録。Step 5（利用者ガイド）/ Step 6（要件反映）の位置付けを §2.6 に追記。バージョンはユーザー採番 |
-</content>

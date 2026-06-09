@@ -70,6 +70,12 @@ public sealed class Route
     /// 区間 i（<c>Shape[i] → Shape[i+1]</c>）の所要時間 = <c>CumulativeDurationsSec.Span[i+1] - CumulativeDurationsSec.Span[i]</c>。
     /// 移動困難エリア（<c>AddDifficultyArea</c>）の速度低下が区間所要時間に反映される（エッジ単位の SpeedFactor 由来）。
     /// </summary>
+    /// <remarks>
+    /// **デバッグ tips**: 難所エリアを登録したにもかかわらず該当区間で累積秒の傾きが変わらない（= 速度低下が見えない）場合、
+    /// 渡した <c>difficultyType</c> 文字列がプロファイル側で未定義のため <c>difficultyDefault</c>（既定 <c>speedFactor=1.0</c>）に
+    /// サイレント・フォールバックしている可能性が高い（REQ-PRF-014）。<see cref="VehicleProfile.HasDifficulty"/> や
+    /// <see cref="VehicleProfile.KnownDifficultyTypes"/> で事前確認できる。
+    /// </remarks>
     public ReadOnlyMemory<double> CumulativeDurationsSec { get; }
 
     /// <summary>
