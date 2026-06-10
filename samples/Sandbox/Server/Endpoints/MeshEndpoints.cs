@@ -8,12 +8,12 @@ public static class MeshEndpoints
 {
     public static void MapMeshEndpoints(this IEndpointRouteBuilder app)
     {
-        // GET /api/mesh/grid?swLat=&swLon=&neLat=&neLon=&level=1km|500m|250m
+        // GET /api/mesh/grid?swLat=&swLon=&neLat=&neLon=&level=1km|500m|250m|125m
         app.MapGet("/api/mesh/grid", (double swLat, double swLon, double neLat, double neLon, string level) =>
         {
             var meshLevel = ParseLevel(level);
             if (meshLevel is null)
-                return Results.BadRequest(new ErrorResponse("invalid_level", $"level は 1km / 500m / 250m のいずれか (受信: {level})"));
+                return Results.BadRequest(new ErrorResponse("invalid_level", $"level は 1km / 500m / 250m / 125m のいずれか (受信: {level})"));
 
             var bounds = new MapBounds(
                 new GeoCoordinate(Math.Min(swLat, neLat), Math.Min(swLon, neLon)),
@@ -51,6 +51,7 @@ public static class MeshEndpoints
         "1km" or "mesh3rd" or "8" => MeshLevel.Mesh3rd,
         "500m" or "halfmesh" or "9" => MeshLevel.HalfMesh,
         "250m" or "quartermesh" or "10" => MeshLevel.QuarterMesh,
+        "125m" or "eighthmesh" or "11" => MeshLevel.EighthMesh,
         _ => null,
     };
 

@@ -3,7 +3,7 @@ import { fetchMeshGrid, registerMeshRestriction, type Kind } from '../api/client
 import { panelStyle, h2Style, btnStyle, inputStyle, errorStyle, BUILTIN_DIFFICULTIES } from './styles';
 import { useI18n } from '../i18n';
 
-type Level = '1km' | '500m' | '250m';
+type Level = '1km' | '500m' | '250m' | '125m';
 
 interface Props {
   currentBounds: { sw: [number, number]; ne: [number, number] } | null;
@@ -81,6 +81,7 @@ export function MeshGridPanel({
           <option value="1km">{t('mg.level1km')}</option>
           <option value="500m">{t('mg.level500m')}</option>
           <option value="250m">{t('mg.level250m')}</option>
+          <option value="125m">{t('mg.level125m')}</option>
         </select>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

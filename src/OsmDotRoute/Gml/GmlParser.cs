@@ -1,17 +1,20 @@
 using System.Globalization;
+using System.Text;
 using System.Xml;
 
 namespace OsmDotRoute.Gml;
 
 /// <summary>
 /// 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2 から
-/// 制約エリア用のポリゴン形状を抽出するストリーミングパーサー（REQ-RST-020〜028）。
+/// 制約エリア用のポリゴン形状を抽出するストリーミングパーサー（REQ-RST-020〜028、REQ-RST-041）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// Phase 1 動作確認は A31「浸水想定区域」(`&lt;ksj:ExpectedFloodArea&gt;`) で行うが、
+/// 動作確認は A31「浸水想定区域」(`&lt;ksj:ExpectedFloodArea&gt;`) / A51「雨水出水浸水想定区域」相当の構造で行うが、
 /// パーサーは**フィーチャ要素名にハードコード依存しない**（任意の KSJ プロダクトを受け入れる、REQ-RST-020）。
-/// 解析対象はフィーチャの形状（外周＋Hole）のみで、`&lt;ksj:waterDepth&gt;` 等のハザード属性は読み飛ばす（REQ-RST-026）。
+/// <see cref="ParseString"/> / <see cref="ParseStream"/> は形状（外周＋Hole）のみを返し、
+/// `&lt;ksj:waterDepth&gt;` 等のハザード属性は読み飛ばす（REQ-RST-026）。
+/// フィーチャ属性が必要な場合は <see cref="ParseFeaturesString"/> / <see cref="ParseFeaturesStream"/> を使う（REQ-RST-041）。
 /// </para>
 /// <para>
 /// 構造: <c>&lt;ksj:Dataset&gt;</c> 直下に <c>&lt;gml:Curve&gt;</c>（リング座標）→
@@ -23,15 +26,37 @@ namespace OsmDotRoute.Gml;
 /// <c>&lt;gml:MultiSurface&gt;</c> は Phase 1 非対応、検出時に <see cref="NotSupportedException"/> を投げる（REQ-RST-023）。
 /// </para>
 /// </remarks>
-internal static class GmlParser
+public static class GmlParser
 {
     private const string GmlNs = "http://www.opengis.net/gml/3.2";
     private const string XlinkNs = "http://www.w3.org/1999/xlink";
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyAttributes =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>GML 文字列をパースし、抽出されたポリゴン列を返す。</summary>
     /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
     /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
     public static IReadOnlyList<GeoPolygon> ParseString(string gml)
+    {
+        return ParseFeaturesString(gml).Select(f => f.Polygon).ToArray();
+    }
+
+    /// <summary>GML Stream をパースし、抽出されたポリゴン列を返す。</summary>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
+    public static IReadOnlyList<GeoPolygon> ParseStream(Stream stream)
+    {
+        return ParseFeaturesStream(stream).Select(f => f.Polygon).ToArray();
+    }
+
+    /// <summary>
+    /// GML 文字列をパースし、フィーチャ単位の「形状＋属性」列を返す（REQ-RST-041）。
+    /// 属性の抽出規則は <see cref="GmlFeature.Attributes"/> 参照。
+    /// </summary>
+    /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
+    /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
+    public static IReadOnlyList<GmlFeature> ParseFeaturesString(string gml)
     {
         ArgumentNullException.ThrowIfNull(gml);
         using var stringReader = new StringReader(gml);
@@ -39,10 +64,13 @@ internal static class GmlParser
         return Parse(xmlReader);
     }
 
-    /// <summary>GML Stream をパースし、抽出されたポリゴン列を返す。</summary>
+    /// <summary>
+    /// GML Stream をパースし、フィーチャ単位の「形状＋属性」列を返す（REQ-RST-041）。
+    /// 属性の抽出規則は <see cref="GmlFeature.Attributes"/> 参照。
+    /// </summary>
     /// <exception cref="InvalidGmlException">GML が不正、xlink 参照解決失敗</exception>
     /// <exception cref="NotSupportedException"><c>&lt;gml:MultiSurface&gt;</c> 検出（REQ-RST-023）</exception>
-    public static IReadOnlyList<GeoPolygon> ParseStream(Stream stream)
+    public static IReadOnlyList<GmlFeature> ParseFeaturesStream(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
         using var xmlReader = CreateReader(stream);
@@ -79,11 +107,11 @@ internal static class GmlParser
     /// <summary>
     /// 1 パスで Curve / Surface 辞書と未解決フィーチャを構築し、終了時に解決して返す。
     /// </summary>
-    private static List<GeoPolygon> Parse(XmlReader reader)
+    private static List<GmlFeature> Parse(XmlReader reader)
     {
         var curves = new Dictionary<string, IReadOnlyList<GeoCoordinate>>(StringComparer.Ordinal);
         var surfaces = new Dictionary<string, SurfaceRef>(StringComparer.Ordinal);
-        var pendingFeatures = new List<string>();   // Surface ID を後で解決する
+        var pendingFeatures = new List<PendingFeature>();   // Surface ID を後で解決する
 
         try
         {
@@ -112,11 +140,12 @@ internal static class GmlParser
                 else
                 {
                     // gml 名前空間外 = フィーチャ候補。
-                    // 配下の xlink:href から Surface 参照 ID を見つける（要素名非依存、KSJ では <ksj:bounds> 等）。
-                    var surfaceId = FindSurfaceReferenceInFeature(reader.ReadSubtree());
-                    if (surfaceId is not null)
+                    // 配下の xlink:href から Surface 参照 ID を、直下の単純子要素から属性を取り出す
+                    // （要素名非依存、KSJ では <ksj:bounds> / <ksj:A51_001> 等）。
+                    var feature = ReadFeature(reader.ReadSubtree());
+                    if (feature is not null)
                     {
-                        pendingFeatures.Add(surfaceId);
+                        pendingFeatures.Add(feature.Value);
                     }
                 }
             }
@@ -126,9 +155,9 @@ internal static class GmlParser
             throw new InvalidGmlException("GML の XML パースに失敗しました。", ex);
         }
 
-        // フィーチャ参照の Surface ID を解決して GeoPolygon を構築
-        var polygons = new List<GeoPolygon>(pendingFeatures.Count);
-        foreach (var surfaceId in pendingFeatures)
+        // フィーチャ参照の Surface ID を解決して GmlFeature を構築
+        var features = new List<GmlFeature>(pendingFeatures.Count);
+        foreach (var (surfaceId, attributes) in pendingFeatures)
         {
             if (!surfaces.TryGetValue(surfaceId, out var surfaceRef))
             {
@@ -153,9 +182,9 @@ internal static class GmlParser
                 holes.Add(hole);
             }
 
-            polygons.Add(new GeoPolygon(outer, holes));
+            features.Add(new GmlFeature(new GeoPolygon(outer, holes), attributes));
         }
-        return polygons;
+        return features;
     }
 
     private static void ReadCurve(XmlReader reader, Dictionary<string, IReadOnlyList<GeoCoordinate>> curves)
@@ -239,25 +268,77 @@ internal static class GmlParser
     }
 
     /// <summary>
-    /// フィーチャ要素配下を走査し、xlink:href が "#..." 形式の最初の子要素から参照 ID を取り出す。
-    /// 要素名（KSJ では `&lt;ksj:bounds&gt;` 慣習）に依存しない、汎用性のため。
+    /// フィーチャ要素配下を 1 走査し、xlink:href が "#..." 形式の最初の要素から Surface 参照 ID を、
+    /// フィーチャ直下の単純な子要素（子要素なし・xlink 参照なし・テキストあり）から属性を取り出す（REQ-RST-041）。
+    /// 要素名（KSJ では `&lt;ksj:bounds&gt;` / `&lt;ksj:A51_001&gt;` 慣習）に依存しない、汎用性のため。
     /// </summary>
-    /// <returns>Surface 候補 ID。見つからなければ <c>null</c>。Surface 辞書との照合は呼び出し側で行う</returns>
-    private static string? FindSurfaceReferenceInFeature(XmlReader subtree)
+    /// <returns>Surface 候補 ID と属性。形状参照が見つからなければ <c>null</c>（フィーチャをスキップ）。
+    /// Surface 辞書との照合は呼び出し側で行う</returns>
+    private static PendingFeature? ReadFeature(XmlReader subtree)
     {
+        string? surfaceId = null;
+        Dictionary<string, string>? attributes = null;
+
+        // 属性候補（フィーチャ直下 Depth=1 の単純要素）の読み取り状態
+        string? candidateName = null;
+        StringBuilder? candidateText = null;
+        var candidateIsComplex = false;
+
         using (subtree)
         {
             while (subtree.Read())
             {
-                if (subtree.NodeType != XmlNodeType.Element || !subtree.HasAttributes) continue;
-                var href = subtree.GetAttribute("href", XlinkNs);
-                if (!string.IsNullOrEmpty(href) && href.StartsWith("#", StringComparison.Ordinal))
+                switch (subtree.NodeType)
                 {
-                    return href.Substring(1);
+                    case XmlNodeType.Element:
+                        var href = subtree.GetAttribute("href", XlinkNs);
+                        var isReference = !string.IsNullOrEmpty(href) && href.StartsWith("#", StringComparison.Ordinal);
+                        if (isReference && surfaceId is null)
+                        {
+                            surfaceId = href!.Substring(1);
+                        }
+
+                        if (subtree.Depth == 1 && !isReference && !subtree.IsEmptyElement)
+                        {
+                            candidateName = subtree.LocalName;
+                            candidateText = new StringBuilder();
+                            candidateIsComplex = false;
+                        }
+                        else if (subtree.Depth > 1 && candidateName is not null)
+                        {
+                            // 子要素を持つ = 単純属性ではない（複合要素は属性として扱わない）
+                            candidateIsComplex = true;
+                        }
+                        break;
+
+                    case XmlNodeType.Text:
+                    case XmlNodeType.CDATA:
+                    case XmlNodeType.SignificantWhitespace:
+                        if (subtree.Depth == 2 && candidateName is not null)
+                        {
+                            candidateText!.Append(subtree.Value);
+                        }
+                        break;
+
+                    case XmlNodeType.EndElement:
+                        if (subtree.Depth == 1 && candidateName is not null)
+                        {
+                            if (!candidateIsComplex && candidateText!.Length > 0)
+                            {
+                                attributes ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                                attributes[candidateName] = candidateText.ToString();   // 同名要素は後勝ち
+                            }
+                            candidateName = null;
+                            candidateText = null;
+                        }
+                        break;
                 }
             }
         }
-        return null;
+
+        return surfaceId is null
+            ? null
+            : new PendingFeature(surfaceId, attributes ?? EmptyAttributes);
     }
 
     /// <summary>
@@ -287,4 +368,6 @@ internal static class GmlParser
     }
 
     private readonly record struct SurfaceRef(string ExteriorCurveId, IReadOnlyList<string> InteriorCurveIds);
+
+    private readonly record struct PendingFeature(string SurfaceId, IReadOnlyDictionary<string, string> Attributes);
 }

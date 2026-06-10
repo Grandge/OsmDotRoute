@@ -64,7 +64,7 @@ export async function snapToRoad(lat: number, lon: number, profile: string): Pro
 export async function fetchMeshGrid(
   sw: [number, number],
   ne: [number, number],
-  level: '1km' | '500m' | '250m',
+  level: '1km' | '500m' | '250m' | '125m',
 ): Promise<GeoJSON.FeatureCollection> {
   const interop = await getInterop();
   return JSON.parse(interop.MeshGrid(sw[0], sw[1], ne[0], ne[1], level)) as GeoJSON.FeatureCollection;

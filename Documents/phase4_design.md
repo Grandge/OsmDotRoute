@@ -36,7 +36,8 @@ Phase 4 のスコープは 2026-06-02 ユーザー決定で **(1) プロファ�
 | 2. 救急車 / 消防車 / 災害用プロファイルと外部 JSON bake 対応 | Step 1〜4 | **肉付け完了**（2026-06-03） |
 | 3. 親プロFB 追補: Route.CumulativeDurationsSec（REQ-FMT-006） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.0） |
 | 4. 親プロFB 不具合修正: 難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017 追加） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.1） |
-| 5. 改訂履歴 | 各ステップ完了時 | 初版 |
+| 5. 親プロFB 追補: 1/8 細分メッシュ（125m）＋ GmlParser フィーチャ属性公開（REQ-RST-016 仕様確定 / REQ-RST-041） | 単発 Step | **肉付け完了**（2026-06-11、Ver 1.2.0） |
+| 6. 改訂履歴 | 各ステップ完了時 | 初版 |
 
 > Step 5（利用者向け解説ドキュメント）/ Step 6（設計書・要件反映）は成果物が本書および [profile_guide.md](profile_guide.md) / [requirement_definition.md](requirement_definition.md) 自体であり、§2 にその位置付けを記す。
 
@@ -392,10 +393,108 @@ foreach (var registeredType in scenarioDifficultyTypes)
 
 ---
 
-## 5. 改訂履歴
+## 5. 親プロFB 追補: 1/8 細分メッシュ（125m）＋ GmlParser フィーチャ属性公開（REQ-RST-016 仕様確定 / REQ-RST-041）
+
+**対応ステップ**: 単発 Step（親プロFB 追補、Phase 4 後追い）
+**対応要件**: REQ-RST-016（11 桁 = 1/8 細分・125m・象限方式の仕様確定）/ REQ-RST-041（KSJ GML のフィーチャ単位「形状＋属性」公開 API）
+**起源**: 親プロジェクト「災害廃棄物処理シミュレーション」開発エージェントからの機能要望 [`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)（KSJ ハザードデータ取り込み計画 REQ-HAZ-013〜017 の前提）
+**実装日**: 2026-06-11
+**実装バージョン**: Ver 1.2.0（マイナー採番、公開 API 追加のみ）
+**主要ファイル**:
+
+- [`src/OsmDotRoute/MeshLevel.cs`](../src/OsmDotRoute/MeshLevel.cs)（`EighthMesh` 追加）
+- [`src/OsmDotRoute/MeshCode.cs`](../src/OsmDotRoute/MeshCode.cs)（`Level` の 11 桁判定、範囲外上限を 12 桁に更新）
+- [`src/OsmDotRoute/Mesh/MeshCodeConverter.cs`](../src/OsmDotRoute/Mesh/MeshCodeConverter.cs)（細分処理を象限再帰ループに一般化）
+- [`src/OsmDotRoute/Gml/GmlFeature.cs`](../src/OsmDotRoute/Gml/GmlFeature.cs)（新規公開 record）
+- [`src/OsmDotRoute/Gml/GmlParser.cs`](../src/OsmDotRoute/Gml/GmlParser.cs)（internal → public、`ParseFeaturesString/Stream` 追加）
+- [`tests/OsmDotRoute.Tests/MeshCodeTests.cs`](../tests/OsmDotRoute.Tests/MeshCodeTests.cs) / [`GmlFeatureParsingTests.cs`](../tests/OsmDotRoute.Tests/GmlFeatureParsingTests.cs) / [`RestrictedAreaServiceAttachGraphTests.cs`](../tests/OsmDotRoute.Tests/RestrictedAreaServiceAttachGraphTests.cs)
+
+### 5.1 意図
+
+親プロジェクトは国土数値情報の公開ハザードデータ（洪水 A31a/A31b、土砂 A33、内水 A51、多段階浸水 A53）を**125m メッシュにラスタライズして移動制約エリアとして登録**する機能を計画している。250m（10 桁）では土砂災害警戒区域（幅数十 m の小区域多数）や浸水縁の形状が粗くなりすぎるため、1 階層下の 125m が必要（要望①）。また A51 のみ GeoJSON 未提供（GML のみ）で、浸水深ランク等の**フィーチャ属性に基づく制約レベル振り分け**（ランク2=移動困難 / ランク3以上=移動不能）には形状と属性のペアが必要だが、既存 `GmlParser` は形状のみを返していた（要望②）。
+
+親側の活動効果判定・描画は `MeshCode.ToBounds()` 委譲で実装済みのため、ライブラリが 11 桁対応すれば親側ロジックは自動追従する。
+
+### 5.2 採用設計
+
+#### 5.2.1 要望①: 1/8 細分（象限方式）の採用
+
+JIS X 0410 の 3 次メッシュより細かい区画には「分割地域メッシュ（象限方式、11 桁 = 1/8 = 125m）」と「10分の1細分区画（8 桁＋2 桁 = 10 桁 = 100m）」の 2 系統があるが、後者は**既存 1/4 細分（10 桁）と桁数衝突**し `MeshCode.Level` の桁数→階層一意判定が崩れるため、**11 桁目 = 象限 1〜4 の 1/8 細分（125m）を正式仕様として採用**（親要望書の提案どおり。v1.4 で延期した「1/10 細分 = 100m / 11 桁」記載はこの仕様への読み替えで確定）。
+
+- `MeshLevel.EighthMesh` を追加し、`MeshCode.Level` に `10_000_000_000〜99_999_999_999` → `EighthMesh` を追加（範囲外例外の上限が 12 桁に移動）
+- `MeshCodeConverter.ToBoundingBox` / `ToMeshCode` の細分処理は、9/10/11 桁で同型の象限再帰（SW=1, SE=2, NW=3, NE=4、ステップ幅半減）のため、**桁ごとの if ブロック羅列から細分桁ループ（`for digit = 8 .. code.Length-1`）に一般化**。1/8 メッシュは緯度 3.75 秒（≒115.7m）× 経度 5.625 秒
+- `EnumerateInBounds` に `EighthMesh` のステップ幅（`/8`）を追加（南西→北東走査の既存契約・境界スナップ eps = 1e-7 度はそのまま。最小メッシュ幅 125m に対しても十分小さい）
+- `RestrictedAreaService.AddBlockArea / AddDifficultyArea(IEnumerable<MeshCode>)` は `Shape.FromMesh` → `ToBoundingBox` 経由のため**変更不要**（要望書の見立てどおり）。AABB 直接使用（REQ-RST-015）のセマンティクスも不変
+
+#### 5.2.2 要望②: GmlParser のフィーチャ属性公開
+
+```csharp
+public sealed record GmlFeature(
+    GeoPolygon Polygon,
+    IReadOnlyDictionary<string, string> Attributes);   // key=要素ローカル名（例 "A51_001"）、value=テキスト内容
+
+public static class GmlParser   // internal → public
+{
+    public static IReadOnlyList<GeoPolygon> ParseString(string gml);          // 既存（形状のみ）
+    public static IReadOnlyList<GeoPolygon> ParseStream(Stream stream);       // 既存（形状のみ）
+    public static IReadOnlyList<GmlFeature> ParseFeaturesString(string gml);  // 新規（形状＋属性）
+    public static IReadOnlyList<GmlFeature> ParseFeaturesStream(Stream stream);
+}
+```
+
+- 内部は単一のパスを共有: コア `Parse` が `List<GmlFeature>` を構築し、`ParseString/ParseStream` は `Polygon` のみ射影。1 パス構造（Curve / Surface 辞書 → フィーチャ解決）は不変
+- 旧 `FindSurfaceReferenceInFeature`（最初の `xlink:href="#..."` を返すのみ）を `ReadFeature` に置換し、**同一サブツリー走査で形状参照と属性を同時に取得**（サブツリーは 1 回しか読めないため）
+- 属性の抽出規則: フィーチャ要素**直下**（Depth=1）の子要素のうち「子要素を持たない・xlink 参照でない・テキストがある」もの。key は名前空間 prefix を剥がしたローカル名、value はテキスト内容そのまま（型解釈・コードリスト解決は利用側責務）。同名要素は後勝ち。属性ゼロは共有の空 Dictionary（例外にしない）
+- 大容量対応はリスト返却のまま（A51 は愛知県 0.6MB と小さい、要望書の合意どおりストリーミング yield 不要）
+
+### 5.3 設計判断の根拠
+
+| 論点 | 確定 | 理由 |
+| --- | --- | --- |
+| 11 桁の解釈 | **1/8 細分（象限方式）** | 既存 9・10 桁と同じ象限再帰で実装が 1 段深くなるだけ。桁数→階層の一意判定（`Level` の switch）が維持される。10分の1細分区画は既存 10 桁と判別不能。親ユースケース（ハザード形状保持）には 125m で十分（親側ユーザー確定済み） |
+| 細分処理のループ化 | **桁ループに一般化** | 9/10/11 桁の if ブロック 3 連は完全同型のコピーになる。ループは除算が 2 のべき乗（浮動小数点で正確）のため数値挙動も既存と一致（既存 8〜10 桁テストが無変更でパスすることで実証） |
+| 属性公開の形 | **`GmlParser` 公開化＋`ParseFeatures*` 追加** | 制約登録（`Add*FromGml*`）と分離した読み取り専用 API。属性→制約レベル振り分けは利用側責務（REQ-RST-026 の方針を維持）であり、ライブラリは「形状＋属性の素材」を返すに留める。親側で GML 形状パーサを二重実装する無駄を回避（要望書の趣旨） |
+| 属性 = 直下の単純子要素のみ | **複合要素・空要素・xlink 参照は対象外** | KSJ の属性は フィーチャ直下の単純要素（`A51_001` 等）。複合要素まで再帰すると KSJ プロダクト毎のスキーマ知識が必要になり「フィーチャ要素名にハードコード依存しない」原則（REQ-RST-020）に反する |
+| `Add*FromGml*` への属性引数追加 | **しない** | 全フィーチャ同一難所タイプの既存契約（REQ-RST-026）を維持。属性別振り分けは `ParseFeatures*` → 利用側ループ → `AddBlockArea/AddDifficultyArea` で組み立てる方が自由度が高い |
+
+### 5.4 トレードオフ・制約
+
+- **性能（要望書 §5 への回答）**: 数千〜数万件の 11 桁メッシュ一括登録は、既存の `Register` → shape ごとの `SpatialIndex.Add` + `BakeIntoCache`（AABB クエリ）構造のまま処理できる。メッシュ階層追加によるホットパスの分岐増はゼロ（`ToBoundingBox` は登録時に 1 回だけ呼ばれ、以降は bake 済みエッジ集合で判定）。125m メッシュは 250m 比で同面積あたり個数 4 倍になるが、shape あたりのコストは AABB 1 個で不変のため線形増にとどまる見込み。実測で問題が出た場合は隣接メッシュの矩形マージ（利用側 or ライブラリ側）を将来検討
+- **`gml:MultiSurface` は引き続き非対応**（REQ-RST-023、検出時 `NotSupportedException`）。A51 実データでの出現有無は親側確認待ち（要望書 §4 でスコープ外と合意）
+- **属性 value は生テキスト**: trim・型変換・コードリスト解決はしない。KSJ の属性値は単純トークンが基本で、解釈はデータセット知識を持つ利用側が行う
+- **`GmlParser` 公開化に伴う API 表面拡大**: 形状のみの `ParseString/ParseStream` も公開になる。挙動は従来 internal 時代と同一で、`Add*FromGml*` 系の内部利用も不変のため互換リスクなし
+
+### 5.5 検証方法
+
+新規テスト 16 件（メッシュ 8 + GML 6 + 統合 2）、全 793 pass（v1.1.1 末の 777 から +16、回帰ゼロ）。親要望書の受け入れ基準との対応:
+
+| 受け入れ基準（要望書） | テスト |
+| --- | --- |
+| ①-1 11 桁 `ToBounds()` が親 10 桁の対応象限の SW/NE と厳密一致（境界共有） | `ToBoundingBox_EighthMesh_SwQuadrant_SharesParentQuarterSouthwest` / `NeQuadrant_SharesParentQuarterNortheast`（precision 12） |
+| ①-2 同一 3 次メッシュ内 64 個が隙間・重複なくタイリング | `ToBoundingBox_All64EighthMeshes_TileParentWithoutGapOrOverlap`（8×8 格子位置の全単射を検証） |
+| ①-3 `EnumerateInBounds` が 8〜11 桁で整合した個数（1/8 は 1/4 の縦横 2 倍） | `EnumerateInBounds_AllFourLevels_CountsAreConsistent`（1/4/16/64）/ `EnumerateInBounds_EighthMesh_Of_1km_Yields64SubCells` |
+| ①-4 11 桁 `AddBlockArea(meshCodes)` で交差エッジのみ遮断（REQ-RST-015 踏襲） | `AttachGraph_EighthMeshBlockArea_BakesIntersectingEdgesOnly`（津島市 .odrg 実グラフ、範囲外メッシュは遮断ゼロも確認）/ `AttachGraph_MixedQuarterAndEighthMeshes_RegisteredTogether`（10・11 桁混在） |
+| ①-5 既存 8〜10 桁テストが無変更でパス | 既存 777 件回帰ゼロ（11 桁を「範囲外」と期待していた `Level_Throws_ForOutOfRangeDigits` の 2 ケースのみ 12 桁に差し替え＝仕様確定そのもの） |
+| ②-1 フィーチャ数・`A51_*` 属性・外周/内環座標の取得 | `ParseFeaturesString_ReturnsShapeAndAttributesPerFeature`（A51 相当 GML、Hole 込み） |
+| ②-2 既存 `ParseString/ParseStream` / `Add*FromGml` 系の挙動不変 | 既存 GML テスト全パス + `ParseString_ReturnsSamePolygonsAsParseFeatures` |
+| ②-3 属性ゼロのフィーチャは空 Dictionary | `ParseFeaturesString_FeatureWithoutAttributes_ReturnsEmptyDictionary` |
+
+加えて 11 桁目 0/5 の `ArgumentException`（既存細分桁と同等）、複合要素・空要素・xlink 参照要素が属性に混入しないこと、Stream/string 変種の同値性を検証。
+
+### 5.6 実装メモ
+
+- `Level_Throws_ForOutOfRangeDigits` の旧 InlineData（`10_000_000_000L` / `99_999_999_999L` = 11 桁を範囲外と期待）は本仕様確定により有効値となったため削除し、12 桁ケースを追加。これは「既存 8〜10 桁テストの無変更パス」（受け入れ基準①-5）には抵触しない（当該 2 ケースは 11 桁の挙動を固定するテストだったため）
+- `MeshCode.cs` remarks の「11 桁（1/10 細分 = 100m）は仕様未確定」記載を削除し、1/8 象限方式＋10分の1細分区画を採用しない理由を明記
+- 親側への返答ポイント: 性能上の留意点は §5.4 第 1 項（現行構造で問題なし、形状あたり AABB 1 個で線形）。`MultiSurface` は引き続き別途相談
+- **Sandbox も 125m 対応**（ユーザー指示 2026-06-11）: メッシュグリッド表示の階層に `125m` を追加。Server（`MeshEndpoints.ParseLevel`）/ WASM（`RestrictionInterop.ParseLevel`）に `"125m" / "eighthmesh" / "11"` → `EighthMesh` を追加し、Web UI のドロップダウン・型・i18n（`mg.level125m`）を拡張。セル数上限 10,000 のガードは既存のまま（125m で広域を表示すると上限エラー → 階層を粗くする案内）
+
+---
+
+## 6. 改訂履歴
 
 | Ver | 日付 | 変更 |
 | --- | --- | --- |
+| 親プロFB 追補 | 2026-06-11 | §5「1/8 細分メッシュ（125m）＋ GmlParser フィーチャ属性公開（REQ-RST-016 仕様確定 / REQ-RST-041）」を追加。`MeshLevel.EighthMesh`（11 桁・象限方式）、`MeshCodeConverter` の細分処理ループ一般化、`GmlParser` 公開化＋`ParseFeaturesString/Stream`（`GmlFeature` = 形状＋属性 Dictionary）、Sandbox メッシュグリッドの 125m 階層追加（Server / WASM / Web UI）。新規テスト 16 件、全 793 pass（回帰ゼロ）。Ver 1.2.0 マイナー採番 |
 | 親プロFB 不具合修正 | 2026-06-09 | §4「難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017）」を追加。親プロ側不具合報告（v1.1.0 アニメ目視検証中に発覚した `"Flooding"` PascalCase でのサイレント・フォールバック）を受けて、`ProfileEvaluator` の照合経路を `Ordinal-IgnoreCase` 化、case-only 重複キー検出、`VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` 観測性 API を追加。XML doc 4 箇所（`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` / `EvaluateDifficulty`）でサイレント・フォールバック挙動を明記。新規テスト 16 件、全 777 pass（回帰ゼロ）。Ver 1.1.1 パッチ採番 |
 | 親プロFB 追補 | 2026-06-09 | §3「Route.CumulativeDurationsSec（REQ-FMT-006）」を追加。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望に応えて Route に Shape 点別累積所要秒を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` + `RouteBuilder` でエッジ内多角線距離按分による補間。不変条件テスト 6 種で整列・端点・単調・難所反映・SameEdge・互換コンストラクタを実証、全 761 pass（回帰ゼロ）。Ver 1.1.0 マイナー採番 |
 | 初版 | 2026-06-03 | Phase 4 プロファイル追加（Step 1〜4 完了）を §0〜§2 に起こし。救急車 `ambulance` / 消防車 `fire_engine` / 災害用 `disaster` の設計値・根拠・トレードオフ・検証（753 pass）、Extractor 外部 JSON プロファイル対応（`ProfileResolver`）を記録。Step 5（利用者ガイド）/ Step 6（要件反映）の位置付けを §2.6 に追記。バージョンはユーザー採番 |

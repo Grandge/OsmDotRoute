@@ -7,8 +7,8 @@ namespace OsmDotRoute.Mesh;
 /// JIS X0410 地域メッシュコード → 緯度経度矩形変換ユーティリティ（REQ-RST-017）。
 /// </summary>
 /// <remarks>
-/// Phase 1 対応階層: 8 桁（第3次、1km） / 9 桁（1/2 細分、500m） / 10 桁（1/4 細分、250m）。
-/// 細分メッシュの分割番号は 1〜4（南西=1、南東=2、北西=3、北東=4）。
+/// 対応階層: 8 桁（第3次、1km） / 9 桁（1/2 細分、500m） / 10 桁（1/4 細分、250m） / 11 桁（1/8 細分、125m）。
+/// 細分メッシュの分割番号は全階層共通で 1〜4（南西=1、南東=2、北西=3、北東=4）の象限再帰。
 /// 参考: 親プロジェクト `Documents/標準地域メッシュ計算方法.md`、JIS X0410。
 /// </remarks>
 internal static class MeshCodeConverter
@@ -22,12 +22,12 @@ internal static class MeshCodeConverter
     /// <summary>
     /// メッシュコードを緯度経度矩形 <see cref="Aabb"/> に変換する。
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">桁数が 8〜10 の範囲外（<see cref="MeshCode.Level"/> から伝播）</exception>
+    /// <exception cref="ArgumentOutOfRangeException">桁数が 8〜11 の範囲外（<see cref="MeshCode.Level"/> から伝播）</exception>
     /// <exception cref="ArgumentException">桁ごとの数値範囲が不正（第2次 0〜7、細分 1〜4 等）</exception>
     public static Aabb ToBoundingBox(MeshCode meshCode)
     {
-        // Level プロパティで桁数 8〜10 を検証
-        var level = meshCode.Level;
+        // Level プロパティで桁数 8〜11 を検証
+        _ = meshCode.Level;
         var code = meshCode.Value.ToString(CultureInfo.InvariantCulture);
 
         // 8 桁: 第3次メッシュ基準点を算出
@@ -50,40 +50,20 @@ internal static class MeshCodeConverter
         var latStep = Lat3StepDeg;
         var lonStep = Lon3StepDeg;
 
-        // 9 桁: 1/2 細分（2×2 の南西=1, 南東=2, 北西=3, 北東=4）
-        if (level >= MeshLevel.HalfMesh)
+        // 9 桁以降: 細分メッシュ（1/2 → 1/4 → 1/8）。各桁が 2×2 象限（南西=1, 南東=2, 北西=3, 北東=4）の再帰分割
+        for (var digit = 8; digit < code.Length; digit++)
         {
-            var sub1 = code[8] - '0';
-            if (sub1 is < 1 or > 4)
+            var sub = code[digit] - '0';
+            if (sub is < 1 or > 4)
             {
                 throw new ArgumentException(
-                    $"1/2 細分メッシュ番号は 1〜4 の範囲が必要です（実値: {sub1}, code={code}）",
+                    $"細分メッシュ番号は 1〜4 の範囲が必要です（実値: {sub}, 桁位置={digit + 1}, code={code}）",
                     nameof(meshCode));
             }
-            var halfLat = (sub1 - 1) / 2;
-            var halfLon = (sub1 - 1) % 2;
-            swLat += halfLat * (Lat3StepDeg / 2);
-            swLon += halfLon * (Lon3StepDeg / 2);
-            latStep = Lat3StepDeg / 2;
-            lonStep = Lon3StepDeg / 2;
-        }
-
-        // 10 桁: 1/4 細分（1/2 を 2×2 にさらに分割）
-        if (level == MeshLevel.QuarterMesh)
-        {
-            var sub2 = code[9] - '0';
-            if (sub2 is < 1 or > 4)
-            {
-                throw new ArgumentException(
-                    $"1/4 細分メッシュ番号は 1〜4 の範囲が必要です（実値: {sub2}, code={code}）",
-                    nameof(meshCode));
-            }
-            var qLat = (sub2 - 1) / 2;
-            var qLon = (sub2 - 1) % 2;
-            swLat += qLat * (Lat3StepDeg / 4);
-            swLon += qLon * (Lon3StepDeg / 4);
-            latStep = Lat3StepDeg / 4;
-            lonStep = Lon3StepDeg / 4;
+            latStep /= 2;
+            lonStep /= 2;
+            swLat += (sub - 1) / 2 * latStep;
+            swLon += (sub - 1) % 2 * lonStep;
         }
 
         return new Aabb(
@@ -93,7 +73,7 @@ internal static class MeshCodeConverter
 
     /// <summary>
     /// 指定範囲 <paramref name="bounds"/> と交差する全メッシュコードを <paramref name="level"/> 階層で列挙する。
-    /// 第3次（1km）→ 1/2 細分 → 1/4 細分の順に階層が細かい。出力順は緯度（南→北）×経度（西→東）の格子走査。
+    /// 第3次（1km）→ 1/2 細分 → 1/4 細分 → 1/8 細分の順に階層が細かい。出力順は緯度（南→北）×経度（西→東）の格子走査。
     /// </summary>
     public static IEnumerable<MeshCode> EnumerateInBounds(MapBounds bounds, MeshLevel level)
     {
@@ -103,12 +83,13 @@ internal static class MeshCodeConverter
             MeshLevel.Mesh3rd => (Lat3StepDeg, Lon3StepDeg),
             MeshLevel.HalfMesh => (Lat3StepDeg / 2, Lon3StepDeg / 2),
             MeshLevel.QuarterMesh => (Lat3StepDeg / 4, Lon3StepDeg / 4),
+            MeshLevel.EighthMesh => (Lat3StepDeg / 8, Lon3StepDeg / 8),
             _ => throw new ArgumentOutOfRangeException(nameof(level), level, "未対応の MeshLevel"),
         };
 
         // 範囲の南西を含む基準セルのインデックスと、北東を超えない最後のセルのインデックスを整数で求める。
         // 入力 bounds の各座標はメッシュ境界に対し ±数 ULP の浮動小数誤差を持ちうるので（例: ToBounds() の結果）、
-        // 境界付近では整数側にスナップする（eps = 1e-7 度 ≒ 1cm 相当、メッシュ最小幅 250m から十分小さい）。
+        // 境界付近では整数側にスナップする（eps = 1e-7 度 ≒ 1cm 相当、メッシュ最小幅 125m から十分小さい）。
         const double snapEps = 1e-7;
 
         var iLatStart = (long)Math.Floor(bounds.MinLatitude / latStep + snapEps);
@@ -152,31 +133,21 @@ internal static class MeshCodeConverter
 
         long code = (long)p1 * 1_000_000 + (long)u1 * 10_000 + (long)p2 * 1_000 + (long)u2 * 100 + (long)p3 * 10 + u3;
 
-        if (level == MeshLevel.Mesh3rd)
+        // 細分メッシュ（1/2 → 1/4 → 1/8）: 各階層で 2×2 象限（SW=1, SE=2, NW=3, NE=4）を 1 桁ずつ付加
+        var swLat = lat3Origin + p3 * Lat3StepDeg;
+        var swLon = lon3Origin + u3 * Lon3StepDeg;
+        var latStep = Lat3StepDeg;
+        var lonStep = Lon3StepDeg;
+        for (var l = MeshLevel.HalfMesh; l <= level; l++)
         {
-            return new MeshCode(code);
+            latStep /= 2;
+            lonStep /= 2;
+            var subLat = (lat - swLat) >= latStep ? 1 : 0;
+            var subLon = (lon - swLon) >= lonStep ? 1 : 0;
+            code = code * 10 + (subLat * 2 + subLon + 1);
+            swLat += subLat * latStep;
+            swLon += subLon * lonStep;
         }
-
-        // 1/2 細分: SW=1, SE=2, NW=3, NE=4
-        var lat4Origin = lat3Origin + p3 * Lat3StepDeg;
-        var lon4Origin = lon3Origin + u3 * Lon3StepDeg;
-        var halfLat = (lat - lat4Origin) >= (Lat3StepDeg / 2) ? 1 : 0;
-        var halfLon = (lon - lon4Origin) >= (Lon3StepDeg / 2) ? 1 : 0;
-        var sub1 = halfLat * 2 + halfLon + 1;
-        code = code * 10 + sub1;
-
-        if (level == MeshLevel.HalfMesh)
-        {
-            return new MeshCode(code);
-        }
-
-        // 1/4 細分
-        var halfSwLat = lat4Origin + halfLat * (Lat3StepDeg / 2);
-        var halfSwLon = lon4Origin + halfLon * (Lon3StepDeg / 2);
-        var qLat = (lat - halfSwLat) >= (Lat3StepDeg / 4) ? 1 : 0;
-        var qLon = (lon - halfSwLon) >= (Lon3StepDeg / 4) ? 1 : 0;
-        var sub2 = qLat * 2 + qLon + 1;
-        code = code * 10 + sub2;
 
         return new MeshCode(code);
     }

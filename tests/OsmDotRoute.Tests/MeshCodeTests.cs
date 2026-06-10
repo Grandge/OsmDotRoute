@@ -4,9 +4,9 @@ using Xunit;
 namespace OsmDotRoute.Tests;
 
 /// <summary>
-/// Phase 1 ステップ 7「メッシュコード変換」の検証テスト（REQ-RST-016〜018）。
+/// 「メッシュコード変換」の検証テスト（REQ-RST-016〜018）。
 /// 既知のメッシュ（東京駅 53394611 = 1km、その細分）の境界座標を JIS X0410 計算で検算する。
-/// 1/10 細分（11 桁、100m）は Phase 1 対応外。
+/// 11 桁は 1/8 細分（125m・象限方式、REQ-RST-016 仕様確定）。
 /// </summary>
 public class MeshCodeTests
 {
@@ -35,13 +35,18 @@ public class MeshCodeTests
         Assert.Equal(MeshLevel.QuarterMesh, new MeshCode(5339461111L).Level);
     }
 
+    [Fact]
+    public void Level_Returns_EighthMesh_For_11Digit_Code()
+    {
+        Assert.Equal(MeshLevel.EighthMesh, new MeshCode(53394611111L).Level);
+    }
+
     [Theory]
     [InlineData(0L)]
     [InlineData(1L)]
     [InlineData(9_999_999L)]            // 7 桁
-    [InlineData(10_000_000_000L)]       // 11 桁
-    [InlineData(99_999_999_999L)]       // 11 桁
     [InlineData(100_000_000_000L)]      // 12 桁
+    [InlineData(999_999_999_999L)]      // 12 桁
     public void Level_Throws_ForOutOfRangeDigits(long value)
     {
         var meshCode = new MeshCode(value);
@@ -272,5 +277,110 @@ public class MeshCodeTests
         // 北西は南西の真北
         Assert.Equal(sw.NorthEast.Latitude, nw.SouthWest.Latitude, precision: 6);
         Assert.Equal(sw.SouthWest.Longitude, nw.SouthWest.Longitude, precision: 6);
+    }
+
+    // ---- 1/8 細分メッシュ（11 桁、125m、REQ-RST-016 仕様確定） ----
+
+    [Fact]
+    public void ToBoundingBox_EighthMesh_SwQuadrant_SharesParentQuarterSouthwest()
+    {
+        // 53394611111 = 1/4 細分 5339461111 の南西象限（sub=1）。SW は親と厳密一致（境界共有）
+        var parent = MeshCodeConverter.ToBoundingBox(new MeshCode(5339461111L));
+        var eighth = MeshCodeConverter.ToBoundingBox(new MeshCode(53394611111L));
+
+        Assert.Equal(parent.SouthWest.Latitude, eighth.SouthWest.Latitude, precision: 12);
+        Assert.Equal(parent.SouthWest.Longitude, eighth.SouthWest.Longitude, precision: 12);
+        // 寸法は親の半分（緯度 3.75 秒、経度 5.625 秒）
+        Assert.Equal(Lat3StepDeg / 8, eighth.NorthEast.Latitude - eighth.SouthWest.Latitude, precision: 12);
+        Assert.Equal(Lon3StepDeg / 8, eighth.NorthEast.Longitude - eighth.SouthWest.Longitude, precision: 12);
+    }
+
+    [Fact]
+    public void ToBoundingBox_EighthMesh_NeQuadrant_SharesParentQuarterNortheast()
+    {
+        // 53394611114 = 1/4 細分 5339461111 の北東象限（sub=4）。NE は親と厳密一致（境界共有）
+        var parent = MeshCodeConverter.ToBoundingBox(new MeshCode(5339461111L));
+        var eighth = MeshCodeConverter.ToBoundingBox(new MeshCode(53394611114L));
+
+        Assert.Equal(parent.NorthEast.Latitude, eighth.NorthEast.Latitude, precision: 12);
+        Assert.Equal(parent.NorthEast.Longitude, eighth.NorthEast.Longitude, precision: 12);
+    }
+
+    [Fact]
+    public void ToBoundingBox_EighthMesh_SizeIsApprox125Meters()
+    {
+        var aabb = MeshCodeConverter.ToBoundingBox(new MeshCode(53394611111L));
+        var latMeters = (aabb.NorthEast.Latitude - aabb.SouthWest.Latitude) * 111320;
+        Assert.InRange(latMeters, 110, 130);    // 約 115.7m（3.75秒 × 111.32km/度）
+    }
+
+    [Fact]
+    public void ToBoundingBox_EighthMesh_InvalidSubdivisionDigit_Throws()
+    {
+        // 11 桁目が 0 や 5 など範囲外（既存細分桁と同じ ArgumentException）
+        Assert.Throws<ArgumentException>(() => MeshCodeConverter.ToBoundingBox(new MeshCode(53394611110L)));
+        Assert.Throws<ArgumentException>(() => MeshCodeConverter.ToBoundingBox(new MeshCode(53394611115L)));
+    }
+
+    [Fact]
+    public void ToBounds_PublicApi_EighthMesh_MatchesInternalConverter()
+    {
+        var mesh = new MeshCode(53394611111L);
+        var bounds = mesh.ToBounds();
+        var aabb = MeshCodeConverter.ToBoundingBox(mesh);
+        Assert.Equal(aabb.SouthWest, bounds.SouthWest);
+        Assert.Equal(aabb.NorthEast, bounds.NorthEast);
+    }
+
+    [Fact]
+    public void EnumerateInBounds_EighthMesh_Of_1km_Yields64SubCells()
+    {
+        // 第3次メッシュ 1 個の範囲は 1/8 細分 64 個（= 1/4 細分 16 個の縦横 2 倍）
+        var bounds = new MeshCode(53394611L).ToBounds();
+        var codes = MeshCode.EnumerateInBounds(bounds, MeshLevel.EighthMesh).ToArray();
+        Assert.Equal(64, codes.Length);
+        Assert.Equal(64, codes.Select(c => c.Value).Distinct().Count());
+    }
+
+    [Fact]
+    public void ToBoundingBox_All64EighthMeshes_TileParentWithoutGapOrOverlap()
+    {
+        // 同一 3次メッシュ内の 64 個の 1/8 メッシュが、8×8 格子の全位置をちょうど 1 回ずつ占める
+        var parent = MeshCodeConverter.ToBoundingBox(new MeshCode(53394611L));
+        var latStep = Lat3StepDeg / 8;
+        var lonStep = Lon3StepDeg / 8;
+
+        var codes = MeshCode.EnumerateInBounds(
+            new MeshCode(53394611L).ToBounds(), MeshLevel.EighthMesh).ToArray();
+        Assert.Equal(64, codes.Length);
+
+        var occupied = new HashSet<(int Row, int Col)>();
+        foreach (var code in codes)
+        {
+            var cell = MeshCodeConverter.ToBoundingBox(code);
+            // セル寸法が均一
+            Assert.Equal(latStep, cell.NorthEast.Latitude - cell.SouthWest.Latitude, precision: 12);
+            Assert.Equal(lonStep, cell.NorthEast.Longitude - cell.SouthWest.Longitude, precision: 12);
+            // SW が親メッシュ内の 8×8 格子点に一致
+            var row = (int)Math.Round((cell.SouthWest.Latitude - parent.SouthWest.Latitude) / latStep);
+            var col = (int)Math.Round((cell.SouthWest.Longitude - parent.SouthWest.Longitude) / lonStep);
+            Assert.InRange(row, 0, 7);
+            Assert.InRange(col, 0, 7);
+            Assert.Equal(cell.SouthWest.Latitude, parent.SouthWest.Latitude + row * latStep, precision: 12);
+            Assert.Equal(cell.SouthWest.Longitude, parent.SouthWest.Longitude + col * lonStep, precision: 12);
+            Assert.True(occupied.Add((row, col)), $"格子位置 ({row},{col}) が重複（code={code}）");
+        }
+        Assert.Equal(64, occupied.Count);
+    }
+
+    [Fact]
+    public void EnumerateInBounds_AllFourLevels_CountsAreConsistent()
+    {
+        // 同一 bounds（1km メッシュ 1 個）で 1 / 4 / 16 / 64 個
+        var bounds = new MeshCode(53394611L).ToBounds();
+        Assert.Single(MeshCode.EnumerateInBounds(bounds, MeshLevel.Mesh3rd));
+        Assert.Equal(4, MeshCode.EnumerateInBounds(bounds, MeshLevel.HalfMesh).Count());
+        Assert.Equal(16, MeshCode.EnumerateInBounds(bounds, MeshLevel.QuarterMesh).Count());
+        Assert.Equal(64, MeshCode.EnumerateInBounds(bounds, MeshLevel.EighthMesh).Count());
     }
 }

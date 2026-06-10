@@ -148,11 +148,11 @@
 - [x] [P2] [Phase1] **REQ-RST-013**: 空間制約の判定は、エッジのシェイプ列を用いた交差判定で行うこと。(Ver. 0.18)
 - [x] [P2] [Phase1] **REQ-RST-014**: 空間制約判定の事前フィルタとして外接矩形（AABB）による枝刈りを行うこと。(Ver. 0.18)
 - [x] [P2] [Phase1] **REQ-RST-015**: メッシュコード指定の場合、メッシュ矩形を AABB として直接使用すること（多角形ポリゴン交差判定をスキップ）。(Ver. 0.18)
-- [x] [P1] [Phase1] **REQ-RST-016**: メッシュコードの対応階層を以下の 3 階層とすること（親プロジェクト「災害廃棄物処理シミュレーション」と同範囲、v1.4 で 4 階層 → 3 階層に縮小）。(Ver. 0.18)
+- [x] [P1] [Phase1] **REQ-RST-016**: メッシュコードの対応階層を以下の 4 階層とすること。(Ver. 0.18 で 3 階層、11 桁は 2026-06-11 改訂で「1/8 細分（象限方式）」として仕様確定・追加 = Ver. 1.2.0)
   - **第3次メッシュ** (約 1km 四方、8 桁、例 `53394547`)
   - **1/2 細分メッシュ** (約 500m 四方、9 桁、例 `533945471`)
   - **1/4 細分メッシュ** (約 250m 四方、10 桁、例 `5339454713`)
-  - ~~**1/10 細分メッシュ** (約 100m 四方、11 桁)~~ → **Phase 2 以降に延期**（11 桁エンコーディング仕様未確定。Phase 1 では親プロ互換 3 階層に統一）
+  - **1/8 細分メッシュ** (約 125m 四方=緯度 3.75 秒×経度 5.625 秒、11 桁、例 `53394547131`)。11 桁目は 1/4 細分をさらに 2×2 分割した象限番号 1〜4（南西=1、南東=2、北西=3、北東=4）で、9・10 桁目と同一の象限再帰。**「10分の1細分区画」（8 桁＋2 桁 = 10 桁・100m）は既存 1/4 細分と桁数衝突するため採用しない**（v1.4 で延期した「1/10 細分 = 100m / 11 桁」記載はこの仕様に読み替えて確定。親プロFB [`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md) 要望①）
 - [x] [P1] [Phase1] **REQ-RST-017**: 入力されたメッシュコードの桁数から階層を自動判定し、対応する経緯度矩形領域に変換できること。(Ver. 0.18)
 - [x] [P1] [Phase1] **REQ-RST-018**: 桁数が REQ-RST-016 の規定に該当しないメッシュコードは、引数例外で拒否すること。(Ver. 0.18)
 - [ ] [P3] [Phase4+] **REQ-RST-019**: 第1次メッシュ（80km）・第2次メッシュ（10km）への対応拡張は要望が出た時点で個別判断する。(Ver. -)
@@ -171,11 +171,12 @@
 - [ ] [P3] [Phase2+] **REQ-RST-023**: `<gml:MultiSurface>` で複数 Surface を 1 フィーチャに紐付ける構造への対応は Phase 2 以降に延期する（A31「浸水想定区域」サンプル `A31-12_24.xml`（1.6 GB）で `MultiSurface` 出現 0 件を確認、2026-05-19）。Phase 1 では検出時に `NotSupportedException` を投げる。(Ver. 1.5)
 - [x] [P2] [Phase1] **REQ-RST-024**: GML ファイル（`.xml` / `.gml`）を直接読み込んで制約を一括登録できること。(Ver. 0.18)
 - [x] [P2] [Phase1] **REQ-RST-025**: GML 文字列（`string`）／`System.IO.Stream` からの制約一括登録 API を提供すること。(Ver. 0.18)
-- [x] [P1] [Phase1] **REQ-RST-026**: GML 入力 API は進入不可エリア用と難所エリア用の 2 系統を提供すること。難所エリア用 API は引数で難所タイプ文字列を受け取り、ファイル内全フィーチャに同一の難所タイプを適用すること。フィーチャ要素名や属性値から難所タイプを自動判定する仕組みは設けない（利用者責任、複数の KSJ プロダクトを共通基盤で扱うため）。GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保持せず読み飛ばす。(Ver. 0.18)
+- [x] [P1] [Phase1] **REQ-RST-026**: GML 入力 API は進入不可エリア用と難所エリア用の 2 系統を提供すること。難所エリア用 API は引数で難所タイプ文字列を受け取り、ファイル内全フィーチャに同一の難所タイプを適用すること。フィーチャ要素名や属性値から難所タイプを自動判定する仕組みは設けない（利用者責任、複数の KSJ プロダクトを共通基盤で扱うため）。GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は本 API 系統では保持せず読み飛ばす（属性が必要な場合は REQ-RST-041 の `ParseFeatures*` を使う）。(Ver. 0.18)
 - [x] [P2] [Phase1] **REQ-RST-027**: GML 入力 API は `tag` 引数で全フィーチャに同一タグ文字列を付与できること（REQ-RST-010 のタグ機構と連携、バッチ識別子用途）。フィーチャ別タグはサポートしない（KSJ 標準にタグ相当属性がないため）。(Ver. 0.18)
 - [x] [P1] [Phase1] **REQ-RST-028**: GML の座標系を「緯度 経度」順（JGD2000、KSJ 規定）として扱うこと。他の座標系（WGS84 経度緯度順等）は本ライブラリでは扱わず、利用者側で事前変換すること。(Ver. 0.18)
 - [ ] [P3] [Phase4+] **REQ-RST-029**: 汎用 GML 3.2（KSJ 拡張なし）／GeoJSON ／ Shapefile ／ TopoJSON 等の他形式対応は要望が出た時点で個別判断する。(Ver. 1.5)
 - [x] [P1] [Phase1] **REQ-RST-040**: GML 入力 API はマップ範囲（緯度経度 AABB、`MapBounds` 値型）による フィーチャフィルタを optional 引数として受け付けること。指定時は、フィーチャの外周頂点が 1 つでもマップ範囲内（境界線上を含む）にあるフィーチャのみを採用し、0 個のものは登録せずスキップする（Hole は判定に使わない、シミュレーションの道路ネットワーク範囲外のフィーチャを除外する用途）。マップ範囲未指定 (`null`) 時は全フィーチャを採用する（互換動作）。(Ver. 0.18)
+- [x] [P2] [Phase4] **REQ-RST-041**: KSJ GML をフィーチャ単位の「形状＋属性」ペアで取得できる公開パース API を提供すること。`GmlParser.ParseFeaturesString(string)` / `ParseFeaturesStream(Stream)` が `IReadOnlyList<GmlFeature>`（`GmlFeature` = `GeoPolygon Polygon` + `IReadOnlyDictionary<string, string> Attributes`）を返す。属性はフィーチャ要素直下の単純な子要素（子要素なし・xlink 参照なし・テキストあり）から抽出し、key = 名前空間 prefix を剥がしたローカル名（例 `A51_001`）、value = テキスト内容（型解釈・コードリスト解決は利用側責務）。属性が 1 つも無いフィーチャは空 Dictionary（例外にしない）。形状の解釈・フィーチャスキップ方針・例外は既存パーサ（REQ-RST-020〜028）と同一で、既存 `ParseString` / `ParseStream` / `AddBlockAreaFromGml*` / `AddDifficultyAreaFromGml*` の挙動は不変。用途は A51「雨水出水（内水）浸水想定区域」等、GeoJSON 未提供データセットの属性（浸水深ランク等）に基づく制約レベル振り分け（親プロFB [`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md) 要望②）。(Ver. 1.2.0)
 
 ### 5.3 車両プロファイル (REQ-PRF)
 
@@ -354,7 +355,7 @@ namespace OsmDotRoute
         public RestrictedAreaId AddBlockArea(GeoPolygon polygon, string? tag = null);
         public RestrictedAreaId AddDifficultyArea(GeoPolygon polygon, string difficultyType, string? tag = null);
 
-        // 地域メッシュコード指定（JIS X0410 第3次〜1/4 細分、1km〜250m、8〜10 桁、Phase 1 範囲）
+        // 地域メッシュコード指定（JIS X0410 第3次〜1/8 細分、1km〜125m、8〜11 桁。REQ-RST-016）
         public RestrictedAreaId AddBlockArea(MeshCode meshCode, string? tag = null);
         public RestrictedAreaId AddBlockArea(IEnumerable<MeshCode> meshCodes, string? tag = null);
         public RestrictedAreaId AddDifficultyArea(MeshCode meshCode, string difficultyType, string? tag = null);
@@ -362,6 +363,7 @@ namespace OsmDotRoute
 
         // GML 入力（国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2）
         // 形状（外周＋Hole）のみ抽出。難所タイプは引数で全フィーチャに適用、フィーチャ属性は保持しない
+        // （属性が必要な場合は GmlParser.ParseFeatures* を使い利用者側で振り分け、REQ-RST-041）
         // mapBounds 指定時は外周頂点が 1 つでも範囲内にあるフィーチャのみ採用（REQ-RST-040）
         public RestrictedAreaId[] AddBlockAreaFromGml(string gml, MapBounds? mapBounds = null, string? tag = null);
         public RestrictedAreaId[] AddBlockAreaFromGmlFile(string filePath, MapBounds? mapBounds = null, string? tag = null);
@@ -389,10 +391,20 @@ namespace OsmDotRoute
         public const string Ice          = "ice";           // 凍結
     }
 
+    // KSJ GML のフィーチャ単位パース（形状＋属性、REQ-RST-041。制約登録を伴わない読み取り専用 API）
+    public static class GmlParser
+    {
+        public static IReadOnlyList<GeoPolygon> ParseString(string gml);          // 形状のみ（既存挙動）
+        public static IReadOnlyList<GeoPolygon> ParseStream(Stream stream);
+        public static IReadOnlyList<GmlFeature> ParseFeaturesString(string gml);  // 形状＋属性
+        public static IReadOnlyList<GmlFeature> ParseFeaturesStream(Stream stream);
+    }
+    public sealed record GmlFeature(GeoPolygon Polygon, IReadOnlyDictionary<string, string> Attributes);
+
     public readonly record struct GeoCoordinate(double Latitude, double Longitude);
     public sealed class GeoPolygon { /* 緯度経度頂点列 */ }
-    public readonly record struct MeshCode(long Value) { /* 8〜10 桁の数値。桁数で階層を自動判定（Phase 1 範囲） */ }
-    public enum MeshLevel { Mesh3rd /* 1km */, HalfMesh /* 500m */, QuarterMesh /* 250m */ }
+    public readonly record struct MeshCode(long Value) { /* 8〜11 桁の数値。桁数で階層を自動判定（REQ-RST-016） */ }
+    public enum MeshLevel { Mesh3rd /* 1km */, HalfMesh /* 500m */, QuarterMesh /* 250m */, EighthMesh /* 125m */ }
     public readonly record struct MapBounds(GeoCoordinate SouthWest, GeoCoordinate NorthEast) { /* GML 入力フィルタ等のマップ範囲、境界含む Contains 提供 */ }
     public sealed class Route {
         /* TotalDistanceM, TotalDurationSec, Shape: ReadOnlyMemory<GeoCoordinate>,
@@ -435,7 +447,7 @@ namespace OsmDotRoute
 - REQ-API-001〜REQ-API-008
 - REQ-FMT-001〜REQ-FMT-005
 - REQ-RTE-001〜REQ-RTE-008
-- REQ-RST-001〜REQ-RST-032
+- REQ-RST-001〜REQ-RST-041
 - REQ-PRF-001〜REQ-PRF-016
 
 ---
@@ -456,12 +468,12 @@ namespace OsmDotRoute
 | 入力形式 | 内容 | 関連要件 |
 |---|---|---|
 | `GeoPolygon` メモリオブジェクト | 緯度経度頂点列 | REQ-RST-001, REQ-RST-004 |
-| `MeshCode` メモリオブジェクト | JIS X0410 第3次〜1/4 細分（1km〜250m、Phase 1 範囲） | REQ-RST-002〜006, REQ-RST-016〜018 |
-| GML 文字列 / ファイル / Stream | 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2（Phase 1 動作確認: A31「浸水想定区域」、形状のみ抽出、難所タイプは API 引数で指定） | REQ-RST-020〜028 |
+| `MeshCode` メモリオブジェクト | JIS X0410 第3次〜1/8 細分（1km〜125m、8〜11 桁） | REQ-RST-002〜006, REQ-RST-016〜018 |
+| GML 文字列 / ファイル / Stream | 国土数値情報 KSJ アプリケーションスキーマ準拠 GML 3.2（動作確認: A31「浸水想定区域」、制約登録 API は形状のみ抽出、難所タイプは API 引数で指定。フィーチャ属性が必要な場合は `GmlParser.ParseFeatures*` で形状＋属性を取得し利用者側で振り分け） | REQ-RST-020〜028, REQ-RST-041 |
 
 #### GML 入力 API の難所タイプ・タグ指定方針
 
-GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保持しない。難所タイプとタグはともに利用者が API 引数で指定する:
+制約登録 API（`Add*FromGml*`）はフィーチャ属性（`<ksj:waterDepth>` 等）を保持しない。難所タイプとタグはともに利用者が API 引数で指定する（属性に基づく振り分けが必要な場合は `GmlParser.ParseFeatures*`＝REQ-RST-041 でフィーチャ別に取得し、利用者側で `AddBlockArea` / `AddDifficultyArea` に渡す）:
 
 | 指定対象 | 指定方法 | 関連要件 |
 |---|---|---|
@@ -551,13 +563,13 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 **スコープ（2026-06-02 ユーザー決定で 2 項目に限定、2026-06-09 親プロFB 追補で 1 項目追加）**:
 - **プロファイル追加**: REQ-PRF-005〜006（emergency / disaster）＋ユーザー定義プロファイル拡充
 - **マルチプラットフォーム対応**: REQ-NFR-007（Linux / macOS）の検証本格化【完了 2026-06-03、Windows/Linux/macOS で 753 pass】。REQ-NFR-008（.NET バージョン横断）は本スコープ外で Phase 4+ 継続
-- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec、Ver 1.1.0）/ REQ-PRF-014 改訂・REQ-PRF-017 追加（難所タイプ照合 case-insensitive 化＋観測性 API、Ver 1.1.1）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（[`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)）と、その検証中に発覚した不具合報告を取り込み
+- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec、Ver 1.1.0）/ REQ-PRF-014 改訂・REQ-PRF-017 追加（難所タイプ照合 case-insensitive 化＋観測性 API、Ver 1.1.1）/ REQ-RST-016 仕様確定・REQ-RST-041 追加（1/8 細分メッシュ 125m・11 桁対応＋GmlParser フィーチャ属性公開、Ver 1.2.0）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（[`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)）、その検証中に発覚した不具合報告、KSJ ハザードデータ取り込み計画の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）を取り込み
 
 ### Phase 4 以降（将来検討）
 
 - REQ-NFR-004 (CH 対応), REQ-NFR-011 (グローバル対応)
 - REQ-RTE-009 (高速化アルゴリズム)
-- REQ-RST-016 (メッシュ階層拡張)
+- REQ-RST-019 (第1次・第2次メッシュへの拡張。REQ-RST-016 の細分側拡張は 2026-06-11 改訂で 1/8 細分まで完了)
 - REQ-PRF-015〜016 (プロファイル C# 拡張 API、Lua 互換層)
 - REQ-API-007 (SemVer)
 - REQ-FMT-005 (Polyline)
@@ -622,7 +634,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 | **`xlink:href` 参照** | GML で要素間の ID 参照に使う仕組み（例: `<gml:curveMember xlink:href="#c00001"/>`）。Surface ↔ Curve、フィーチャ ↔ Surface の関連付けに使用 |
 | **メッシュ** | 地理空間を格子状に区切った領域 |
 | **JIS X0410** | 「地域メッシュ統計のための地域区分」を規定した JIS 規格。第1次（80km）/ 第2次（10km）/ 第3次（1km）および細分メッシュを定義 |
-| **地域メッシュコード** | JIS X0410 で各メッシュに割り当てられた数値コード。Phase 1 では第3次（1km、8桁）/ 1/2 細分（500m、9桁）/ 1/4 細分（250m、10桁）の 3 階層に対応。1/10 細分（100m、11桁）は仕様未確定のため Phase 2 以降に延期 |
+| **地域メッシュコード** | JIS X0410 で各メッシュに割り当てられた数値コード。第3次（1km、8桁）/ 1/2 細分（500m、9桁）/ 1/4 細分（250m、10桁）/ 1/8 細分（125m、11桁、象限方式）の 4 階層に対応（REQ-RST-016） |
 | **SemVer** | Semantic Versioning。`MAJOR.MINOR.PATCH` 形式の互換性保証付きバージョニング |
 
 ---
@@ -631,6 +643,7 @@ GML 内のフィーチャ属性（`<ksj:waterDepth>` 等）は Phase 1 では保
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
+| （採番待ち） | 2026-06-11 | **REQ-RST-016 仕様確定（1/8 細分メッシュ）+ REQ-RST-041 追加（GmlParser フィーチャ属性公開）（Ver 1.2.0、親プロFB 追補）**。親プロジェクトの KSJ ハザードデータ取り込み計画（A31a/A31b/A33/A51/A53 → 125m メッシュラスタライズ → `AddBlockArea/AddDifficultyArea` 登録）の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）に対応。①REQ-RST-016: 11 桁目 = 象限 1〜4 の「1/8 細分（125m）」を正式仕様として確定（v1.4 で延期した「1/10 細分 = 100m」は既存 1/4 細分と桁数衝突するため象限方式に読み替え）。`MeshLevel.EighthMesh` 追加、`MeshCode.Level` / `ToBounds` / `EnumerateInBounds` / `RestrictedAreaService.AddBlockArea/AddDifficultyArea(IEnumerable<MeshCode>)` が 11 桁を 8〜10 桁と同等に処理（既存 API シグネチャ変更なし、`MeshCodeConverter` の細分処理を象限再帰ループに一般化）。②REQ-RST-041: `GmlParser` を公開化し `ParseFeaturesString/Stream` → `IReadOnlyList<GmlFeature>`（形状＋属性 Dictionary）を追加。A51（GML のみ提供）の浸水深ランク等に基づく制約レベル振り分けを利用者側で可能に。既存 `ParseString/ParseStream` / `Add*FromGml*` は挙動不変。全 793 pass（v1.1.1 末の 777 から +16、回帰ゼロ）。Sandbox のメッシュグリッド表示にも 125m 階層を追加（Server / WASM / Web UI）。バージョン 1.2.0（マイナー採番、公開 API 追加のみ） | Claude (Fable 5) |
 | （採番待ち） | 2026-06-09 | **REQ-PRF-014 改訂 + REQ-PRF-017 追加（Ver 1.1.1、親プロFB 不具合修正）**。親プロジェクト（v1.1.0 アニメ目視検証中）から「難所タイプ照合が case-sensitive のため `"Flooding"` 等の表記揺れで速度低下がサイレントに無効化される」不具合報告を受領（[`debug_flooding_x10_for_animation_verification.md`](debug_flooding_x10_for_animation_verification.md) 経由の往復で発覚）。`ProfileEvaluator.EvaluateDifficulty` の照合を Ordinal-IgnoreCase 化（REQ-PRF-014 改訂）、case-only 重複キーを `InvalidProfileException` で拒否、観測性 API `VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` を新規追加（REQ-PRF-017）。`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` の XML doc に「サイレント・フォールバック」挙動を明記。全 777 pass（v1.1.0 末の 761 から +16、回帰ゼロ）。バージョン 1.1.1（パッチ採番） | Claude (Opus 4.7) |
 | （採番待ち） | 2026-06-09 | **REQ-FMT-006 追加 / Phase 4 親プロFB 追補（Ver 1.1.0）**。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（`Documents/feature_request_per_segment_durations.md`）に応えて `Route.CumulativeDurationsSec`（`ReadOnlyMemory<double>`、Shape 点別累積所要秒）を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` 追加 + `RouteBuilder` でエッジ内多角線距離按分による補間。Phase 4 スコープに「親プロFB 追補」枠を追加（§9 Phase 4 第 3 ブレット）、§7.1 API シグネチャ概要・§8.2 出力フォーマット表は §5.6.a を参照。全 761 pass（既存 753 + 不変条件テスト 6 + 別途追加分、回帰ゼロ）。バージョンはユーザー採番（1.1.0 マイナー） | Claude (Opus 4.7) |
 | （採番待ち） | 2026-06-03 | **Phase 4 マルチプラットフォーム対応完了**。REQ-NFR-007（Linux / macOS）を完了マーク。3H で構築した macOS CI 自動ミラー基盤（`mirror.yml` / `.mirror/ci-macos.yml`）を Phase 4 成果を保ったまま main へ移植し、自動同期を有効化。**macOS ARM64（GitHub Actions ミラー `OsmDotRoute-ci-macos`）・Linux x64（WSL2 + CI）とも Phase 4 = 753 pass / 0 fail / 0 skip**、配布 3 本の pack も警告ゼロを確認。REQ-NFR-008（.NET バージョン横断）は本スコープ外で継続。詳細は [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md)。バージョンはユーザー採番 | Claude (Opus 4.8) |

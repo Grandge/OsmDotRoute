@@ -147,7 +147,7 @@ export interface GmlImportResult {
 export async function fetchMeshGrid(
   sw: [number, number],
   ne: [number, number],
-  level: '1km' | '500m' | '250m',
+  level: '1km' | '500m' | '250m' | '125m',
 ): Promise<GeoJSON.FeatureCollection> {
   const qs = new URLSearchParams({
     swLat: sw[0].toString(),

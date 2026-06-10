@@ -145,6 +145,53 @@ public sealed class RestrictedAreaServiceAttachGraphTests : IClassFixture<Native
     }
 
     [Fact]
+    public void AttachGraph_EighthMeshBlockArea_BakesIntersectingEdgesOnly()
+    {
+        // REQ-RST-016 仕様確定: 11 桁（1/8 細分、125m）メッシュの一括登録が
+        // 既存 AABB 交差セマンティクス（REQ-RST-015）でエッジを遮断する
+        var service = new RestrictedAreaService();
+        service.AttachGraph(_fixture.Graph);
+
+        // 津島市中心部を覆う 1/8 細分メッシュ群を列挙して一括登録
+        var centerBounds = new MapBounds(
+            new GeoCoordinate(35.180, 136.740),
+            new GeoCoordinate(35.181, 136.741));
+        var meshes = MeshCode.EnumerateInBounds(centerBounds, MeshLevel.EighthMesh).ToArray();
+        Assert.All(meshes, m => Assert.Equal(MeshLevel.EighthMesh, m.Level));
+
+        var id = service.AddBlockArea(meshes);
+        Assert.True(CountBlocked(service) > 0,
+            "津島市中心部の 125m メッシュと交差するエッジが bake されることを期待");
+
+        service.Remove(id);
+        Assert.Equal(0, CountBlocked(service));
+
+        // グラフ範囲外（東京駅近傍）の 11 桁メッシュは何も遮断しない
+        service.AddBlockArea(new MeshCode(53394611111L));
+        Assert.Equal(0, CountBlocked(service));
+    }
+
+    [Fact]
+    public void AttachGraph_MixedQuarterAndEighthMeshes_RegisteredTogether()
+    {
+        // 10 桁・11 桁混在の一括登録（親プロジェクトの利用形態）
+        var service = new RestrictedAreaService();
+        service.AttachGraph(_fixture.Graph);
+
+        var centerBounds = new MapBounds(
+            new GeoCoordinate(35.180, 136.740),
+            new GeoCoordinate(35.181, 136.741));
+        var quarter = MeshCode.EnumerateInBounds(centerBounds, MeshLevel.QuarterMesh).First();
+        var eighth = MeshCode.EnumerateInBounds(centerBounds, MeshLevel.EighthMesh).First();
+
+        var id = service.AddBlockArea(new[] { quarter, eighth });
+        Assert.True(CountBlocked(service) > 0);
+
+        service.Remove(id);
+        Assert.Equal(0, CountBlocked(service));
+    }
+
+    [Fact]
     public void AttachGraph_SameGraphTwice_NoOp()
     {
         var service = new RestrictedAreaService();

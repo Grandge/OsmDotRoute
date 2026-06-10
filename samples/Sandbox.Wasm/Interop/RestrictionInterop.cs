@@ -165,7 +165,7 @@ public partial class Interop
     internal static string MeshGrid(double swLat, double swLon, double neLat, double neLon, string level)
     {
         var meshLevel = ParseLevel(level)
-            ?? throw new ArgumentException($"level は 1km / 500m / 250m のいずれか (受信: {level})");
+            ?? throw new ArgumentException($"level は 1km / 500m / 250m / 125m のいずれか (受信: {level})");
 
         var bounds = new MapBounds(
             new GeoCoordinate(Math.Min(swLat, neLat), Math.Min(swLon, neLon)),
@@ -213,6 +213,7 @@ public partial class Interop
         "1km" or "mesh3rd" or "8" => MeshLevel.Mesh3rd,
         "500m" or "halfmesh" or "9" => MeshLevel.HalfMesh,
         "250m" or "quartermesh" or "10" => MeshLevel.QuarterMesh,
+        "125m" or "eighthmesh" or "11" => MeshLevel.EighthMesh,
         _ => null,
     };
 
