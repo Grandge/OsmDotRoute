@@ -1,9 +1,9 @@
 # OsmDotRoute Phase 4 設計書
 
-**バージョン**: ユーザー採番（未採番、Ver 1.1.0 = 親プロFB 追補ぶん、Ver 1.1.1 = 親プロFB 不具合修正ぶん）
+**バージョン**: ユーザー採番（Ver 1.1.0 = 親プロFB 追補ぶん、Ver 1.1.1 = 親プロFB 不具合修正ぶん、Ver 1.2.1 = RouterDb IDisposable ぶん）
 **作成日**: 2026-06-03
-**最終更新**: 2026-06-09（親プロFB 不具合修正 §4 追加）
-**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。**親プロFB 追補（REQ-FMT-006 = Route.CumulativeDurationsSec）完了**（2026-06-09、Ver 1.1.0、全 761 pass）。**親プロFB 不具合修正（REQ-PRF-014 改訂 + REQ-PRF-017 = 難所タイプ case-insensitive 化＋観測性 API）完了**（2026-06-09、Ver 1.1.1、全 777 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
+**最終更新**: 2026-06-12（親プロFB 追補 §6 = RouterDb IDisposable 追加）
+**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。**親プロFB 追補（REQ-FMT-006 = Route.CumulativeDurationsSec）完了**（2026-06-09、Ver 1.1.0、全 761 pass）。**親プロFB 不具合修正（REQ-PRF-014 改訂 + REQ-PRF-017 = 難所タイプ case-insensitive 化＋観測性 API）完了**（2026-06-09、Ver 1.1.1、全 777 pass）。**親プロFB 追補（REQ-MAP-010 = RouterDb IDisposable）完了**（2026-06-12、Ver 1.2.1、全 802 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
 **対象**: OsmDotRoute Phase 4 のうち**プロファイル追加**と**親プロFB 追補**の設計記録（REQ-PRF-005 = 救急車 `ambulance` / 消防車 `fire_engine`、REQ-PRF-006 = 災害用車両 `disaster`、＋ユーザー定義プロファイルの bake 経路拡張、REQ-FMT-006 = Route 区間別累積所要秒、REQ-PRF-014 改訂 / REQ-PRF-017 = 難所タイプ照合 case-insensitive 化＋観測性 API）
 **関連ドキュメント**:
 
@@ -37,7 +37,8 @@ Phase 4 のスコープは 2026-06-02 ユーザー決定で **(1) プロファ�
 | 3. 親プロFB 追補: Route.CumulativeDurationsSec（REQ-FMT-006） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.0） |
 | 4. 親プロFB 不具合修正: 難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017 追加） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.1） |
 | 5. 親プロFB 追補: 1/8 細分メッシュ（125m）＋ GmlParser フィーチャ属性公開（REQ-RST-016 仕様確定 / REQ-RST-041） | 単発 Step | **肉付け完了**（2026-06-11、Ver 1.2.0） |
-| 6. 改訂履歴 | 各ステップ完了時 | 初版 |
+| 6. 親プロFB 追補: RouterDb のリソース確定解放（REQ-MAP-010） | 単発 Step | **肉付け完了**（2026-06-12、Ver 1.2.1） |
+| 7. 改訂履歴 | 各ステップ完了時 | 初版 |
 
 > Step 5（利用者向け解説ドキュメント）/ Step 6（設計書・要件反映）は成果物が本書および [profile_guide.md](profile_guide.md) / [requirement_definition.md](requirement_definition.md) 自体であり、§2 にその位置付けを記す。
 
@@ -490,10 +491,60 @@ public static class GmlParser   // internal → public
 
 ---
 
-## 6. 改訂履歴
+## 6. 親プロFB 追補: RouterDb のリソース確定解放（REQ-MAP-010）
+
+### 6.1 意図
+
+親プロジェクトのマップ＆シナリオエディタで「既存シナリオの道路データ再生成 → 上書き保存」が必ず `IOException` で失敗する実バグ（P1）への対応（[`feature_request_routerdb_dispose.md`](feature_request_routerdb_dispose.md)）。原因はファイル版 `RouterDb.LoadFromOdrg(string)` が `.odrg` を MemoryMappedFile で開いたまま保持し、利用側に確定解放手段がない（`IRoadGraph : IDisposable` は internal）こと。旧インスタンスの MMF ハンドルが GC 任せとなり、`File.Copy(..., overwrite: true)` が残留ロックで失敗していた。
+
+### 6.2 採用設計
+
+`RouterDb` に `IDisposable` を実装し、`Dispose() => _graph.Dispose()` の委譲のみで構成（[RouterDb.cs](../src/OsmDotRoute/RouterDb.cs)）。
+
+- 解放の実体は既存の `NativeRoadGraph.Dispose()` → `OdrgMmfHandle.Dispose()`。ファイルモードは MMF/ViewAccessor、メモリモード（WASM 向け `LoadFromOdrg(ReadOnlyMemory<byte>)`）はピン留めバッファ（`MemoryHandle`）を解放する。両モードとも `_disposed` ガード済みで冪等
+- `NativeRoadSnapper` はグラフ参照のみ保持で固有リソースなし（要望書 §3 の認識どおりであることをソースで確認済み）。Dispose 対象外
+- Dispose 後の使用は `NativeRoadGraph` の全公開メンバに既設の `ThrowIfDisposed()` により `ObjectDisposedException`。`RouterDb.GetStatistics` / 派生 `Router.Calculate` / スナップ経路もグラフ経由で同様にスローされる。**新たな安全装置は追加しない**（要望書の受け入れ基準 3 の指定どおり）
+
+### 6.3 設計判断の根拠
+
+| 論点 | 採用 | 根拠 |
+| --- | --- | --- |
+| 実装の置き場所 | **`RouterDb.Dispose()` → `_graph.Dispose()` 委譲のみ** | リソース保持者は `OdrgMmfHandle` ただ 1 つで、解放経路（冪等ガード・両モード対応・CriticalFinalizer フォールバック）は Phase 3 で実装済み。RouterDb 側に状態を持たせる理由がない |
+| `RouterDb` 自身の `_disposed` フラグ | **持たない** | 多重 Dispose の冪等性も Dispose 後の `ObjectDisposedException` もグラフ側ガードで既に成立。二重管理は不整合の温床（YAGNI） |
+| ファイナライザ追加 | **しない** | `OdrgMmfHandle` の MMF は CriticalFinalizer 経由の自動解放が既に効く（Phase 3 ユーザー判断 #21 (b)）。確定解放手段の提供が本要望の主旨であり、非確定経路は現状維持で足りる |
+| REQ-API-003（内部実装型の非露出）との整合 | **抵触なし** | `IDisposable` は BCL 型。公開シグネチャに internal 型は現れない |
+
+### 6.4 トレードオフ・制約
+
+- **加算的・非破壊**: Dispose を呼ばない既存利用コードの挙動は一切不変（従来どおり GC/ファイナライザ任せ）。既存テスト 793 件が無変更でパスすることで実証
+- **Dispose 後の派生オブジェクト**: `Router` / スナップ機能は `RouterDb` の Dispose 後に使用不可となる。ライフタイム管理（差し替え前に旧 Router の利用停止）は利用側責務（要望書 §4 の親側利用計画どおり）
+
+### 6.5 検証方法
+
+新規テスト 9 件（[RouterDbDisposeTests.cs](../tests/OsmDotRoute.Tests/RouterDbDisposeTests.cs)）、全 802 pass（v1.2.0 末の 793 から +9、回帰ゼロ）。要望書の受け入れ基準との対応:
+
+| 受け入れ基準（要望書 §2） | テスト |
+| --- | --- |
+| ① ファイルロック解放（Dispose 後の Delete / Copy overwrite 成功） | `Dispose_FileVersion_ReleasesFileLock_DeleteSucceeds` / `_CopyOverwriteSucceeds`（親プロの上書き保存フロー再現）。前提確認として Dispose 前はロックされていること自体も `LockIsHeldBeforeDispose` で検証 |
+| ② 冪等性（多重 Dispose 安全） | `Dispose_CalledTwice_IsIdempotent` / メモリ版二重 Dispose |
+| ③ Dispose 後使用は `ObjectDisposedException` | `Dispose_ThenGetStatistics_…` / `Dispose_ThenRouterCalculate_…` |
+| ④ メモリ版（ピン留めバッファ）も矛盾なく解放 | `Dispose_MemoryVersion_IsSafeAndIdempotent` |
+| ⑤ 非破壊（Dispose を呼ばない既存利用は不変） | `NoDispose_ExistingUsage_Unchanged` + 既存 793 件回帰ゼロ |
+| （親側利用計画）`using var` パターン成立 | `Using_FileVersion_WorksAsDisposable` |
+
+### 6.6 実装メモ
+
+- ファイルロックテストは Tsushima `.odrg` を一時パスへコピーして使用（共有テストデータ自体をロック・削除しないため）
+- Windows でロック検証済み。Linux/macOS では MMF が advisory ロックにならず `File.Delete` が成功し得るが、`ThrowsAny<IOException>` を使う前提確認テスト `LockIsHeldBeforeDispose` のみプラットフォーム差の影響を受ける可能性あり → 次回マルチプラットフォーム CI 実行時に要観察（失敗する場合は Windows 限定 `[Fact]` 化）
+- 親側への返答ポイント: 要望書 §3 のヒントどおり委譲のみで成立。`NativeRoadSnapper` の「固有リソースなし」も確認済み
+
+---
+
+## 7. 改訂履歴
 
 | Ver | 日付 | 変更 |
 | --- | --- | --- |
+| 親プロFB 追補 | 2026-06-12 | §6「RouterDb のリソース確定解放（REQ-MAP-010）」を追加。`RouterDb : IDisposable`（`_graph.Dispose()` 委譲のみ）でファイル版 MMF ハンドル / メモリ版ピン留めバッファを確定解放可能に。親プロの「シナリオ上書き保存が IOException」実バグ（P1）対応。新規テスト 9 件、全 802 pass（回帰ゼロ）。Ver 1.2.1 パッチ採番（ユーザー指定） |
 | 親プロFB 追補 | 2026-06-11 | §5「1/8 細分メッシュ（125m）＋ GmlParser フィーチャ属性公開（REQ-RST-016 仕様確定 / REQ-RST-041）」を追加。`MeshLevel.EighthMesh`（11 桁・象限方式）、`MeshCodeConverter` の細分処理ループ一般化、`GmlParser` 公開化＋`ParseFeaturesString/Stream`（`GmlFeature` = 形状＋属性 Dictionary）、Sandbox メッシュグリッドの 125m 階層追加（Server / WASM / Web UI）。新規テスト 16 件、全 793 pass（回帰ゼロ）。Ver 1.2.0 マイナー採番 |
 | 親プロFB 不具合修正 | 2026-06-09 | §4「難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017）」を追加。親プロ側不具合報告（v1.1.0 アニメ目視検証中に発覚した `"Flooding"` PascalCase でのサイレント・フォールバック）を受けて、`ProfileEvaluator` の照合経路を `Ordinal-IgnoreCase` 化、case-only 重複キー検出、`VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` 観測性 API を追加。XML doc 4 箇所（`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` / `EvaluateDifficulty`）でサイレント・フォールバック挙動を明記。新規テスト 16 件、全 777 pass（回帰ゼロ）。Ver 1.1.1 パッチ採番 |
 | 親プロFB 追補 | 2026-06-09 | §3「Route.CumulativeDurationsSec（REQ-FMT-006）」を追加。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望に応えて Route に Shape 点別累積所要秒を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` + `RouteBuilder` でエッジ内多角線距離按分による補間。不変条件テスト 6 種で整列・端点・単調・難所反映・SameEdge・互換コンストラクタを実証、全 761 pass（回帰ゼロ）。Ver 1.1.0 マイナー採番 |

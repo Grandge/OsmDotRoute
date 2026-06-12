@@ -228,6 +228,7 @@
 - [ ] [P1] [Phase3] **REQ-MAP-005**: 独自バイナリグラフ形式 `.odrg` のファイルをランタイムから読み込めること。`MemoryMappedFile` でビュー化、`ReadOnlySpan<T>` でゼロコピー公開。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動)
 - [ ] [P1] [Phase3] **REQ-MAP-006**: ランタイム経路計算から Itinero アセンブリへの依存を排除すること。(Ver. -、v2.3 で Phase 2 → Phase 3 へ移動)
 - [ ] [P1] [Phase3] **REQ-MAP-009**: ライブラリ全体（変換ツールを含む）から Itinero への一切の依存を排除すること。**v2.3 で Phase 2 が PBF 直接抽出主軸となったことにより、Phase 2 完了時点で実質達成見込み**（RouterDb 変換ツール REQ-MAP-004 を作らない場合）。(Ver. -)
+- [x] [P1] [Phase4] **REQ-MAP-010**: `RouterDb` が保持するリソース（ファイル版: MMF ファイルハンドル / メモリ版: ピン留めバッファ）を利用側から確定的に解放できること（`IDisposable` 実装）。ファイル版 `LoadFromOdrg(string)` は `.odrg` を MemoryMappedFile で開いたまま保持するため、Dispose しない限り当該ファイルの上書き・削除ができない（親プロのシナリオ上書き保存が IOException で失敗する実バグの原因）。`Dispose()` は冪等。Dispose 後の本インスタンス・派生 `Router` / スナップ機能の使用は `ObjectDisposedException`（既存 `ThrowIfDisposed` の挙動）。Dispose を呼ばない既存利用コードの挙動は不変（加算的・非破壊）。親プロFB [`feature_request_routerdb_dispose.md`](feature_request_routerdb_dispose.md) 対応。(Ver. 1.2.1)
 
 ### 5.5 パブリック API 設計 (REQ-API)
 
@@ -316,12 +317,16 @@ namespace OsmDotRoute
         public RoadNetworkGeoJson GetRoadNetworkGeoJson();
     }
 
-    public sealed class RouterDb
+    public sealed class RouterDb : IDisposable    // IDisposable は REQ-MAP-010 で追加
     {
         // LoadFromFile は OsmDotRoute.Itinero アダプター側に配置（v1.3 で変更）。
         // アセンブリ依存方向（OsmDotRoute ← OsmDotRoute.Itinero）維持のため、
         // コア側からアダプターを直接呼べないため。
         public RouterDbStatistics GetStatistics();
+
+        // グラフ保持リソース（MMF ハンドル / ピン留めバッファ）の確定解放（REQ-MAP-010）。
+        // 冪等。Dispose 後の本体・派生 Router / スナップ使用は ObjectDisposedException。
+        public void Dispose();
     }
 
     // OsmDotRoute.Itinero アダプタープロジェクト（NuGet 別アセンブリ）
@@ -563,7 +568,7 @@ namespace OsmDotRoute
 **スコープ（2026-06-02 ユーザー決定で 2 項目に限定、2026-06-09 親プロFB 追補で 1 項目追加）**:
 - **プロファイル追加**: REQ-PRF-005〜006（emergency / disaster）＋ユーザー定義プロファイル拡充
 - **マルチプラットフォーム対応**: REQ-NFR-007（Linux / macOS）の検証本格化【完了 2026-06-03、Windows/Linux/macOS で 753 pass】。REQ-NFR-008（.NET バージョン横断）は本スコープ外で Phase 4+ 継続
-- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec、Ver 1.1.0）/ REQ-PRF-014 改訂・REQ-PRF-017 追加（難所タイプ照合 case-insensitive 化＋観測性 API、Ver 1.1.1）/ REQ-RST-016 仕様確定・REQ-RST-041 追加（1/8 細分メッシュ 125m・11 桁対応＋GmlParser フィーチャ属性公開、Ver 1.2.0）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（[`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)）、その検証中に発覚した不具合報告、KSJ ハザードデータ取り込み計画の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）を取り込み
+- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec、Ver 1.1.0）/ REQ-PRF-014 改訂・REQ-PRF-017 追加（難所タイプ照合 case-insensitive 化＋観測性 API、Ver 1.1.1）/ REQ-RST-016 仕様確定・REQ-RST-041 追加（1/8 細分メッシュ 125m・11 桁対応＋GmlParser フィーチャ属性公開、Ver 1.2.0）/ REQ-MAP-010 追加（RouterDb の IDisposable 実装＝リソース確定解放、Ver 1.2.1、[`feature_request_routerdb_dispose.md`](feature_request_routerdb_dispose.md)）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（[`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)）、その検証中に発覚した不具合報告、KSJ ハザードデータ取り込み計画の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）を取り込み
 
 ### Phase 4 以降（将来検討）
 
@@ -643,6 +648,7 @@ namespace OsmDotRoute
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
+| （採番待ち） | 2026-06-12 | **REQ-MAP-010 追加（RouterDb の IDisposable 実装、親プロFB 対応）**。親プロジェクトの「既存シナリオの道路データ再生成 → 上書き保存」が、ファイル版 `LoadFromOdrg` の MMF ハンドル残留ロックにより必ず IOException で失敗する実バグ（P1）への対応要望（[`feature_request_routerdb_dispose.md`](feature_request_routerdb_dispose.md)）を受領。`RouterDb : IDisposable` を実装（`Dispose() => _graph.Dispose()` の委譲のみ、`OdrgMmfHandle.Dispose` が MMF/ViewAccessor・ピン留めバッファを冪等解放）。受け入れ基準 5 項目（①Dispose 後の File.Delete/Copy 成功 ②冪等性 ③Dispose 後使用は ObjectDisposedException ④メモリ版も解放 ⑤非破壊）を検証するテスト 9 件追加、全 802 pass（v1.2.0 末の 793 から +9、回帰ゼロ）。§7.1 API スケッチ更新。バージョン 1.2.1（パッチ採番、ユーザー指定） | Claude (Fable 5) |
 | （採番待ち） | 2026-06-11 | **REQ-RST-016 仕様確定（1/8 細分メッシュ）+ REQ-RST-041 追加（GmlParser フィーチャ属性公開）（Ver 1.2.0、親プロFB 追補）**。親プロジェクトの KSJ ハザードデータ取り込み計画（A31a/A31b/A33/A51/A53 → 125m メッシュラスタライズ → `AddBlockArea/AddDifficultyArea` 登録）の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）に対応。①REQ-RST-016: 11 桁目 = 象限 1〜4 の「1/8 細分（125m）」を正式仕様として確定（v1.4 で延期した「1/10 細分 = 100m」は既存 1/4 細分と桁数衝突するため象限方式に読み替え）。`MeshLevel.EighthMesh` 追加、`MeshCode.Level` / `ToBounds` / `EnumerateInBounds` / `RestrictedAreaService.AddBlockArea/AddDifficultyArea(IEnumerable<MeshCode>)` が 11 桁を 8〜10 桁と同等に処理（既存 API シグネチャ変更なし、`MeshCodeConverter` の細分処理を象限再帰ループに一般化）。②REQ-RST-041: `GmlParser` を公開化し `ParseFeaturesString/Stream` → `IReadOnlyList<GmlFeature>`（形状＋属性 Dictionary）を追加。A51（GML のみ提供）の浸水深ランク等に基づく制約レベル振り分けを利用者側で可能に。既存 `ParseString/ParseStream` / `Add*FromGml*` は挙動不変。全 793 pass（v1.1.1 末の 777 から +16、回帰ゼロ）。Sandbox のメッシュグリッド表示にも 125m 階層を追加（Server / WASM / Web UI）。バージョン 1.2.0（マイナー採番、公開 API 追加のみ） | Claude (Fable 5) |
 | （採番待ち） | 2026-06-09 | **REQ-PRF-014 改訂 + REQ-PRF-017 追加（Ver 1.1.1、親プロFB 不具合修正）**。親プロジェクト（v1.1.0 アニメ目視検証中）から「難所タイプ照合が case-sensitive のため `"Flooding"` 等の表記揺れで速度低下がサイレントに無効化される」不具合報告を受領（[`debug_flooding_x10_for_animation_verification.md`](debug_flooding_x10_for_animation_verification.md) 経由の往復で発覚）。`ProfileEvaluator.EvaluateDifficulty` の照合を Ordinal-IgnoreCase 化（REQ-PRF-014 改訂）、case-only 重複キーを `InvalidProfileException` で拒否、観測性 API `VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` を新規追加（REQ-PRF-017）。`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` の XML doc に「サイレント・フォールバック」挙動を明記。全 777 pass（v1.1.0 末の 761 から +16、回帰ゼロ）。バージョン 1.1.1（パッチ採番） | Claude (Opus 4.7) |
 | （採番待ち） | 2026-06-09 | **REQ-FMT-006 追加 / Phase 4 親プロFB 追補（Ver 1.1.0）**。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（`Documents/feature_request_per_segment_durations.md`）に応えて `Route.CumulativeDurationsSec`（`ReadOnlyMemory<double>`、Shape 点別累積所要秒）を追加。実装は `DijkstraResult.VertexCumulativeDurationsSec` 追加 + `RouteBuilder` でエッジ内多角線距離按分による補間。Phase 4 スコープに「親プロFB 追補」枠を追加（§9 Phase 4 第 3 ブレット）、§7.1 API シグネチャ概要・§8.2 出力フォーマット表は §5.6.a を参照。全 761 pass（既存 753 + 不変条件テスト 6 + 別途追加分、回帰ゼロ）。バージョンはユーザー採番（1.1.0 マイナー） | Claude (Opus 4.7) |

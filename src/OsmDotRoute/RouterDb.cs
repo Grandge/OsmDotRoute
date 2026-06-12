@@ -8,7 +8,7 @@ namespace OsmDotRoute;
 /// Phase 3 ステップ 3C.1 以降は <see cref="LoadFromOdrg(string)"/> から <c>.odrg</c> ファイルを直接ロードする（Itinero 非依存）。
 /// 公開 API に内部実装型を露出させない（REQ-API-003）。
 /// </summary>
-public sealed class RouterDb
+public sealed class RouterDb : IDisposable
 {
     private readonly IRoadGraph _graph;
     private readonly IRoadSnapper _snapper;
@@ -113,4 +113,14 @@ public sealed class RouterDb
             return (rb.SouthWest, rb.NorthEast);
         return null;
     }
+
+    /// <summary>
+    /// グラフが保持するリソース（ファイル版: MMF ファイルハンドル / メモリ版: ピン留めバッファ）を解放する
+    /// （REQ-MAP-010）。
+    /// ファイル版 <see cref="LoadFromOdrg(string)"/> は <c>.odrg</c> を MemoryMappedFile で開いたまま保持するため、
+    /// Dispose するまで当該ファイルの上書き・削除はできない（シナリオ保存時のリネーム等で必要）。
+    /// 多重呼び出しは安全（冪等）。Dispose 後の本インスタンスおよび本インスタンスから生成した
+    /// <see cref="Router"/> / スナップ機能の使用は <see cref="ObjectDisposedException"/> となる。
+    /// </summary>
+    public void Dispose() => _graph.Dispose();
 }
