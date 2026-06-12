@@ -535,7 +535,7 @@ public static class GmlParser   // internal → public
 ### 6.6 実装メモ
 
 - ファイルロックテストは Tsushima `.odrg` を一時パスへコピーして使用（共有テストデータ自体をロック・削除しないため）
-- Windows でロック検証済み。Linux/macOS では MMF が advisory ロックにならず `File.Delete` が成功し得るが、`ThrowsAny<IOException>` を使う前提確認テスト `LockIsHeldBeforeDispose` のみプラットフォーム差の影響を受ける可能性あり → 次回マルチプラットフォーム CI 実行時に要観察（失敗する場合は Windows 限定 `[Fact]` 化）
+- Windows でロック検証済み。Linux/macOS では MMF を開いたままでも unlink 可能なため、前提確認テスト `LockIsHeldBeforeDispose` は予想どおり macOS ARM64 CI（run 27396840322、801/802 pass）で失敗 → テスト冒頭の `OperatingSystem.IsWindows()` ガードで Windows 限定化（2026-06-12、本体実装の問題ではなくロック挙動の OS 差。受け入れ基準①のロック解放自体は Windows で要望どおり検証済み）
 - 親側への返答ポイント: 要望書 §3 のヒントどおり委譲のみで成立。`NativeRoadSnapper` の「固有リソースなし」も確認済み
 
 ---

@@ -54,7 +54,10 @@ public sealed class RouterDbDisposeTests
     [Fact]
     public void Dispose_FileVersion_LockIsHeldBeforeDispose()
     {
-        // Dispose 前は MMF がファイルをロックしている（前提確認: テスト自体の有効性担保）
+        // Dispose 前は MMF がファイルをロックしている（前提確認: テスト自体の有効性担保）。
+        // ロックは Windows 固有の挙動（Unix では MMF を開いたままでも unlink 可能）のため Windows 限定。
+        if (!OperatingSystem.IsWindows()) return;
+
         var tempPath = CopyOdrgToTemp();
         var routerDb = RouterDb.LoadFromOdrg(tempPath);
         try
