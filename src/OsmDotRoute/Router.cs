@@ -1,4 +1,5 @@
 using OsmDotRoute.GeoJson;
+using OsmDotRoute.Geometry;
 using OsmDotRoute.Routing;
 
 namespace OsmDotRoute;
@@ -73,6 +74,63 @@ public sealed class Router
 
         var builder = new RouteBuilder(_routerDb.Graph);
         return builder.Build(sourceSnap.Value, targetSnap.Value, result);
+    }
+
+    /// <summary>
+    /// 2 点間の経路を計算し、矩形範囲 R の境界との交点および交点から範囲外側の端点までの
+    /// ルート上距離・所要時間を返す（REQ-RTE-010〜012、Ver. 1.3.0）。
+    /// </summary>
+    /// <param name="profile">車両プロファイル</param>
+    /// <param name="from">起点 A</param>
+    /// <param name="to">終点 B</param>
+    /// <param name="bounds">
+    /// 矩形範囲 R。北西端・南東端で指定する場合は <see cref="MapBounds.FromNorthWestSouthEast"/> を使う。
+    /// 読み込み済み地図の内側の任意の矩形でよい（地図範囲と一致している必要はない）。
+    /// </param>
+    /// <param name="searchDistanceM">起点・終点を最寄り道路へスナップする検索半径（メートル、既定 500m）</param>
+    /// <returns>
+    /// 判定結果。経路未発見・スナップ失敗時は <see cref="BoundaryCrossingKind.RouteSearchError"/>、
+    /// 範囲 R が不正な場合は <see cref="BoundaryCrossingKind.InvalidParameter"/> を返す（<c>null</c> は返さない）。
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="profile"/> が <c>null</c>。</exception>
+    public BoundaryCrossingResult CalculateBoundaryCrossing(
+        VehicleProfile profile,
+        GeoCoordinate from,
+        GeoCoordinate to,
+        MapBounds bounds,
+        float searchDistanceM = 500f)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        if (!BoundaryCrossingCalculator.IsValidBounds(bounds))
+        {
+            return BoundaryCrossingResult.Status(BoundaryCrossingKind.InvalidParameter);
+        }
+
+        var route = Calculate(profile, from, to, searchDistanceM);
+        if (route is null)
+        {
+            return BoundaryCrossingResult.Status(BoundaryCrossingKind.RouteSearchError);
+        }
+
+        return BoundaryCrossingCalculator.Compute(route, from, to, bounds);
+    }
+
+    /// <summary>
+    /// 計算済みの経路に対して、矩形範囲 R の境界との交点判定のみを行う（REQ-RTE-013、Ver. 1.3.0）。
+    /// 経路を再計算せずに判定したい場合に使う。
+    /// </summary>
+    /// <param name="route"><paramref name="from"/> から <paramref name="to"/> へ計算済みの経路</param>
+    /// <param name="from">起点 A（<paramref name="route"/> の計算に用いた生の座標）</param>
+    /// <param name="to">終点 B（同上）</param>
+    /// <param name="bounds">矩形範囲 R</param>
+    /// <returns>判定結果（<c>null</c> は返さない）</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="route"/> が <c>null</c>。</exception>
+    public static BoundaryCrossingResult FindBoundaryCrossing(
+        Route route, GeoCoordinate from, GeoCoordinate to, MapBounds bounds)
+    {
+        ArgumentNullException.ThrowIfNull(route);
+        return BoundaryCrossingCalculator.Compute(route, from, to, bounds);
     }
 
     /// <summary>

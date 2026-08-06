@@ -117,6 +117,10 @@
 - [x] [P2] [Phase1] **REQ-RTE-007**: 経路計算結果に総距離（メートル）・総所要時間（秒）・経路形状（緯度経度列）を含めること。(Ver. 0.18)
 - [x] [P2] [Phase1] **REQ-RTE-008**: 道路ネットワーク外の座標を起点／終点に指定した場合、`null` を返し例外を投げないこと。(Ver. 0.18)
 - [ ] [P3] [Phase4+] **REQ-RTE-009**: 双方向 Dijkstra 等の高速化アルゴリズムを導入し、性能要件未達時の対策とすること。(Ver. -)
+- [x] [P1] [Phase4] **REQ-RTE-010**: 指定プロファイルで 2 点間の経路を計算し、矩形範囲 R（北西端・南東端で指定可能）の境界とルートの交点、および交点から範囲外側の端点までのルート上距離を返す API を提供すること。範囲 R は読み込み済み地図の内側の任意の矩形でよい。判定結果は「両端が範囲内」「両端が範囲外」「起点 A が範囲外」「終点 B が範囲外」の 4 種を列挙値で返し、交点・距離は後 2 者のときのみ非 `null` とする。内外判定は利用者が指定した生の座標で行い、境界線上は範囲内扱いとする。(Ver. 1.3.0)
+- [x] [P1] [Phase4] **REQ-RTE-011**: REQ-RTE-010 において、ルートが範囲境界を複数回またぐ場合は**範囲内側の端点に近い側の交点**を返すこと。返す距離・所要時間はその交点から範囲外側の端点までのルート上の値とし、途中で範囲内に戻る区間もこれに含めること。交点座標は Shape 線分と矩形辺の厳密な交点を線形補間で求め（最寄り Shape 頂点で代用しない）、距離は Shape 頂点列の Haversine 積算とすること（`Route.TotalDistanceM` による按分スケーリングは行わない）。(Ver. 1.3.0)
+- [x] [P2] [Phase4] **REQ-RTE-012**: REQ-RTE-010 において、交点から範囲外側の端点までのルート上所要時間（秒）も併せて返すこと（`Route.CumulativeDurationsSec` を交点位置で線形補間）。また異常系は例外・`null` ではなく列挙値で報告すること: 経路未発見・スナップ失敗、および端点の内外判定とルート形状が矛盾する場合（両端が範囲内なのにルートが範囲外へ出る／両端が範囲外なのにルートが範囲内を通る／範囲内と判定した端点のスナップ先が範囲外）は「ルート探査エラー」、範囲 R の南北・東西逆転／面積ゼロ／非有限値／緯度経度定義域外は「パラメータ異常」とすること。(Ver. 1.3.0)
+- [x] [P2] [Phase4] **REQ-RTE-013**: REQ-RTE-010 の判定を、計算済みの `Route` に対して経路再計算なしで実行できる純幾何 API も併せて提供すること。(Ver. 1.3.0)
 
 ### 5.2 動的制約管理 (REQ-RST)
 
@@ -315,6 +319,40 @@ namespace OsmDotRoute
         public Route? Calculate(VehicleProfile profile, GeoCoordinate from, GeoCoordinate to);
         public GeoCoordinate? SnapToRoad(VehicleProfile profile, GeoCoordinate point, float searchDistanceM = 500f);
         public RoadNetworkGeoJson GetRoadNetworkGeoJson();
+
+        // 範囲境界との交点判定（REQ-RTE-010〜013 で追加）。null は返さず、異常系も Kind で報告する。
+        public BoundaryCrossingResult CalculateBoundaryCrossing(
+            VehicleProfile profile, GeoCoordinate from, GeoCoordinate to,
+            MapBounds bounds, float searchDistanceM = 500f);
+
+        // 計算済み Route に対する純幾何版（REQ-RTE-013）。
+        public static BoundaryCrossingResult FindBoundaryCrossing(
+            Route route, GeoCoordinate from, GeoCoordinate to, MapBounds bounds);
+    }
+
+    // 範囲境界との交点判定結果（REQ-RTE-010〜012）
+    public enum BoundaryCrossingKind
+    {
+        BothInside,        // 範囲内
+        BothOutside,       // 範囲外
+        PointAOutside,     // A（起点が範囲外）
+        PointBOutside,     // B（終点が範囲外）
+        RouteSearchError,  // ルート探査エラー
+        InvalidParameter,  // パラメータ異常
+    }
+
+    public sealed record BoundaryCrossingResult(
+        BoundaryCrossingKind Kind,
+        GeoCoordinate? Crossing,              // PointAOutside / PointBOutside のときのみ非 null
+        double? DistanceToOutsidePointM,      //  〃
+        double? DurationToOutsidePointSec);   //  〃
+
+    public readonly record struct MapBounds(GeoCoordinate SouthWest, GeoCoordinate NorthEast)
+    {
+        public bool Contains(GeoCoordinate coordinate);   // 境界線上を含む
+
+        // 北西端・南東端からの生成（REQ-RTE-010 で追加）
+        public static MapBounds FromNorthWestSouthEast(GeoCoordinate northWest, GeoCoordinate southEast);
     }
 
     public sealed class RouterDb : IDisposable    // IDisposable は REQ-MAP-010 で追加
@@ -568,7 +606,7 @@ namespace OsmDotRoute
 **スコープ（2026-06-02 ユーザー決定で 2 項目に限定、2026-06-09 親プロFB 追補で 1 項目追加）**:
 - **プロファイル追加**: REQ-PRF-005〜006（emergency / disaster）＋ユーザー定義プロファイル拡充
 - **マルチプラットフォーム対応**: REQ-NFR-007（Linux / macOS）の検証本格化【完了 2026-06-03、Windows/Linux/macOS で 753 pass】。REQ-NFR-008（.NET バージョン横断）は本スコープ外で Phase 4+ 継続
-- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec、Ver 1.1.0）/ REQ-PRF-014 改訂・REQ-PRF-017 追加（難所タイプ照合 case-insensitive 化＋観測性 API、Ver 1.1.1）/ REQ-RST-016 仕様確定・REQ-RST-041 追加（1/8 細分メッシュ 125m・11 桁対応＋GmlParser フィーチャ属性公開、Ver 1.2.0）/ REQ-MAP-010 追加（RouterDb の IDisposable 実装＝リソース確定解放、Ver 1.2.1、[`feature_request_routerdb_dispose.md`](feature_request_routerdb_dispose.md)）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（[`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)）、その検証中に発覚した不具合報告、KSJ ハザードデータ取り込み計画の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）を取り込み
+- **親プロFB 追補**: REQ-FMT-006（Route.CumulativeDurationsSec、Ver 1.1.0）/ REQ-PRF-014 改訂・REQ-PRF-017 追加（難所タイプ照合 case-insensitive 化＋観測性 API、Ver 1.1.1）/ REQ-RST-016 仕様確定・REQ-RST-041 追加（1/8 細分メッシュ 125m・11 桁対応＋GmlParser フィーチャ属性公開、Ver 1.2.0）/ REQ-MAP-010 追加（RouterDb の IDisposable 実装＝リソース確定解放、Ver 1.2.1、[`feature_request_routerdb_dispose.md`](feature_request_routerdb_dispose.md)）/ REQ-RTE-010〜013 追加（範囲境界との交点・交点からの距離／所要時間算出 API、Ver 1.3.0）。親プロジェクト「災害廃棄物処理シミュレーション」からの区間別速度低下アニメーション要望（[`feature_request_per_segment_durations.md`](feature_request_per_segment_durations.md)）、その検証中に発覚した不具合報告、KSJ ハザードデータ取り込み計画の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）を取り込み
 
 ### Phase 4 以降（将来検討）
 
@@ -648,6 +686,7 @@ namespace OsmDotRoute
 
 | 版 | 日付 | 内容 | 担当 |
 |---|---|---|---|
+| （採番待ち） | 2026-08-07 | **REQ-RTE-010〜013 追加（範囲境界との交点・距離算出 API、Ver 1.3.0）**。災害シミュレーションの「対象範囲の外にある搬出先まで、範囲境界からどれだけ走るか」を求める用途に対応。`Router.CalculateBoundaryCrossing(profile, from, to, bounds, searchDistanceM)`（探索込み）と `Router.FindBoundaryCrossing(route, from, to, bounds)`（計算済み Route への純幾何版、REQ-RTE-013）を追加、結果は `BoundaryCrossingResult`（`BoundaryCrossingKind` + 交点 + 距離 + 所要秒）で返す。仕様確定事項: ①範囲 R は北西端・南東端指定を `MapBounds.FromNorthWestSouthEast` で受け、地図内側の任意の矩形でよい ②多重交差時は**範囲内側の端点に近い側の交点**を採り、距離は途中で範囲内に戻る区間も含む ③内外判定は生の座標（境界線上は範囲内） ④交点は矩形辺との厳密な線形補間、距離は Shape 頂点列の Haversine 積算、所要秒は `CumulativeDurationsSec` の t 補間 ⑤異常系は例外・`null` ではなく `RouteSearchError` / `InvalidParameter` の列挙値で報告（端点判定とルート形状の矛盾も `RouteSearchError`）。新規テスト 28 件（純幾何 21 + 実データ 7）、全 830 pass（v1.2.1 末の 802 から +28、回帰ゼロ）。バージョン 1.3.0（マイナー採番、公開 API 追加のみ、ユーザー指定） | Claude (Opus 5) |
 | （採番待ち） | 2026-06-12 | **REQ-MAP-010 追加（RouterDb の IDisposable 実装、親プロFB 対応）**。親プロジェクトの「既存シナリオの道路データ再生成 → 上書き保存」が、ファイル版 `LoadFromOdrg` の MMF ハンドル残留ロックにより必ず IOException で失敗する実バグ（P1）への対応要望（[`feature_request_routerdb_dispose.md`](feature_request_routerdb_dispose.md)）を受領。`RouterDb : IDisposable` を実装（`Dispose() => _graph.Dispose()` の委譲のみ、`OdrgMmfHandle.Dispose` が MMF/ViewAccessor・ピン留めバッファを冪等解放）。受け入れ基準 5 項目（①Dispose 後の File.Delete/Copy 成功 ②冪等性 ③Dispose 後使用は ObjectDisposedException ④メモリ版も解放 ⑤非破壊）を検証するテスト 9 件追加、全 802 pass（v1.2.0 末の 793 から +9、回帰ゼロ）。§7.1 API スケッチ更新。バージョン 1.2.1（パッチ採番、ユーザー指定） | Claude (Fable 5) |
 | （採番待ち） | 2026-06-11 | **REQ-RST-016 仕様確定（1/8 細分メッシュ）+ REQ-RST-041 追加（GmlParser フィーチャ属性公開）（Ver 1.2.0、親プロFB 追補）**。親プロジェクトの KSJ ハザードデータ取り込み計画（A31a/A31b/A33/A51/A53 → 125m メッシュラスタライズ → `AddBlockArea/AddDifficultyArea` 登録）の前提要望（[`feature_request_mesh_level8_and_gml_attributes.md`](feature_request_mesh_level8_and_gml_attributes.md)）に対応。①REQ-RST-016: 11 桁目 = 象限 1〜4 の「1/8 細分（125m）」を正式仕様として確定（v1.4 で延期した「1/10 細分 = 100m」は既存 1/4 細分と桁数衝突するため象限方式に読み替え）。`MeshLevel.EighthMesh` 追加、`MeshCode.Level` / `ToBounds` / `EnumerateInBounds` / `RestrictedAreaService.AddBlockArea/AddDifficultyArea(IEnumerable<MeshCode>)` が 11 桁を 8〜10 桁と同等に処理（既存 API シグネチャ変更なし、`MeshCodeConverter` の細分処理を象限再帰ループに一般化）。②REQ-RST-041: `GmlParser` を公開化し `ParseFeaturesString/Stream` → `IReadOnlyList<GmlFeature>`（形状＋属性 Dictionary）を追加。A51（GML のみ提供）の浸水深ランク等に基づく制約レベル振り分けを利用者側で可能に。既存 `ParseString/ParseStream` / `Add*FromGml*` は挙動不変。全 793 pass（v1.1.1 末の 777 から +16、回帰ゼロ）。Sandbox のメッシュグリッド表示にも 125m 階層を追加（Server / WASM / Web UI）。バージョン 1.2.0（マイナー採番、公開 API 追加のみ） | Claude (Fable 5) |
 | （採番待ち） | 2026-06-09 | **REQ-PRF-014 改訂 + REQ-PRF-017 追加（Ver 1.1.1、親プロFB 不具合修正）**。親プロジェクト（v1.1.0 アニメ目視検証中）から「難所タイプ照合が case-sensitive のため `"Flooding"` 等の表記揺れで速度低下がサイレントに無効化される」不具合報告を受領（[`debug_flooding_x10_for_animation_verification.md`](debug_flooding_x10_for_animation_verification.md) 経由の往復で発覚）。`ProfileEvaluator.EvaluateDifficulty` の照合を Ordinal-IgnoreCase 化（REQ-PRF-014 改訂）、case-only 重複キーを `InvalidProfileException` で拒否、観測性 API `VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` を新規追加（REQ-PRF-017）。`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` の XML doc に「サイレント・フォールバック」挙動を明記。全 777 pass（v1.1.0 末の 761 から +16、回帰ゼロ）。バージョン 1.1.1（パッチ採番） | Claude (Opus 4.7) |

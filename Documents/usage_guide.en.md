@@ -281,6 +281,69 @@ RouterDbStatistics stats = routerDb.GetStatistics();
 IReadOnlyList<string> names = routerDb.GetProfileNames();
 ```
 
+### Boundary crossing point and distance (v1.3.0+)
+
+This API answers "how far do I drive from the boundary of the simulated area to a destination
+outside it?". It returns the intersection of the route with a rectangular area R, plus the
+**along-route distance and duration from that intersection to the endpoint outside R**.
+
+```csharp
+// Area R (when specified by north-west / south-east corners)
+var bounds = MapBounds.FromNorthWestSouthEast(
+    northWest: new GeoCoordinate(35.10, 136.70),
+    southEast: new GeoCoordinate(35.00, 136.80));
+// You can also construct it directly from south-west / north-east corners
+// var bounds = new MapBounds(new GeoCoordinate(35.00, 136.70), new GeoCoordinate(35.10, 136.80));
+
+var result = router.CalculateBoundaryCrossing(VehicleProfile.Car, from, to, bounds);
+
+switch (result.Kind)
+{
+    case BoundaryCrossingKind.BothInside:      // both endpoints inside R
+    case BoundaryCrossingKind.BothOutside:     // both endpoints outside R
+        break;
+
+    case BoundaryCrossingKind.PointAOutside:   // origin A is outside R
+    case BoundaryCrossingKind.PointBOutside:   // destination B is outside R
+        GeoCoordinate crossing = result.Crossing!.Value;              // boundary intersection
+        double distanceM = result.DistanceToOutsidePointM!.Value;     // crossing -> outside endpoint
+        double durationSec = result.DurationToOutsidePointSec!.Value;
+        break;
+
+    case BoundaryCrossingKind.RouteSearchError:  // route not found, snapping failed, etc.
+    case BoundaryCrossingKind.InvalidParameter:  // area R is invalid
+        break;
+}
+```
+
+Key points:
+
+- **R may be any rectangle inside the loaded map.** If you make R identical to the map extent,
+  the endpoint outside R cannot be snapped and you get `RouteSearchError`.
+- **Inside/outside is judged on the raw coordinates you pass in** (not the snapped ones).
+  Points exactly on the boundary count as inside.
+- If the route crosses the boundary several times, the intersection **closest to the endpoint
+  inside R** is returned. The distance and duration run from that intersection to the outside
+  endpoint and **include any stretch that re-enters R**.
+- The intersection is the exact linear-interpolated crossing of a shape segment with a rectangle
+  edge; it is not necessarily a shape vertex.
+- Distance is the Haversine sum over shape vertices. Duration is interpolated from
+  `Route.CumulativeDurationsSec`, so speed reductions from difficulty areas are reflected.
+- **Neither exceptions nor `null` are returned.** Failures are reported through `Kind`
+  (only a `null` `profile` throws `ArgumentNullException`). `RouteSearchError` also covers
+  contradictions between the endpoint classification and the route shape, e.g. both endpoints
+  inside R but the route bulging outside, or both outside but the route passing through R.
+
+If you already have a computed route, a static method performs the check without re-routing:
+
+```csharp
+Route? route = router.Calculate(VehicleProfile.Car, from, to);
+if (route is not null)
+{
+    var result = Router.FindBoundaryCrossing(route, from, to, bounds);
+}
+```
+
 ### Adding dynamic restrictions
 
 If you pass a `RestrictedAreaService` to `Router`, registered no-entry / difficulty areas are

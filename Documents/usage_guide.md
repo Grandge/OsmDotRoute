@@ -273,6 +273,64 @@ RouterDbStatistics stats = routerDb.GetStatistics();
 IReadOnlyList<string> names = routerDb.GetProfileNames();
 ```
 
+### 範囲境界との交点と距離を求める（v1.3.0〜）
+
+「シミュレーション対象範囲の外にある目的地まで、範囲の境界からどれだけ走るか」を求める API。
+矩形範囲 R とルートの交点、および**交点から範囲外側の端点までのルート上距離・所要時間**を返す。
+
+```csharp
+// 範囲 R（北西端・南東端で指定する場合）
+var bounds = MapBounds.FromNorthWestSouthEast(
+    northWest: new GeoCoordinate(35.10, 136.70),
+    southEast: new GeoCoordinate(35.00, 136.80));
+// 南西端・北東端で直接指定してもよい
+// var bounds = new MapBounds(new GeoCoordinate(35.00, 136.70), new GeoCoordinate(35.10, 136.80));
+
+var result = router.CalculateBoundaryCrossing(VehicleProfile.Car, from, to, bounds);
+
+switch (result.Kind)
+{
+    case BoundaryCrossingKind.BothInside:      // 起点・終点とも範囲内
+    case BoundaryCrossingKind.BothOutside:     // 起点・終点とも範囲外
+        break;
+
+    case BoundaryCrossingKind.PointAOutside:   // 起点 A が範囲外
+    case BoundaryCrossingKind.PointBOutside:   // 終点 B が範囲外
+        GeoCoordinate crossing = result.Crossing!.Value;              // 境界との交点
+        double distanceM = result.DistanceToOutsidePointM!.Value;     // 交点→範囲外側の端点
+        double durationSec = result.DurationToOutsidePointSec!.Value;
+        break;
+
+    case BoundaryCrossingKind.RouteSearchError:  // 経路未発見・スナップ失敗など
+    case BoundaryCrossingKind.InvalidParameter:  // 範囲 R が不正
+        break;
+}
+```
+
+仕様のポイント:
+
+- **範囲 R は地図の内側の任意の矩形**でよい。ただし R を地図範囲そのものにすると、範囲外の端点は
+  スナップできず `RouteSearchError` になる。
+- **内外判定は指定した生の座標**で行う（スナップ後座標ではない）。境界線上は範囲内扱い。
+- ルートが境界を**複数回またぐ場合は、範囲内側の端点に近い側の交点**を返す。距離・所要時間は
+  その交点から範囲外側の端点までのルート上の値で、**途中で範囲内に戻る区間も含む**。
+- 交点は Shape の線分と矩形辺の厳密な交点（線形補間）で、Shape 頂点とは限らない。
+- 距離は Shape 頂点列の Haversine 積算。所要時間は `Route.CumulativeDurationsSec` の補間なので、
+  難所エリアによる速度低下も反映される。
+- **例外も `null` も返さない**。異常系は `Kind` で報告する（`profile` が `null` の場合のみ
+  `ArgumentNullException`）。`RouteSearchError` には「両端が範囲内なのにルートが範囲外へ膨らむ」
+  「両端が範囲外なのにルートが範囲内を通る」といった端点判定とルート形状の矛盾も含まれる。
+
+すでに経路を計算済みなら、再探索せずに判定だけ行う静的メソッドも使える:
+
+```csharp
+Route? route = router.Calculate(VehicleProfile.Car, from, to);
+if (route is not null)
+{
+    var result = Router.FindBoundaryCrossing(route, from, to, bounds);
+}
+```
+
 ### 動的制約を加える
 
 `RestrictedAreaService` を `Router` に渡すと、登録した進入不可／難所エリアが

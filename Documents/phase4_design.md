@@ -3,7 +3,7 @@
 **バージョン**: ユーザー採番（Ver 1.1.0 = 親プロFB 追補ぶん、Ver 1.1.1 = 親プロFB 不具合修正ぶん、Ver 1.2.1 = RouterDb IDisposable ぶん）
 **作成日**: 2026-06-03
 **最終更新**: 2026-06-12（親プロFB 追補 §6 = RouterDb IDisposable 追加）
-**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。**親プロFB 追補（REQ-FMT-006 = Route.CumulativeDurationsSec）完了**（2026-06-09、Ver 1.1.0、全 761 pass）。**親プロFB 不具合修正（REQ-PRF-014 改訂 + REQ-PRF-017 = 難所タイプ case-insensitive 化＋観測性 API）完了**（2026-06-09、Ver 1.1.1、全 777 pass）。**親プロFB 追補（REQ-MAP-010 = RouterDb IDisposable）完了**（2026-06-12、Ver 1.2.1、全 802 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
+**ステータス**: プロファイル追加（救急車 / 消防車 / 災害用車両 ＋ Extractor 外部 JSON プロファイル対応）完了。**マルチプラットフォーム対応も完了**（2026-06-03、macOS ARM64 / Linux x64 で 753 pass）。**親プロFB 追補（REQ-FMT-006 = Route.CumulativeDurationsSec）完了**（2026-06-09、Ver 1.1.0、全 761 pass）。**親プロFB 不具合修正（REQ-PRF-014 改訂 + REQ-PRF-017 = 難所タイプ case-insensitive 化＋観測性 API）完了**（2026-06-09、Ver 1.1.1、全 777 pass）。**親プロFB 追補（REQ-MAP-010 = RouterDb IDisposable）完了**（2026-06-12、Ver 1.2.1、全 802 pass）。**追補（REQ-RTE-010〜013 = 範囲境界との交点・距離算出 API）完了**（2026-08-07、Ver 1.3.0、全 830 pass）。マルチプラットフォーム対応の計画・設計記録は別書 [phase4_multiplatform_plan.md](phase4_multiplatform_plan.md) で扱う
 **対象**: OsmDotRoute Phase 4 のうち**プロファイル追加**と**親プロFB 追補**の設計記録（REQ-PRF-005 = 救急車 `ambulance` / 消防車 `fire_engine`、REQ-PRF-006 = 災害用車両 `disaster`、＋ユーザー定義プロファイルの bake 経路拡張、REQ-FMT-006 = Route 区間別累積所要秒、REQ-PRF-014 改訂 / REQ-PRF-017 = 難所タイプ照合 case-insensitive 化＋観測性 API）
 **関連ドキュメント**:
 
@@ -38,7 +38,8 @@ Phase 4 のスコープは 2026-06-02 ユーザー決定で **(1) プロファ�
 | 4. 親プロFB 不具合修正: 難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017 追加） | 単発 Step | **肉付け完了**（2026-06-09、Ver 1.1.1） |
 | 5. 親プロFB 追補: 1/8 細分メッシュ（125m）＋ GmlParser フィーチャ属性公開（REQ-RST-016 仕様確定 / REQ-RST-041） | 単発 Step | **肉付け完了**（2026-06-11、Ver 1.2.0） |
 | 6. 親プロFB 追補: RouterDb のリソース確定解放（REQ-MAP-010） | 単発 Step | **肉付け完了**（2026-06-12、Ver 1.2.1） |
-| 7. 改訂履歴 | 各ステップ完了時 | 初版 |
+| 7. 追補: 範囲境界との交点・距離算出 API（REQ-RTE-010〜013） | 単発 Step | **肉付け完了**（2026-08-07、Ver 1.3.0） |
+| 8. 改訂履歴 | 各ステップ完了時 | 初版 |
 
 > Step 5（利用者向け解説ドキュメント）/ Step 6（設計書・要件反映）は成果物が本書および [profile_guide.md](profile_guide.md) / [requirement_definition.md](requirement_definition.md) 自体であり、§2 にその位置付けを記す。
 
@@ -540,10 +541,71 @@ public static class GmlParser   // internal → public
 
 ---
 
-## 7. 改訂履歴
+## 7. 追補: 範囲境界との交点・距離算出 API（REQ-RTE-010〜013）
+
+### 7.1 意図
+
+災害シミュレーションで「シミュレーション対象範囲の外にある搬出先まで、範囲境界からどれだけ走るか」を求める用途（ユーザー確認済み）。地点 A・B 間の経路を計算し、矩形範囲 R の境界との交点と、交点から範囲外側の端点までのルート上距離・所要時間を返す。
+
+### 7.2 採用設計
+
+公開面は `Router` の 2 メソッド、算出本体は internal な純関数（[BoundaryCrossingCalculator.cs](../src/OsmDotRoute/Geometry/BoundaryCrossingCalculator.cs)）に分離。
+
+- `Router.CalculateBoundaryCrossing(profile, from, to, bounds, searchDistanceM)` — 既存 `Calculate` を呼んでから判定（REQ-RTE-010〜012）
+- `Router.FindBoundaryCrossing(route, from, to, bounds)` — 計算済み `Route` に対する static な純幾何版（REQ-RTE-013）
+- `MapBounds.FromNorthWestSouthEast(northWest, southEast)` — 要望どおり北西端・南東端で受け、内部表現（南西端・北東端）へ正規化
+- 戻り値は `BoundaryCrossingResult`（`BoundaryCrossingKind` + `Crossing` + `DistanceToOutsidePointM` + `DurationToOutsidePointSec`）。後 3 者は `PointAOutside` / `PointBOutside` のときのみ非 `null`
+
+判定手順:
+
+1. 範囲 R と端点の妥当性検査 → 不正なら `InvalidParameter`
+2. 内外判定は**生の座標**（`MapBounds.Contains`、境界線上は範囲内）
+3. 両端が範囲内 → 全 Shape 頂点が範囲内であることを確認して `BothInside`（矩形は凸なので頂点判定で厳密）
+4. 両端が範囲外 → 全 Shape 線分が矩形と交差しないことを Liang-Barsky で確認して `BothOutside`（外側は非凸なので頂点判定では不十分）
+5. 片側のみ範囲外 → 範囲内側の端点から Shape を辿り、最初に範囲外へ出る線分で交点を線形補間
+
+### 7.3 設計判断の根拠
+
+| 論点 | 採用 | 根拠 |
+| --- | --- | --- |
+| 多重交差時の交点選択 | **範囲内側の端点に近い側**（最初の退出点） | ユーザー確定（Q A-4）。距離は途中で範囲内に戻る区間も含む |
+| 交点の算出空間 | **度空間での線形補間** | 矩形辺は緯線・経線に平行なため、媒介変数 t は緯度補正コサインを掛けた局所平面での t と厳密に一致（分子・分母が同一定数倍）。cos 補正は不要 |
+| 距離の定義 | **Shape 頂点列の Haversine 積算** | 幾何的に一貫。`TotalDistanceM`（エッジ長合計）との按分スケーリングはしない（ユーザー確定 Q C-2） |
+| 所要時間の算出 | **`CumulativeDurationsSec` の t 線形補間** | 線分内は速度一定のため厳密。難所エリアの速度低下も反映される |
+| 内外判定の基準座標 | **生の座標**（スナップ後ではない） | ユーザー確定（Q A-6）。利用者の意図に沿う |
+| 端点判定とルート形状の矛盾 | **`RouteSearchError`** | ユーザー確定（Q A-5）。両端範囲内なのに膨らむ／両端範囲外なのに通過する／範囲内端点のスナップ先が範囲外、の 3 ケース |
+| 異常系の返し方 | **例外・`null` を使わず列挙値** | ユーザー確定（Q B-4）。ただし引数 `null`（profile / route）のみ既存 API と揃えて `ArgumentNullException` |
+| 算出本体の置き場所 | **`Geometry` 名前空間の internal static クラス** | `Router` を薄く保つ。純関数なので合成 `Route` で単体テスト可能（REQ-API-003 の内部型非露出とも整合） |
+
+### 7.4 トレードオフ・制約
+
+- **加算的・非破壊**: 既存 API の挙動・シグネチャは一切変更なし
+- **範囲 R は地図範囲と独立**: 地図データ内側の任意の矩形でよい。逆に R が地図範囲そのものだと範囲外端点はスナップ不能で `RouteSearchError` になる（利用側は R を地図より内側に取る必要がある）
+- **境界に接するだけのルート**: 両端が範囲外で、ルートが境界に接触のみする場合も「範囲内を通る」と扱い `RouteSearchError`。`Contains` が境界を含む仕様との一貫性を優先
+- **距離の基準点**: 「範囲外側の端点」はルート終端（＝スナップ後座標）であり、利用者が指定した生の座標そのものではない。道路外の指定点までの直線分は含まれない
+
+### 7.5 検証方法
+
+新規テスト 28 件、全 830 pass（v1.2.1 末の 802 から +28、回帰ゼロ）。
+
+| 観点 | テスト |
+| --- | --- |
+| 4 種別の基本判定 | [BoundaryCrossingTests.cs](../tests/OsmDotRoute.Tests/BoundaryCrossingTests.cs) の `BothEndpointsInside_…` / `BothEndpointsOutside_RouteStaysOutside_…` / `PointBOutside_…` / `PointAOutside_…` |
+| 多重交差時の交点選択と距離 | `MultipleCrossings_ReturnsCrossingNearestToInsidePoint`（範囲内に戻る区間を含むことも検証） |
+| 交点の厳密補間 | `CrossingIsInterpolated_NotSnappedToNearestShapeVertex` / 交点座標の 9 桁一致 |
+| 所要時間の t 補間 | `DurationFollowsCumulativeDurations_NotUniformSpeed`（非線形な累積秒を与えて検証） |
+| 形状矛盾 → `RouteSearchError` | `BothEndpointsInside_RouteBulgesOutside_…` / `BothEndpointsOutside_RoutePassesThroughBounds_…`（Liang-Barsky が必要なケース）/ `SnappedStartOutsideBounds_…` / `DegenerateShape_…` |
+| `InvalidParameter` | `InvalidBounds_…`（逆転・面積ゼロ・NaN・定義域外の 6 パターン）/ `NonFiniteEndpoint_…` |
+| 境界線上の扱い | `EndpointOnBoundaryLine_IsTreatedAsInside` |
+| 実データ（津島 .odrg） | [BoundaryCrossingIntegrationTests.cs](../tests/OsmDotRoute.Tests/BoundaryCrossingIntegrationTests.cs) 7 件（交点が矩形辺上にあること・2 API の結果一致・探索失敗時の `RouteSearchError` 等） |
+
+---
+
+## 8. 改訂履歴
 
 | Ver | 日付 | 変更 |
 | --- | --- | --- |
+| 追補 | 2026-08-07 | §7「範囲境界との交点・距離算出 API（REQ-RTE-010〜013）」を追加。`Router.CalculateBoundaryCrossing` / `Router.FindBoundaryCrossing` / `MapBounds.FromNorthWestSouthEast` / `BoundaryCrossingKind` / `BoundaryCrossingResult` を新設、算出本体は `Geometry.BoundaryCrossingCalculator`（internal 純関数）。多重交差時は範囲内側に近い交点を採用、異常系は列挙値で報告。新規テスト 28 件、全 830 pass（回帰ゼロ）。Ver 1.3.0 マイナー採番（ユーザー指定） |
 | 親プロFB 追補 | 2026-06-12 | §6「RouterDb のリソース確定解放（REQ-MAP-010）」を追加。`RouterDb : IDisposable`（`_graph.Dispose()` 委譲のみ）でファイル版 MMF ハンドル / メモリ版ピン留めバッファを確定解放可能に。親プロの「シナリオ上書き保存が IOException」実バグ（P1）対応。新規テスト 9 件、全 802 pass（回帰ゼロ）。Ver 1.2.1 パッチ採番（ユーザー指定） |
 | 親プロFB 追補 | 2026-06-11 | §5「1/8 細分メッシュ（125m）＋ GmlParser フィーチャ属性公開（REQ-RST-016 仕様確定 / REQ-RST-041）」を追加。`MeshLevel.EighthMesh`（11 桁・象限方式）、`MeshCodeConverter` の細分処理ループ一般化、`GmlParser` 公開化＋`ParseFeaturesString/Stream`（`GmlFeature` = 形状＋属性 Dictionary）、Sandbox メッシュグリッドの 125m 階層追加（Server / WASM / Web UI）。新規テスト 16 件、全 793 pass（回帰ゼロ）。Ver 1.2.0 マイナー採番 |
 | 親プロFB 不具合修正 | 2026-06-09 | §4「難所タイプ照合 case-insensitive 化（REQ-PRF-014 改訂 / REQ-PRF-017）」を追加。親プロ側不具合報告（v1.1.0 アニメ目視検証中に発覚した `"Flooding"` PascalCase でのサイレント・フォールバック）を受けて、`ProfileEvaluator` の照合経路を `Ordinal-IgnoreCase` 化、case-only 重複キー検出、`VehicleProfile.KnownDifficultyTypes` / `HasDifficulty(string)` 観測性 API を追加。XML doc 4 箇所（`DifficultyTypes` / `RestrictedAreaService` / `Route.CumulativeDurationsSec` / `EvaluateDifficulty`）でサイレント・フォールバック挙動を明記。新規テスト 16 件、全 777 pass（回帰ゼロ）。Ver 1.1.1 パッチ採番 |
