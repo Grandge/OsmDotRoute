@@ -9,6 +9,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # push トリガが起動しなかった場合に手動で回せるようにする（mirror.yml と同様）。
+  workflow_dispatch:
 
 jobs:
   build-test:
