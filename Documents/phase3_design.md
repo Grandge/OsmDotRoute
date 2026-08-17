@@ -357,6 +357,8 @@ EdgeWeightCalculator.EvaluateConstraintFactor(edgeId, from, to, middleShape)
 | `RestrictedAreaEdgeCache.IsBlocked(uint)` | ホットパス API、HashSet 1 発 |
 | `RestrictedAreaEdgeCache.GetDifficultyAreas(uint)` | ホットパス API、Dictionary 1 発、該当なし時 `Array.Empty<>()` |
 
+**【v1.3.1 修正】`AddDifficulty` の重複ガード**: bake は 1 エリアの Shape ごとに `QueryEdgesByAabb` → 交差判定 → `AddDifficulty` を呼ぶため、複数 Shape（メッシュ集合・分割ポリゴン）を持つエリアでは同一 `(areaId, edgeId)` が Shape 数だけ到来する。v1.3.0 までは `_difficultyAreasByEdge` の `List` に無条件 `Add` していたため、ホットパスが同じ `DifficultyArea` を N 回掛け合わせ `speedFactor^N` になっていた（`_difficultyByArea` は `HashSet` なので重複せず、`RemoveArea` 側は無害）。修正は `_difficultyByArea` 側 `HashSet.Add` の戻り値で早期 return するのみ。これにより bake 経路の意味論が、ID 単位に重複排除するフォールバック経路（`RestrictedAreaService.EvaluateConstraints` の `seenIds`）と一致する（REQ-RST-030 改訂、親プロFB [`bug_request_difficulty_factor_per_shape.md`](bug_request_difficulty_factor_per_shape.md)）。異なるエリア間の積（冠水×積雪など）は従来どおり。
+
 ### 4.3 設計判断の根拠
 
 3B 期間中に着手前事前調査でユーザー確認した設計判断は以下のとおり（コア設計 Q1〜Q4、効果測定 Q5〜Q7、サブステップ詳細 T1〜T16）：

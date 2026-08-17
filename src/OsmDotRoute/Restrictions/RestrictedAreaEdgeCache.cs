@@ -61,7 +61,9 @@ internal sealed class RestrictedAreaEdgeCache
             set = new HashSet<uint>();
             _difficultyByArea[areaId] = set;
         }
-        set.Add(edgeId);
+        // 同一エリアの別 Shape で既に登録済みのエッジは二重に積まない（REQ-RST-014）。
+        // speedFactor は「エリア単位で 1 回」効く（EvaluateConstraints の seenIds と同セマンティクス）。
+        if (!set.Add(edgeId)) return;
 
         if (!_difficultyAreasByEdge.TryGetValue(edgeId, out var list))
         {

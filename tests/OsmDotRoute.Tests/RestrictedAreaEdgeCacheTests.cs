@@ -67,6 +67,36 @@ public class RestrictedAreaEdgeCacheTests
     }
 
     [Fact]
+    public void AddDifficulty_SameAreaSameEdgeTwice_StoredOnce()
+    {
+        // 親プロFB 回帰: 1 エリアが複数 Shape を持つと bake が同一 (areaId, edgeId) を N 回呼ぶ。
+        // speedFactor はエリア単位で 1 回だけ効くべきなので、List に積むのは初回のみ。
+        var cache = new RestrictedAreaEdgeCache();
+        var id1 = RestrictedAreaId.New();
+        var area = new DifficultyArea(id1, new MeshCode(53394611L), "surface_damage");
+
+        cache.AddDifficulty(id1, area, 100);
+        cache.AddDifficulty(id1, area, 100);
+        cache.AddDifficulty(id1, area, 100);
+
+        Assert.Single(cache.GetDifficultyAreas(100));
+    }
+
+    [Fact]
+    public void RemoveArea_AfterDuplicateAddDifficulty_FullyRemoved()
+    {
+        var cache = new RestrictedAreaEdgeCache();
+        var id1 = RestrictedAreaId.New();
+        var area = new DifficultyArea(id1, new MeshCode(53394611L), "surface_damage");
+
+        cache.AddDifficulty(id1, area, 100);
+        cache.AddDifficulty(id1, area, 100);
+
+        cache.RemoveArea(id1);
+        Assert.Empty(cache.GetDifficultyAreas(100));
+    }
+
+    [Fact]
     public void RemoveArea_BlockedNotInOtherArea_RemovedFromBlockedEdges()
     {
         var cache = new RestrictedAreaEdgeCache();
