@@ -26,9 +26,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
-      # MapVerifier.FilePicker は net9.0-windows のためソリューション全体ビルドは避け、
+      # ソリューションには wasm-tools ワークロードが必要な Sandbox.Wasm を含むため全体ビルドは避け、
       # クロスプラットフォームなテストプロジェクト（コア依存グラフ）を対象にする。
       - name: Test
         run: dotnet test tests/OsmDotRoute.Tests/OsmDotRoute.Tests.csproj -c Release
@@ -42,7 +42,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Pack
         run: |

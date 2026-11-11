@@ -15,7 +15,7 @@ namespace OsmDotRoute.Extractor.Pipeline;
 /// 書出順序: HEADER (256B) → SECTION TABLE → 各セクション本体（kind 昇順）。
 /// </para>
 /// <para>
-/// <see cref="BinaryWriter"/> は .NET 9 で全プラットフォーム リトルエンディアン保証。
+/// <see cref="BinaryWriter"/> は .NET で全プラットフォーム リトルエンディアン保証。
 /// 各セクションのサイズを事前計算してオフセットを決定後、線形に書出。
 /// </para>
 /// </remarks>

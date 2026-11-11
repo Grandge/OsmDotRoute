@@ -170,7 +170,7 @@ rules (passable except on motorways and motor-vehicle-only roads).
 
 | | Itinero | OsmDotRoute |
 | --- | --- | --- |
-| Runtime dependencies | Itinero NuGet packages (multiple assemblies) | **System.* standard libraries only** (zero external NuGet, net9.0) |
+| Runtime dependencies | Itinero NuGet packages (multiple assemblies) | **System.* standard libraries only** (zero external NuGet, net10.0) |
 | Distribution | Comes with multiple dependencies | Small. Security updates are covered just by following the .NET runtime |
 
 In environments where external NuGet is restricted or you want to reduce the security-audit burden,

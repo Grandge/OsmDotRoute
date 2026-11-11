@@ -50,7 +50,7 @@ function Test-CommandAvailable {
     }
 }
 
-Test-CommandAvailable 'dotnet' '.NET 9 SDK をインストールしてください: https://dotnet.microsoft.com/download'
+Test-CommandAvailable 'dotnet' '.NET 10 SDK をインストールしてください: https://dotnet.microsoft.com/download'
 Test-CommandAvailable 'npm'    'Node.js (npm 同梱) をインストールしてください: https://nodejs.org/'
 
 if (-not (Test-Path $serverDir)) { throw "Server ディレクトリが見つかりません: $serverDir" }

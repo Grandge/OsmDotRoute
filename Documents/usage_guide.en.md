@@ -10,7 +10,7 @@ as quickly as possible.
 > available on **[GitHub Pages](https://grandge.github.io/OsmDotRoute/)**.
 > You can try routing, dynamic restrictions, and Re-Route right in the browser.
 
-Target version: Phase 3 (`.odrg` runtime, System.* only, net9.0).
+Target version: Phase 3 (`.odrg` runtime, System.* only, net10.0).
 
 ---
 
@@ -49,7 +49,7 @@ OsmDotRoute is published on GitHub. Before the NuGet release, use it via **sourc
 
 ### Requirements
 
-- .NET 9 SDK or later
+- .NET 10 SDK or later
 - (only if you want to run the `.odrg` in a browser static site) Node.js 18 or later
 
 ### Getting the repository

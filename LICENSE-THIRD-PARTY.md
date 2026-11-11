@@ -16,7 +16,7 @@ core library alone.
 
 | Package | Used by | Version | License | Project |
 | --- | --- | --- | --- | --- |
-| Microsoft.Extensions.DependencyInjection.Abstractions | `OsmDotRoute.Extensions.DependencyInjection` | 9.0.0 | MIT | .NET Foundation |
+| Microsoft.Extensions.DependencyInjection.Abstractions | `OsmDotRoute.Extensions.DependencyInjection` | 10.0.13 | MIT | .NET Foundation |
 | System.CommandLine | `OsmDotRoute.Extractor` (CLI) | 3.0.0-preview.4.26230.115 | MIT | .NET Foundation |
 
 ## Development-only dependencies (not distributed)
@@ -29,7 +29,7 @@ Used for tests and benchmarks; not part of any shipped artifact.
 | xunit.runner.visualstudio | 2.8.2 | Apache-2.0 |
 | Microsoft.NET.Test.Sdk | 17.12.0 | MIT |
 | coverlet.collector | 6.0.2 | MIT |
-| Microsoft.Extensions.DependencyInjection | 9.0.0 | MIT |
+| Microsoft.Extensions.DependencyInjection | 10.0.13 | MIT |
 | BenchmarkDotNet | 0.15.8 | MIT |
 
 ## Sample applications (not part of the library)

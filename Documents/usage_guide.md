@@ -9,7 +9,7 @@ API リファレンスではなく、**最初に動かすまで**を最短で辿
 > **[GitHub Pages](https://grandge.github.io/OsmDotRoute/)** で公開中。
 > 経路探索・動的制約・Re-Route をそのままブラウザで体験できる。
 
-対象バージョン: Phase 3（`.odrg` ランタイム、System.* のみ依存、net9.0）。
+対象バージョン: Phase 3（`.odrg` ランタイム、System.* のみ依存、net10.0）。
 
 ---
 
@@ -45,7 +45,7 @@ OsmDotRoute は GitHub で公開されている。NuGet 公開前は、リポジ
 
 ### 必要環境
 
-- .NET 9 SDK 以降
+- .NET 10 SDK 以降
 - （`.odrg` をブラウザ静的サイトで動かす場合のみ）Node.js 18 以降
 
 ### リポジトリの取得

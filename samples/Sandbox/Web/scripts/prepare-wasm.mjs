@@ -8,7 +8,7 @@ import { dirname, resolve } from 'node:path';
 const webDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');     // samples/Sandbox/Web
 const repoRoot = resolve(webDir, '..', '..', '..');                        // リポジトリルート
 const wasmProj = resolve(repoRoot, 'samples', 'Sandbox.Wasm', 'Sandbox.Wasm.csproj');
-const publishDir = resolve(repoRoot, 'samples', 'Sandbox.Wasm', 'bin', 'Release', 'net9.0', 'publish');
+const publishDir = resolve(repoRoot, 'samples', 'Sandbox.Wasm', 'bin', 'Release', 'net10.0', 'publish');
 const publishWww = resolve(publishDir, 'wwwroot');
 const publicDir = resolve(webDir, 'public');
 

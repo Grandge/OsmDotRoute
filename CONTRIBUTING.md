@@ -5,7 +5,7 @@ OsmDotRoute への貢献に興味を持っていただきありがとうござ�
 
 ## 必要環境
 
-- .NET 9 SDK 以降
+- .NET 10 SDK 以降
 - （サンプル Web UI / ブラウザ WASM デモを触る場合のみ）Node.js 18 以降
 - OS: Windows / Linux / macOS で動作（コア・テスト・サンプルとも特定 OS 依存なし）
 

@@ -18,7 +18,7 @@ running simulation and re-route instantly** (no rebuild required).
 
 ## Features
 
-- **.NET 9 / pure C#, runtime dependencies are System.* only** (zero external NuGet packages)
+- **.NET 10 / pure C#, runtime dependencies are System.* only** (zero external NuGet packages)
 - **Custom `.odrg` graph format**: zero-copy reads via `MemoryMappedFile` + `ReadOnlySpan<T>`
 - **Dynamic restrictions**: polygon, JIS X0410 mesh code, and KSJ GML (e.g. A31) input; reflected in the next calculation without a rebuild
 - **JSON-externalized profiles**: tune access/speed/difficulty reactions without rebuilding

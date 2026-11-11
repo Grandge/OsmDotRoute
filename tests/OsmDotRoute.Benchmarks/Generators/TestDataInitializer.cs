@@ -30,7 +30,7 @@ internal static class TestDataInitializer
     /// </summary>
     private static string ResolveSourceTestDataDir()
     {
-        // bin/Release/net9.0 から 3 階層上に戻り、TestData/ に入る
+        // bin/Release/net10.0 から 3 階層上に戻り、TestData/ に入る
         // AppContext.BaseDirectory は末尾 \ を含むことがあるので TrimEnd して正規化
         var dir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         for (var i = 0; i < 3; i++) dir = Path.GetDirectoryName(dir)!;

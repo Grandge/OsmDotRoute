@@ -27,7 +27,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       # tests/OsmDotRoute.Tests はクロスプラットフォームなコア依存グラフ。
       # MMF round-trip（OdrgReaderTests）と同梱 tsushima.odrg を実読する Native 系で .odrg 経路を実テストする。
